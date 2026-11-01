@@ -19,6 +19,7 @@
 <key>ITSAppUsesNonExemptEncryption</key><false/>
 <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>ae.barq.football</string><key>CFBundleURLSchemes</key><array><string>barq</string></array></dict></array>
 <key>UIBackgroundModes</key><array><string>remote-notification</string><string>fetch</string></array>
+<key>FOTIQAPIBase</key><string>$(FOTIQ_API_BASE)</string>
 <key>BARQConfigURL</key><string>https://koora-ae.surge.sh/config.json</string>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
 </dict></plist>

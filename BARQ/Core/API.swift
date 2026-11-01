@@ -28,7 +28,8 @@ actor API {
     func resolveBase() async throws -> String {
         if let b = base { return b }
         if let o = UserDefaults.standard.string(forKey: "apiOverride"), !o.isEmpty { return o.trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
-        if let b = base { return b }
+        // Optional build-time base (xcodebuild FOTIQ_API_BASE=... from a CI secret); empty in the repo, never committed.
+        if let o = Bundle.main.object(forInfoDictionaryKey: "FOTIQAPIBase") as? String, o.hasPrefix("http") { return o.trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
         guard let url = URL(string: Self.configURL + "?t=\(Int(Date().timeIntervalSince1970))") else { throw APIError.offline }
         let (d, _) = try await session.data(from: url)
         struct C: Decodable { var api: String }

@@ -19,18 +19,18 @@ function detect(prev, f) {
   const out = [], id = f.fixture.id, st = f.fixture.status.short;
   const H = f.teams.home.name, A = f.teams.away.name, sc = `${f.goals.home ?? 0}-${f.goals.away ?? 0}`;
   const p = prev?.status;
-  if (st === '1H' && (!p || p === 'NS' || p === 'TBD')) out.push({ type: 'kickoff', k: 'kickoff', title: `انطلقت: ${H} × ${A}`, body: f.league.name });
-  if (st === 'HT') out.push({ type: 'ht', k: 'ht', title: `نهاية الشوط الأول: ${H} ${sc} ${A}`, body: f.league.name });
-  if (st === '2H' && p && p !== '2H') out.push({ type: 'second', k: 'second', title: `بداية الشوط الثاني: ${H} ${sc} ${A}`, body: f.league.name });
-  if (DONE.has(st)) out.push({ type: 'ft', k: 'ft', title: `نهاية المباراة: ${H} ${sc} ${A}`, body: f.league.name });
+  if (st === '1H' && (!p || p === 'NS' || p === 'TBD')) out.push({ type: 'kickoff', k: 'kickoff', title: `انطلقت ${H} × ${A}`, body: f.league.name });
+  if (st === 'HT') out.push({ type: 'ht', k: 'ht', title: `استراحة ${H} ${sc} ${A}`, body: f.league.name });
+  if (st === '2H' && p && p !== '2H') out.push({ type: 'second', k: 'second', title: `الشوط الثاني ${H} ${sc} ${A}`, body: f.league.name });
+  if (DONE.has(st)) out.push({ type: 'ft', k: 'ft', title: `النهاية ${H} ${sc} ${A}`, body: f.league.name });
   for (const e of f.events || []) {
     const t = `${e.time?.elapsed ?? 0}${e.time?.extra ? '+' + e.time.extra : ''}'`;
     if (e.type === 'Goal' && e.detail !== 'Missed Penalty') {
       out.push({ type: 'goal', k: `goal:${e.team?.id}:${e.player?.id ?? e.player?.name}:${e.time?.elapsed}:${e.time?.extra ?? 0}`,
-        title: `هدف ${e.team?.name} ${t}`, body: `${e.player?.name || ''}${e.detail === 'Own Goal' ? ' (عكسي)' : e.detail === 'Penalty' ? ' (ركلة جزاء)' : ''} - ${H} ${sc} ${A}` });
+        title: `هدف ${t} · ${H} ${sc} ${A}`, body: `${e.player?.name || e.team?.name || ''}${e.detail === 'Own Goal' ? ' (عكسي)' : e.detail === 'Penalty' ? ' (جزاء)' : ''} · ${e.team?.name}` });
     }
     if (e.type === 'Card' && /Red/i.test(e.detail || '')) {
-      out.push({ type: 'red', k: `red:${e.player?.id ?? e.player?.name}:${e.time?.elapsed}`, title: `بطاقة حمراء - ${e.team?.name} ${t}`, body: `${e.player?.name || ''} - ${H} ${sc} ${A}` });
+      out.push({ type: 'red', k: `red:${e.player?.id ?? e.player?.name}:${e.time?.elapsed}`, title: `طرد ${t} · ${H} ${sc} ${A}`, body: `${e.player?.name || ''} · ${e.team?.name}` });
     }
   }
   return out.map(x => ({ ...x, fixture: id }));
@@ -164,7 +164,7 @@ function start(app, { cached, q, db, save, todayStr, TZ, health }) {
         lastInsight = i.id;
         if (['red', 'ht', 'ft'].includes(i.type)) continue; // already covered by event notifications
         const f = r.data.find(x => x.fixture.id === i.fixture); if (!f) continue;
-        fanout({ type: i.level === 'high' ? 'ai_high' : 'ai', k: `ai:${i.id}`, fixture: i.fixture, title: i.title, body: i.body }, f, subs);
+        fanout({ type: i.level === 'high' ? 'ai_high' : 'ai', k: `ai:${i.id}`, fixture: i.fixture, title: String(i.title).replace(/\s*—\s*/g, ' · '), body: String(i.body).replace(/\s*—\s*/g, ' · ') }, f, subs);
       }
       db.run('DELETE FROM notif_sent WHERE at<?', [Date.now() - 4 * 86400e3]);
       db.run('DELETE FROM outbox WHERE at<?', [Date.now() - 2 * 86400e3]);

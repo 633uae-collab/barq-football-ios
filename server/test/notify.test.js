@@ -39,3 +39,16 @@ test('dedup: replaying successive polls never re-emits a key', () => {
 test('Live Activity content-state matches iOS ContentState keys', () => {
   assert.deepStrictEqual(Object.keys(liveState(real)).sort(), ['awayGoals', 'homeGoals', 'insight', 'lastEvent', 'minute', 'status']);
 });
+
+test('push titles are concise: goal/red titles carry minute + score, no em dash', () => {
+  const { detect } = require('../notify.js');
+  const f = require('./real-fixture.json');
+  const evs = detect({ status: '2H' }, f);
+  for (const e of evs) {
+    assert.ok(!/—/.test(e.title + e.body), e.title);
+    if (e.type === 'goal' || e.type === 'red') {
+      assert.match(e.title, /\d+(\+\d+)?'/);
+      assert.match(e.title, /\d+-\d+/);
+    }
+  }
+});
