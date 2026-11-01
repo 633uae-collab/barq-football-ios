@@ -1,0 +1,15 @@
+{
+ "aps": {
+  "alert": {
+   "title": "ضغط هجومي — PAOK",
+   "body": "ارتفع الضغط الهجومي لـPAOK خلال آخر 39 دقائق وفقاً لإحصائيات المباراة."
+  },
+  "sound": "default",
+  "thread-id": "fixture-1593351",
+  "interruption-level": "active"
+ },
+ "fixture": 1593351,
+ "insight": 262,
+ "type": "pressure",
+ "Simulator Target Bundle": "ae.barq.football"
+}

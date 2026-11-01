@@ -15,54 +15,126 @@ jobs:
           sudo xcode-select -s "$X"; xcodebuild -version
           xcodebuild -showsdks | grep -q iphonesimulator26 || { echo "::error::iOS 26 simulator SDK missing"; exit 1; }
       - run: brew install xcodegen && xcodegen generate
-      - name: Pick simulator
+      - name: Pick simulator (Pro model = has Dynamic Island)
         run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in sorted(d.items(),reverse=True) if 'iOS-26' in k for x in v if 'iPhone' in x['name']))")
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys;d=json.load(sys.stdin)['devices']
+          c=[x for k,v in sorted(d.items(),reverse=True) if 'iOS-26' in k for x in v if 'iPhone' in x['name']]
+          p=[x for x in c if 'Pro' in x['name'] and 'Max' not in x['name']] or c
+          print(p[0]['udid']); print(p[0]['name'],file=sys.stderr)")
           echo "UDID=$UDID" >> $GITHUB_ENV
       - name: Build
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log | grep -E "error:|warning: unre|BUILD" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log | grep -E "error:|warning:|BUILD" || true
           grep -q "BUILD SUCCEEDED" build.log
+          echo "Swift warnings in our sources:"; grep -E "/(BARQ|BARQWidgets|Shared|BARQTests)/.*warning:" build.log | sort -u | tee warnings.txt || true
       - name: Unit tests
-        run: xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test 2>&1 | tail -40
-      - name: Screenshots
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test 2>&1 | tee test.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
+          grep -q "TEST SUCCEEDED" test.log
+      - name: Screenshots of all 17 screens (real API-SPORTS data via backend)
         run: |
           xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
           APP=$(find dd/Build/Products -name BARQ.app -path "*iphonesimulator*" | head -1)
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl ui "$UDID" appearance dark
-          shot() { xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true; xcrun simctl launch "$UDID" ae.barq.football "${@:2}"; sleep 22; xcrun simctl io "$UDID" screenshot "shots/v2-$1.png"; }
+          xcrun simctl status_bar "$UDID" override --time 9:41 || true
           mkdir -p shots
           API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
-          MID=$(curl -s -H "X-Pinggy-No-Screen: 1" "$API/api/fixtures" | python3 -c "import json,sys;f=json.load(sys.stdin)['fixtures'];L={'1H','2H','HT'};f=sorted(f,key=lambda x:(x['status']['short'] not in L,-(x.get('imp') or 0)));print(f[0]['id'])" || echo 0)
-          echo "match $MID"
-          shot home
-          shot matches -startTab matches
-          shot match-center -openMatch "$MID"
-          shot ai -startTab ai
-          shot favorites -startTab favorites
-          shot search -startTab search
+          H="X-Pinggy-No-Screen: 1"
+          MID=$(curl -s -H "$H" "$API/api/fixtures" | python3 -c "import json,sys;f=json.load(sys.stdin)['fixtures'];L={'1H','2H','HT','ET'};f=sorted(f,key=lambda x:(x['status']['short'] not in L,-(x.get('imp') or 0)));print(f[0]['id'])")
+          TEAM=$(curl -s -H "$H" "$API/api/match/$MID" | python3 -c "import json,sys;print(json.load(sys.stdin)['match']['home']['id'])")
+          PLAYER=$(curl -s -H "$H" "$API/api/topscorers/39" | python3 -c "import json,sys;print(json.load(sys.stdin)['players'][0]['id'])")
+          echo "match=$MID team=$TEAM player=$PLAYER" | tee shots/ids.txt
+          shot() { n=$1; shift; xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true; xcrun simctl launch "$UDID" ae.barq.football -qaFavTeam "$TEAM" "$@" >/dev/null; sleep 20; xcrun simctl io "$UDID" screenshot "shots/v3-$n.png"; }
+          shot 01-home -screen home
+          shot 02-matches -screen matches
+          shot 03-calendar -screen calendar
+          shot 04-month-picker -screen monthpicker
+          shot 05-match-center -screen match -id "$MID"
+          shot 06-match-preview -screen preview -id "$MID"
+          shot 07-ai -screen ai
+          shot 08-favorites -screen favorites
+          shot 09-search -screen search -q "salah"
+          shot 10-news -screen news
+          shot 11-notifications -screen notifications
+          shot 12-settings -screen settings
+          shot 13-leagues -screen leagues
+          shot 14-league-center -screen league -id 39
+          shot 15-club -screen club -id "$TEAM"
+          shot 16-player -screen player -id "$PLAYER"
+          shot 17-reorder -screen reorder
+          shot 18-tabbar-root
+          xcrun simctl ui "$UDID" appearance light
+          shot 19-home-light -screen home
+          shot 20-match-light -screen match -id "$MID"
+          xcrun simctl ui "$UDID" appearance dark
+          echo "MID=$MID" >> $GITHUB_ENV
+      - name: Live Activity + Dynamic Island + notification on simulator
+        continue-on-error: true
+        run: |
+          set -x
+          xcrun simctl privacy "$UDID" grant notifications ae.barq.football || echo "privacy grant notifications unsupported"
+          xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
+          xcrun simctl launch --console-pty "$UDID" ae.barq.football -screen liveactivity -id "$MID" > shots/la-console.txt 2>&1 &
+          sleep 25
+          xcrun simctl io "$UDID" screenshot shots/v3-21-liveactivity-app.png
+          # Send the app to background so the Dynamic Island shows the activity
+          xcrun simctl launch "$UDID" com.apple.Preferences; sleep 6
+          xcrun simctl io "$UDID" screenshot shots/v3-22-dynamic-island.png
+          # Live Activity update via simulated push (Xcode 26 simctl) - outcome recorded, not assumed
+          xcrun simctl push "$UDID" ae.barq.football.push-type.liveactivity BARQTests/Payloads/live-update.json > shots/la-push.txt 2>&1; echo "exit=$?" >> shots/la-push.txt
+          sleep 5; xcrun simctl io "$UDID" screenshot shots/v3-23-dynamic-island-after-push.png
+          # Regular APNs alert payload (from push.js) via simctl push
+          xcrun simctl push "$UDID" ae.barq.football BARQTests/Payloads/alert.apns > shots/alert-push.txt 2>&1; echo "exit=$?" >> shots/alert-push.txt
+          sleep 3; xcrun simctl io "$UDID" screenshot shots/v3-24-notification-banner.png
+          kill %1 2>/dev/null || true
+          cat shots/la-console.txt shots/la-push.txt shots/alert-push.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: screens, path: shots, if-no-files-found: ignore }
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: build-log, path: build.log, if-no-files-found: ignore }
+        with: { name: build-log, path: "*.log", if-no-files-found: ignore }
       - name: Zip unsigned app
         run: cd dd/Build/Products/Debug-iphonesimulator && zip -qr ../../../../BARQ-sim.zip BARQ.app
       - uses: actions/upload-artifact@v4
         with: { name: BARQ-simulator-app, path: BARQ-sim.zip }
 
-  # Disabled until an Apple Developer account ($99/yr) exists. Needs secrets:
-  # APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (App Store Connect API key), plus app record in App Store Connect.
+  # TestFlight upload. Runs only when started manually AND the App Store Connect secrets exist,
+  # so normal pushes stay green before the Apple Developer account is bought. Steps: docs/TESTFLIGHT.md
   testflight:
-    if: false
+    if: github.event_name == 'workflow_dispatch'
+    needs: simulator
     runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
+      - name: Check secrets
+        id: gate
+        run: |
+          if [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ] && [ -n "$APPLE_TEAM_ID" ]; then echo "ok=true" >> $GITHUB_OUTPUT
+          else echo "ok=false" >> $GITHUB_OUTPUT; echo "::notice::TestFlight skipped: App Store Connect secrets not set yet (see docs/TESTFLIGHT.md)"; fi
       - uses: actions/checkout@v4
-      - run: brew install xcodegen && xcodegen generate
-      - run: |
-          echo "${{ secrets.ASC_KEY_P8 }}" > key.p8
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -configuration Release -destination generic/platform=iOS -archivePath BARQ.xcarchive archive DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} -allowProvisioningUpdates -authenticationKeyPath $PWD/key.p8 -authenticationKeyID ${{ secrets.ASC_KEY_ID }} -authenticationKeyIssuerID ${{ secrets.ASC_ISSUER_ID }}
-          xcrun altool --upload-package BARQ.xcarchive --apiKey ${{ secrets.ASC_KEY_ID }} --apiIssuer ${{ secrets.ASC_ISSUER_ID }} || true
+        if: steps.gate.outputs.ok == 'true'
+      - name: Archive + upload
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          set -eo pipefail
+          X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"
+          brew install xcodegen && xcodegen generate
+          mkdir -p ~/private_keys; printf '%s' "$ASC_KEY_P8" > ~/private_keys/AuthKey_$ASC_KEY_ID.p8
+          KEY=~/private_keys/AuthKey_$ASC_KEY_ID.p8
+          sed -i '' "s/TEAM_ID_PLACEHOLDER/$APPLE_TEAM_ID/" ci/ExportOptions.plist
+          AUTH="-allowProvisioningUpdates -authenticationKeyPath $KEY -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID"
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -configuration Release -destination generic/platform=iOS \
+            -archivePath build/BARQ.xcarchive archive DEVELOPMENT_TEAM=$APPLE_TEAM_ID CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} $AUTH | tail -30
+          xcodebuild -exportArchive -archivePath build/BARQ.xcarchive -exportOptionsPlist ci/ExportOptions.plist -exportPath build/export $AUTH | tail -30
+          rm -f "$KEY"

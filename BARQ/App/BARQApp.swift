@@ -7,7 +7,7 @@ struct BARQApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            ScreenRouter()
                 .environment(store)
                 .environment(\.layoutDirection, store.lang == "en" ? .leftToRight : .rightToLeft)
                 .environment(\.locale, Locale(identifier: store.lang == "en" ? "en" : "ar"))
@@ -77,5 +77,71 @@ struct IdBox: Identifiable { var id: Int }
                 try? await Task.sleep(for: .seconds(30))
             }
         }
+    }
+}
+
+/// CI/QA entry: `-screen <name> [-id N] [-q text]` opens any of the 17 screens directly with real backend data,
+/// so the simulator job can screenshot every screen without UI scripting. Normal launches show RootView.
+struct ScreenRouter: View {
+    @Environment(AppStore.self) private var store
+    @State private var poller = InsightPoller()
+    @State private var monthOffset = 0
+    @State private var preview: Fixture?
+    @State private var laStatus = ""
+    private let d = UserDefaults.standard
+    var body: some View {
+        if let screen = d.string(forKey: "screen") {
+            NavigationStack { harness(screen).barqDestinations() }
+                .task {
+                    poller.start(store: store)
+                    let fav = d.integer(forKey: "qaFavTeam")
+                    if fav > 0, store.favTeams.isEmpty, let t: TeamResponse = try? await API.shared.get("/api/team/\(fav)"), let i = t.team {
+                        store.favTeams = [TeamRef(id: i.id, name: i.name, logo: i.logo, winner: nil)]
+                    }
+                    if screen == "liveactivity" { await startActivity() }
+                }
+        } else {
+            RootView()
+        }
+    }
+    var id: Int { d.integer(forKey: "id") }
+
+    @ViewBuilder func harness(_ s: String) -> some View {
+        switch s {
+        case "home": HomeView()
+        case "matches": MatchesView()
+        case "calendar": CalendarView()
+        case "monthpicker": MonthPicker(offset: $monthOffset)
+        case "match": MatchCenterView(fixtureId: id)
+        case "preview":
+            Group { if let f = preview { MatchPreview(f: f) } else { ProgressView() } }
+                .task { preview = (try? await API.shared.get("/api/match/\(id)") as MatchDetail)?.match }
+        case "ai": AIView()
+        case "favorites": FavoritesView()
+        case "search": SearchView(initialQuery: d.string(forKey: "q") ?? "")
+        case "news": NewsView()
+        case "notifications": NotificationsView()
+        case "settings": SettingsView()
+        case "leagues": LeaguesView()
+        case "league": LeagueCenterView(leagueId: id)
+        case "club": ClubView(teamId: id)
+        case "player": PlayerView(playerId: id)
+        case "reorder": ReorderSectionsSheet()
+        case "liveactivity":
+            VStack(spacing: 12) {
+                Image(systemName: "platter.filled.bottom.iphone").font(.largeTitle)
+                Text(laStatus).font(.footnote.monospaced()).multilineTextAlignment(.center).accessibilityIdentifier("laStatus")
+            }.padding()
+        default: RootView()
+        }
+    }
+
+    func startActivity() async {
+        guard id > 0 else { laStatus = "no fixture id"; return }
+        do {
+            let aid = try await LiveActivities.startReal(fixtureId: id)
+            laStatus = "LA_STARTED \(aid) enabled=\(LiveActivities.enabled)"
+        } catch { laStatus = "LA_FAILED \(error.localizedDescription)" }
+        print("BARQ_LA: \(laStatus)")
     }
 }

@@ -56,9 +56,10 @@ enum Notifier {
     }
     /// Density filter: 0 = only red/ht/ft (low noise), 1 = + medium, 2 = all.
     static func allowed(_ i: Insight, density: Int) -> Bool {
+        let critical: Set<String> = ["red", "ht", "ft"]
         switch density {
-        case 0: return i.level == "low"
-        case 1: return i.level != "high" || i.type == "possession"
+        case 0: return critical.contains(i.type)
+        case 1: return critical.contains(i.type) || i.level == "high"
         default: return true
         }
     }
@@ -77,12 +78,18 @@ enum LiveActivities {
                                             homeShort: short(f.home.name), awayShort: short(f.away.name))
         let state = MatchActivityAttributes.ContentState(homeGoals: f.goals.home ?? 0, awayGoals: f.goals.away ?? 0,
                                                          minute: f.status.elapsed ?? 0, status: f.status.short, lastEvent: nil, insight: nil)
+        return try start(attrs: attrs, state: state)
+    }
+
+    @discardableResult
+    static func start(attrs: MatchActivityAttributes, state: MatchActivityAttributes.ContentState) throws -> String {
+        let fid = attrs.fixtureId
         // pushType .token -> per-activity APNs token sent to backend (needs paid account to actually receive pushes).
         let act = try Activity.request(attributes: attrs, content: .init(state: state, staleDate: Date().addingTimeInterval(600)), pushType: .token)
         Task {
             for await tok in act.pushTokenUpdates {
                 let hex = tok.map { String(format: "%02x", $0) }.joined()
-                try? await API.shared.send("POST", "/api/push/register", body: PushRegistration(device: UserDefaults.standard.string(forKey: "deviceId") ?? "", kind: "liveactivity", token: hex, fixture: f.id))
+                try? await API.shared.send("POST", "/api/push/register", body: PushRegistration(device: UserDefaults.standard.string(forKey: "deviceId") ?? "", kind: "liveactivity", token: hex, fixture: fid))
             }
         }
         return act.id
@@ -123,5 +130,31 @@ enum CalendarService {
         e.addAlarm(EKAlarm(relativeOffset: -30 * 60))
         e.calendar = store.defaultCalendarForNewEvents
         try store.save(e, span: .thisEvent)
+    }
+}
+
+// MARK: Live Activity state from real match data
+extension MatchActivityAttributes.ContentState {
+    /// Builds the state from the real /api/match payload; lastEvent = latest goal or card from API-SPORTS events.
+    static func from(_ d: MatchDetail, insight: String? = nil) -> Self {
+        let f = d.match
+        let ev = d.events.last { $0.type == "Goal" || $0.type == "Card" }
+        let last = ev.map { e -> String in
+            let kind = e.type == "Goal" ? "هدف" : (e.detail ?? "بطاقة")
+            return "\(kind) - \(e.player?.name ?? e.team.name) \(e.time.elapsed ?? 0)'"
+        }
+        return .init(homeGoals: f.goals.home ?? 0, awayGoals: f.goals.away ?? 0, minute: f.status.elapsed ?? 0,
+                     status: f.status.short, lastEvent: last, insight: insight)
+    }
+}
+
+extension LiveActivities {
+    /// Starts a Live Activity for a real fixture fetched from the backend (used by the match screen and CI simulator test).
+    static func startReal(fixtureId: Int) async throws -> String {
+        let d: MatchDetail = try await API.shared.get("/api/match/\(fixtureId)")
+        let f = d.match
+        let attrs = MatchActivityAttributes(fixtureId: f.id, league: f.league.name, homeName: f.home.name, awayName: f.away.name,
+                                            homeShort: short(f.home.name), awayShort: short(f.away.name))
+        return try start(attrs: attrs, state: .from(d))
     }
 }

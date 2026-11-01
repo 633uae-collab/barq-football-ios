@@ -27,6 +27,9 @@ targets:
         CODE_SIGN_ENTITLEMENTS: BARQ/Resources/BARQ.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: YES
     dependencies:
       - target: BARQWidgets
@@ -40,6 +43,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ae.barq.football.widgets
         INFOPLIST_FILE: BARQWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: BARQWidgets/BARQWidgets.entitlements
+        CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
   BARQTests:
     type: bundle.unit-test

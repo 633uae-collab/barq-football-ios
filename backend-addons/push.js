@@ -10,7 +10,19 @@ module.exports = function (app, { db, q, save }) {
     res.json({ ok: true, delivery: process.env.APNS_KEY_ID ? 'enabled' : 'disabled_no_apns_key' });
   });
   // Payload builders (used once APNs key exists):
-  app.locals.alertPayload = (i) => ({ aps: { alert: { title: i.title, body: i.body }, sound: 'default', 'thread-id': `fixture-${i.fixture}` }, fixture: i.fixture });
-  app.locals.livePayload = (f, insight) => ({ aps: { timestamp: Math.floor(Date.now() / 1000), event: 'update',
-    'content-state': { homeGoals: f.goals.home ?? 0, awayGoals: f.goals.away ?? 0, minute: f.status.elapsed ?? 0, status: f.status.short, insight: insight || null } } });
+  app.locals.alertPayload = (i) => ({ aps: { alert: { title: i.title, body: i.body }, sound: 'default', 'thread-id': `fixture-${i.fixture}`, 'interruption-level': i.level === 'high' ? 'time-sensitive' : 'active' }, fixture: i.fixture, insight: i.id, type: i.type });
+  // Must match Shared/MatchActivityAttributes.swift ContentState exactly (verified by BARQTests on CI).
+  const contentState = (f, insight, lastEvent) => ({ homeGoals: f.goals.home ?? 0, awayGoals: f.goals.away ?? 0, minute: f.status.elapsed ?? 0,
+    status: f.status.short, lastEvent: lastEvent || null, insight: insight || null });
+  const short = (n) => String(n || '').replace(/ /g, '').slice(0, 3).toUpperCase();
+  app.locals.contentState = contentState;
+  // Live Activity update/end (apns-push-type: liveactivity, topic ae.barq.football.push-type.liveactivity).
+  app.locals.livePayload = (f, insight, lastEvent) => ({ aps: { timestamp: Math.floor(Date.now() / 1000),
+    event: ['FT', 'AET', 'PEN'].includes(f.status.short) ? 'end' : 'update', 'content-state': contentState(f, insight, lastEvent),
+    ...(['FT', 'AET', 'PEN'].includes(f.status.short) ? { 'dismissal-date': Math.floor(Date.now() / 1000) + 900 } : {}) } });
+  // Push-to-start (iOS 17.2+), sent to a pushtostart token when a favourite team kicks off.
+  app.locals.startPayload = (f) => ({ aps: { timestamp: Math.floor(Date.now() / 1000), event: 'start',
+    'attributes-type': 'MatchActivityAttributes',
+    attributes: { fixtureId: f.id, league: f.league.name, homeName: f.home.name, awayName: f.away.name, homeShort: short(f.home.name), awayShort: short(f.away.name) },
+    'content-state': contentState(f), alert: { title: `${f.home.name} - ${f.away.name}`, body: f.league.name } } });
 };

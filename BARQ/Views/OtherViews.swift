@@ -65,6 +65,7 @@ struct FavoritesView: View {
 }
 
 struct SearchView: View {
+    var initialQuery = ""
     @State private var q = ""
     @State private var r: SearchResponse?
     @State private var loading = false
@@ -87,6 +88,7 @@ struct SearchView: View {
         .screenBackground()
         .navigationTitle("بحث")
         .searchable(text: $q, prompt: "فريق، لاعب، بطولة")
+        .onAppear { if q.isEmpty && !initialQuery.isEmpty { q = initialQuery } }
         .overlay { if loading { ProgressView() } }
         .barqDestinations()
         .task(id: q) {

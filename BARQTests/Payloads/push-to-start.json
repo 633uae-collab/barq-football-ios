@@ -1,0 +1,27 @@
+{
+ "aps": {
+  "timestamp": 1793556594,
+  "event": "start",
+  "attributes-type": "MatchActivityAttributes",
+  "attributes": {
+   "fixtureId": 1593351,
+   "league": "Super League 1",
+   "homeName": "PAOK",
+   "awayName": "Asteras Tripolis",
+   "homeShort": "PAO",
+   "awayShort": "AST"
+  },
+  "content-state": {
+   "homeGoals": 1,
+   "awayGoals": 1,
+   "minute": 53,
+   "status": "2H",
+   "lastEvent": null,
+   "insight": null
+  },
+  "alert": {
+   "title": "PAOK - Asteras Tripolis",
+   "body": "Super League 1"
+  }
+ }
+}

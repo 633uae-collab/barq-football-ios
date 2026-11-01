@@ -1,0 +1,14 @@
+{
+ "aps": {
+  "timestamp": 1793556594,
+  "event": "update",
+  "content-state": {
+   "homeGoals": 1,
+   "awayGoals": 1,
+   "minute": 53,
+   "status": "2H",
+   "lastEvent": "Yellow Card - Dimitrios Kourbelis 42'",
+   "insight": "ارتفع الضغط الهجومي لـPAOK خلال آخر 39 دقائق وفقاً لإحصائيات المباراة."
+  }
+ }
+}

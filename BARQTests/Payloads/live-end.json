@@ -1,0 +1,15 @@
+{
+ "aps": {
+  "timestamp": 1793556594,
+  "event": "end",
+  "content-state": {
+   "homeGoals": 1,
+   "awayGoals": 1,
+   "minute": 53,
+   "status": "FT",
+   "lastEvent": null,
+   "insight": null
+  },
+  "dismissal-date": 1793557494
+ }
+}
