@@ -75,7 +75,7 @@ struct LivePill: View {
     var extra: Int? = nil
     var status: String? = nil
     var label: String {
-        if status == "HT" { return String(localized: "استراحة") }
+        if status == "HT" { return L.s("استراحة") }
         guard let m = minute else { return "LIVE" }
         return extra.map { "\(m)+\($0)'" } ?? "\(m)'"
     }

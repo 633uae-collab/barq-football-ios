@@ -78,8 +78,8 @@ enum APIError: LocalizedError {
     case offline, bad, server(String)
     var errorDescription: String? {
         switch self {
-        case .offline: return String(localized: "الخادم غير متاح مؤقتاً، جرّب بعد شوي")
-        case .bad: return String(localized: "طلب غير صالح")
+        case .offline: return L.s("الخادم غير متاح مؤقتاً، جرّب بعد شوي")
+        case .bad: return L.s("طلب غير صالح")
         case .server(let m): return m
         }
     }
@@ -102,9 +102,28 @@ enum Fmt {
     }
     static func ago(_ d: Date) -> String {
         let m = Int(Date().timeIntervalSince(d) / 60)
-        if m < 1 { return String(localized: "الآن") }
-        if m < 60 { return String(localized: "قبل \(m) د") }
-        return String(localized: "قبل \(m / 60) س")
+        if m < 1 { return L.s("الآن") }
+        if m < 60 { return L.f("قبل %lld د", m) }
+        return L.f("قبل %lld س", m / 60)
+    }
+}
+
+/// In-app language lookup. `String(localized:)` follows the DEVICE language; FOTIQ lets the user pick ar/en inside the app,
+/// so non-SwiftUI strings must be resolved from the chosen .lproj explicitly.
+enum L {
+    static var lang: String { UserDefaults.standard.string(forKey: "lang") ?? "ar" }
+    static func s(_ key: String) -> String {
+        if let p = Bundle.main.path(forResource: lang, ofType: "lproj"), let b = Bundle(path: p) {
+            return b.localizedString(forKey: key, value: key, table: nil)
+        }
+        return key
+    }
+    static func f(_ key: String, _ args: CVarArg...) -> String { String(format: s(key), locale: Locale(identifier: lang), arguments: args) }
+    /// Arabic labels for analyst metric keys coming from the server (`nums`).
+    static func metric(_ k: String) -> String {
+        let ar: [String: String] = ["window": "الفترة", "sot": "على المرمى", "shots": "التسديدات", "corners": "الركنيات", "box": "داخل المنطقة",
+                                    "poss": "الاستحواذ", "xg": "الأهداف المتوقعة", "score": "النتيجة", "minute": "الدقيقة", "pressure": "الضغط"]
+        return s(ar[k] ?? k)
     }
 }
 

@@ -128,7 +128,7 @@ enum LiveActivities {
 enum CalendarService {
     static func add(_ f: Fixture) async throws {
         let store = EKEventStore()
-        guard try await store.requestWriteOnlyAccessToEvents() else { throw APIError.server(String(localized: "لم يتم السماح بالوصول للتقويم")) }
+        guard try await store.requestWriteOnlyAccessToEvents() else { throw APIError.server(L.s("لم يتم السماح بالوصول للتقويم")) }
         let e = EKEvent(eventStore: store)
         e.title = "\(f.home.name) × \(f.away.name)"
         e.startDate = f.kickoff

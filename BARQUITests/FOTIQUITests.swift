@@ -62,3 +62,50 @@ final class FOTIQUITests: XCTestCase {
         try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/fotiq-springboard.png"))
     }
 }
+
+/// Persistence across relaunch + notification filters (real app, real backend).
+final class FOTIQPersistenceUITests: XCTestCase {
+    override func setUp() { continueAfterFailure = false }
+    func testSettingsPersistAfterRelaunch() {
+        var app = XCUIApplication(); app.launchArguments = ["-screen", "settings"]; app.launch()
+        let density = app.buttons["settings-density"].firstMatch
+        XCTAssertTrue(density.waitForExistence(timeout: 20))
+        density.tap()
+        let all = app.buttons["الكل"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 5)); all.tap()
+        sleep(1); app.terminate()
+        app = XCUIApplication(); app.launchArguments = ["-screen", "settings"]; app.launch()
+        XCTAssertTrue(app.buttons["settings-density"].firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["settings-density"].firstMatch.label.contains("الكل"), "density not persisted: \(app.buttons["settings-density"].firstMatch.label)")
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-settings"; shot.lifetime = .keepAlways; add(shot)
+    }
+    func testReorderPersistsAndResets() {
+        var app = XCUIApplication(); app.launch()
+        let btn = app.buttons["home-reorder"].firstMatch
+        XCTAssertTrue(btn.waitForExistence(timeout: 30)); btn.tap()
+        XCTAssertTrue(app.otherElements["reorder-preview"].firstMatch.waitForExistence(timeout: 10) || app.staticTexts["معاينة الرئيسية"].exists)
+        let from = app.cells.containing(.any, identifier: "reorder-row-today").buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Reorder' OR label CONTAINS 'ترتيب' OR label CONTAINS 'إعادة'")).firstMatch
+        let to = app.cells.containing(.any, identifier: "reorder-row-carousel").firstMatch
+        if from.exists { from.press(forDuration: 0.6, thenDragTo: to) }
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-reorder"; shot.lifetime = .keepAlways; add(shot)
+        let firstBefore = app.cells.element(boundBy: 0).label
+        app.buttons["تم"].firstMatch.tap()
+        app.terminate()
+        app = XCUIApplication(); app.launch()
+        XCTAssertTrue(app.buttons["home-reorder"].firstMatch.waitForExistence(timeout: 30)); app.buttons["home-reorder"].firstMatch.tap()
+        XCTAssertTrue(app.cells.element(boundBy: 0).waitForExistence(timeout: 10))
+        XCTAssertEqual(app.cells.element(boundBy: 0).label, firstBefore, "order not persisted")
+        app.buttons["reorder-reset"].firstMatch.tap()
+        sleep(1)
+        XCTAssertTrue(app.cells.element(boundBy: 0).label.contains("أهم المباريات"))
+    }
+    func testNotificationFilters() {
+        let app = XCUIApplication(); app.launchArguments = ["-screen", "notifications"]; app.launch()
+        for k in ["ai", "goals", "results", "all"] {
+            let chip = app.buttons["notif-filter-\(k)"].firstMatch
+            XCTAssertTrue(chip.waitForExistence(timeout: 20), k); chip.tap()
+            XCTAssertTrue(chip.isSelected, "\(k) not selected")
+            let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-notifications-\(k)"; shot.lifetime = .keepAlways; add(shot)
+        }
+    }
+}

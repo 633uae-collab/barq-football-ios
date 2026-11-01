@@ -279,6 +279,8 @@ struct Insight: Codable, Hashable, Identifiable {
         case "shift": return "arrow.left.arrow.right"
         case "possession": return "circle.lefthalf.filled"
         case "red": return "rectangle.portrait.fill"
+        case "goal": return "soccerball.inverse"
+        case "kickoff", "second": return "whistle"
         case "ht": return "pause.circle"
         case "ft": return "flag.checkered"
         default: return "brain.head.profile"

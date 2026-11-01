@@ -21,6 +21,10 @@ final class TimelineOrderTests: XCTestCase {
         let r = TimelineOrder.rows([ev(45, 2, "Card"), ev(45), ev(90, 4), ev(90), ev(46, nil, "subst")], status: "FT")
         XCTAssertEqual(minutes(r), ["ft", "90+4", "90", "46", "ht", "45+2", "45", "kickoff"])
     }
+    func testTiesAreDeterministicRegardlessOfApiOrder() {
+        let a = ev(45, nil, "subst", team: 1), b = ev(45, nil, "subst", team: 2), c = ev(45, nil, "Card", team: 1)
+        XCTAssertEqual(TimelineOrder.keyed([a, b, c], status: "2H").map(\.key), TimelineOrder.keyed([c, b, a], status: "2H").map(\.key))
+    }
     func testTiesKeepLaterApiEventOnTop() {
         let a = ev(60, nil, "subst", team: 1), b = ev(60, nil, "Card", team: 2)
         let r = TimelineOrder.rows([a, b], status: "2H")

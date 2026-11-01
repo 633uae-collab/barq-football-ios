@@ -91,7 +91,7 @@ jobs:
           TEAM=$(curl -s -H "$H" "$API/api/match/$MID" | python3 -c "import json,sys;print(json.load(sys.stdin)['match']['home']['id'])")
           PLAYER=$(curl -s -H "$H" "$API/api/topscorers/39" | python3 -c "import json,sys;print(json.load(sys.stdin)['players'][0]['id'])")
           echo "match=$MID team=$TEAM player=$PLAYER" | tee shots/ids.txt
-          shot() { n=$1; shift; xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true; xcrun simctl launch "$UDID" ae.barq.football -qaFavTeam "$TEAM" "$@" >/dev/null; sleep 20; xcrun simctl io "$UDID" screenshot "shots/$( [[ $n == v5-* ]] && echo $n || echo v4-$n ).png"; }
+          shot() { n=$1; shift; xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true; xcrun simctl launch "$UDID" ae.barq.football -qaFavTeam "$TEAM" "$@" >/dev/null; sleep 20; xcrun simctl io "$UDID" screenshot "shots/$( [[ $n == v5-* ]] && echo $n || echo v7-$n ).png"; }
           shot 01-home -screen home
           shot 02-matches -screen matches
           shot 03-calendar -screen calendar

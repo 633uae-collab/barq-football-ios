@@ -1890,6 +1890,256 @@
           }
         }
       }
+    },
+    "اسحب لتغيير الترتيب": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag to reorder"
+          }
+        }
+      }
+    },
+    "معاينة الرئيسية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home preview"
+          }
+        }
+      }
+    },
+    "استعادة الافتراضي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore default"
+          }
+        }
+      }
+    },
+    "الفترة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window"
+          }
+        }
+      }
+    },
+    "داخل المنطقة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In the box"
+          }
+        }
+      }
+    },
+    "الأهداف المتوقعة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xG"
+          }
+        }
+      }
+    },
+    "النتيجة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Score"
+          }
+        }
+      }
+    },
+    "الدقيقة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minute"
+          }
+        }
+      }
+    },
+    "الضغط": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pressure"
+          }
+        }
+      }
+    },
+    "دخول": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In"
+          }
+        }
+      }
+    },
+    "خروج": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Out"
+          }
+        }
+      }
+    },
+    "إذن الإشعارات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notification permission"
+          }
+        }
+      }
+    },
+    "طلب إذن الإشعارات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request notification permission"
+          }
+        }
+      }
+    },
+    "مفعّل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed"
+          }
+        }
+      }
+    },
+    "مرفوض": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denied"
+          }
+        }
+      }
+    },
+    "غير محدد": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not set"
+          }
+        }
+      }
+    },
+    "المهم فقط: الأهداف والطرد والنهاية. متوازن: يضيف الاستراحة وأهم التحليلات. الكل: كل التحليلات.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Important only: goals, red cards, full time. Balanced: adds half time and key insights. All: every insight."
+          }
+        }
+      }
+    },
+    "إشعارات الخادم الفورية تحتاج اختباراً على آيفون حقيقي بعد التوقيع.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server push notifications need testing on a real iPhone after signing."
+          }
+        }
+      }
+    },
+    "الأنشطة المباشرة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Activities"
+          }
+        }
+      }
+    },
+    "مسموحة في النظام": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed by iOS"
+          }
+        }
+      }
+    },
+    "متوقفة من إعدادات الآيفون": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turned off in iPhone Settings"
+          }
+        }
+      }
+    },
+    "تظهر نتيجة مباريات فرقك المفضلة على شاشة القفل والجزيرة التفاعلية.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your favourite teams' scores on the Lock Screen and Dynamic Island."
+          }
+        }
+      }
+    },
+    "الأنشطة المباشرة والجزيرة التفاعلية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Activities and Dynamic Island"
+          }
+        }
+      }
+    },
+    "لم تُختبر بعد على آيفون حقيقي، تحتاج اختباراً فعلياً قبل اعتمادها.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not yet tested on a real iPhone; needs real-device testing before it can be relied on."
+          }
+        }
+      }
+    },
+    "مباراة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

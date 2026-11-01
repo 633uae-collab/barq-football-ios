@@ -54,7 +54,7 @@ struct AIView: View {
             Text("محلل FOTIQ الذكي").font(.title2.bold())
             Text("يتابع \(feed?.tracking ?? 0) مباراة مباشرة الآن").font(.subheadline).foregroundStyle(.secondary)
             Button {
-                let text = feed?.insights.first.map { "\($0.title). \($0.body)" } ?? String(localized: "لا توجد تحليلات حالياً")
+                let text = feed?.insights.first.map { "\($0.title). \($0.body)" } ?? L.s("لا توجد تحليلات حالياً")
                 let u = AVSpeechUtterance(string: text); u.voice = AVSpeechSynthesisVoice(language: store.lang == "en" ? "en-US" : "ar-SA")
                 speaker.speak(u)
             } label: { Label("اسمع آخر تحليل", systemImage: "speaker.wave.2") }

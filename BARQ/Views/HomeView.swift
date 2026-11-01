@@ -11,27 +11,38 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 if let e = error, !loaded {
                     EmptyState(symbol: "wifi.exclamationmark", title: "تعذر التحميل", message: LocalizedStringKey(e))
                 }
-                ForEach(store.homeSections, id: \.self) { key in section(key) }
+                ForEach(store.homeSections, id: \.self) { key in section(key).transition(.opacity) }
             }
+            .animation(.smooth(duration: 0.3), value: store.homeSections)
+            .animation(.smooth(duration: 0.3), value: loaded)
             .padding(.horizontal)
-            .padding(.bottom, 30)
+            .padding(.top, 2)
         }
+        // Keep the last row clear of the floating Liquid Glass tab bar.
+        .contentMargins(.bottom, 24, for: .scrollContent)
+        .safeAreaPadding(.bottom, 8)
         .screenBackground()
         .navigationTitle("FOTIQ")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 NavigationLink(value: Route.notifications) {
                     Image(systemName: store.unread > 0 ? "bell.badge" : "bell")
                 }
+                .accessibilityLabel(Text("الإشعارات"))
+                .accessibilityIdentifier("home-notifications")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink(value: Route.news) { Image(systemName: "newspaper") }
+                    .accessibilityLabel(Text("الأخبار")).accessibilityIdentifier("home-news")
                 Button { editing = true } label: { Image(systemName: "rectangle.3.group") }
+                    .accessibilityLabel(Text("ترتيب الأقسام")).accessibilityIdentifier("home-reorder")
                 NavigationLink(value: Route.settings) { Image(systemName: "gearshape") }
+                    .accessibilityLabel(Text("الإعدادات")).accessibilityIdentifier("home-settings")
             }
         }
         .sheet(isPresented: $editing) { ReorderSectionsSheet() }
@@ -131,32 +142,44 @@ struct TopCarousel: View {
     }
 }
 
+/// Team name that wraps to two lines and scales down slightly instead of truncating.
+struct TeamName: View {
+    let name: String
+    var font: Font = .subheadline.bold()
+    var body: some View {
+        Text(verbatim: name).font(font)
+            .lineLimit(2).minimumScaleFactor(0.75)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 struct HeroCard: View {
     let f: Fixture
     let rank: Int
     let total: Int
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             HStack {
-                RemoteImage(url: f.league.logo, fallback: "trophy", size: 22)
+                RemoteImage(url: f.league.logo, fallback: "trophy", size: 20)
                 Text(f.league.name).font(.caption.weight(.semibold)).lineLimit(1)
                 Spacer()
                 Text("\(rank) من \(total)").font(.caption.bold()).monospacedDigit()
                     .padding(.horizontal, 8).padding(.vertical, 3).glassEffect(.regular, in: .capsule)
             }
             HStack {
-                VStack(spacing: 8) { RemoteImage(url: f.home.logo, size: 64); Text(f.home.name).font(.subheadline.bold()).lineLimit(1) }.frame(maxWidth: .infinity)
+                VStack(spacing: 6) { RemoteImage(url: f.home.logo, size: 52); TeamName(name: f.home.name) }.frame(maxWidth: .infinity)
                 VStack(spacing: 6) {
-                    Text(f.isUpcoming ? Fmt.time(f.kickoff) : f.scoreText).font(.system(size: 34, weight: .heavy, design: .rounded)).monospacedDigit()
+                    Text(f.isUpcoming ? Fmt.time(f.kickoff) : f.scoreText).font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
                         .environment(\.layoutDirection, .leftToRight)
                     StatusBadge(f: f)
                     if !Calendar.current.isDateInToday(f.kickoff) { Text(Fmt.dateLabel(f.kickoff)).font(.caption2).foregroundStyle(.secondary) }
                 }
-                VStack(spacing: 8) { RemoteImage(url: f.away.logo, size: 64); Text(f.away.name).font(.subheadline.bold()).lineLimit(1) }.frame(maxWidth: .infinity)
+                VStack(spacing: 6) { RemoteImage(url: f.away.logo, size: 52); TeamName(name: f.away.name) }.frame(maxWidth: .infinity)
             }
             if let v = f.venue { Label(v, systemImage: "sportscourt").font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
         }
-        .padding(18)
+        .padding(.horizontal, 16).padding(.vertical, 12)
         .background {
             // Stadium-style backdrop drawn natively (no stock photo).
             ZStack {
@@ -179,13 +202,17 @@ struct LiveTicker: View {
                     HStack(spacing: 10) {
                         ForEach(matches) { f in
                             NavigationLink(value: Route.match(f.id)) {
-                                HStack(spacing: 6) {
-                                    RemoteImage(url: f.home.logo, size: 22)
-                                    Text(f.scoreText).font(.subheadline.bold()).monospacedDigit().environment(\.layoutDirection, .leftToRight)
-                                    RemoteImage(url: f.away.logo, size: 22)
+                                HStack(spacing: 8) {
+                                    RemoteImage(url: f.home.logo, size: 26)
+                                    Text(f.scoreText).font(.headline).monospacedDigit().environment(\.layoutDirection, .leftToRight)
+                                    RemoteImage(url: f.away.logo, size: 26)
                                     LivePill(minute: f.status.elapsed, extra: f.status.extra, status: f.status.short)
                                 }
-                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .padding(.horizontal, 14).padding(.vertical, 10)
+                                .frame(minHeight: 48)
+                                .contentShape(.capsule)
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel(Text(verbatim: "\(f.home.name) \(f.scoreText) \(f.away.name)"))
                                 .glassEffect(.regular.interactive(), in: .capsule)
                             }.buttonStyle(.plain)
                         }
@@ -211,7 +238,7 @@ struct InsightCard: View {
                 if let n = insight.nums, !n.isEmpty {
                     HStack(spacing: 10) {
                         ForEach(n.keys.sorted(), id: \.self) { k in
-                            VStack(spacing: 2) { Text(n[k]!.text).font(.caption.bold()).monospacedDigit(); Text(k).font(.caption2).foregroundStyle(.secondary) }
+                            VStack(spacing: 2) { Text(n[k]!.text).font(.caption.bold()).monospacedDigit(); Text(L.metric(k)).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8) }
                         }
                     }
                 }
@@ -232,16 +259,38 @@ struct ReorderSectionsSheet: View {
         @Bindable var s = store
         NavigationStack {
             List {
-                ForEach(s.homeSections, id: \.self) { k in
-                    Label(Self.names[k]?.0 ?? "", systemImage: Self.names[k]?.1 ?? "square")
-                }
-                .onMove { s.homeSections.move(fromOffsets: $0, toOffset: $1) }
+                Section {
+                    ForEach(s.homeSections, id: \.self) { k in
+                        Label(Self.names[k]?.0 ?? "", systemImage: Self.names[k]?.1 ?? "square")
+                            .accessibilityIdentifier("reorder-row-\(k)")
+                    }
+                    .onMove { s.homeSections.move(fromOffsets: $0, toOffset: $1) }
+                } header: { Text("اسحب لتغيير الترتيب") }
+                Section {
+                    // Live preview: miniature of the Home page in the order being edited.
+                    VStack(spacing: 6) {
+                        ForEach(Array(s.homeSections.enumerated()), id: \.element) { i, k in
+                            HStack(spacing: 10) {
+                                Text(verbatim: "\(i + 1)").font(.caption.bold()).monospacedDigit()
+                                    .frame(width: 22, height: 22).glassEffect(.regular, in: .circle)
+                                Image(systemName: Self.names[k]?.1 ?? "square").foregroundStyle(Color.accentColor)
+                                Text(Self.names[k]?.0 ?? "").font(.footnote)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 10))
+                        }
+                    }
+                    .animation(.smooth, value: s.homeSections)
+                    .accessibilityIdentifier("reorder-preview")
+                } header: { Text("معاينة الرئيسية") }
             }
             .environment(\.editMode, .constant(.active))
             .navigationTitle("ترتيب الأقسام")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("تم", systemImage: "checkmark") { dismiss() }.buttonStyle(.glassProminent) }
-                ToolbarItem(placement: .cancellationAction) { Button("افتراضي") { s.homeSections = AppStore.defaultSections } }
+                ToolbarItem(placement: .cancellationAction) { Button("استعادة الافتراضي", systemImage: "arrow.counterclockwise") { withAnimation { s.homeSections = AppStore.defaultSections } }
+                        .accessibilityIdentifier("reorder-reset") }
             }
         }
     }

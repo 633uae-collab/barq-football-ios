@@ -40,12 +40,16 @@ final class TimelineReplayTests: XCTestCase {
                 let kept = prev.filter { cur.contains($0) }
                 XCTAssertEqual(kept, cur.filter { prev.contains($0) }, "order of existing rows changed \(fx) \(u.lastPathComponent)")
                 let gone = prev.filter { !cur.contains($0) }
-                XCTAssertTrue(gone.filter { $0.hasPrefix("subst") || $0.hasPrefix("goal") }.isEmpty, "row identity churn \(fx) \(u.lastPathComponent): \(gone)")
+                // A key may only vanish when API-SPORTS corrects that event in place (same number of rows of that type),
+                // e.g. fixture 1490597 moved an unattributed goal 10' -> 22' and then added the scorer.
+                func count(_ k: [String], _ t: String) -> Int { k.filter { $0.hasPrefix(t + "|") }.count }
+                let churn = gone.filter { g in let t = String(g.split(separator: "|")[0]); return count(cur, t) < count(prev, t) }
+                XCTAssertTrue(churn.isEmpty, "row disappeared \(fx) \(u.lastPathComponent): \(churn)")
                 let newEvents = cur.filter { !prev.contains($0) && !$0.hasPrefix("m-") }
                 if !prev.isEmpty, let n = newEvents.first, let oldTop = prev.first(where: { !$0.hasPrefix("m-") }) {
                     // a newly reported latest event is above the previous top event
                     func m(_ k: String) -> Int { let p = k.split(separator: "|"); return (Int(p[1]) ?? 0) * 100 + (Int(p[2]) ?? 0) }
-                    if m(n) >= m(oldTop) { XCTAssertLessThan(cur.firstIndex(of: n)!, cur.firstIndex(of: oldTop)!) }
+                    if m(n) > m(oldTop) { XCTAssertLessThan(cur.firstIndex(of: n)!, cur.firstIndex(of: oldTop)!) }
                     transitions += 1
                 }
                 prev = cur

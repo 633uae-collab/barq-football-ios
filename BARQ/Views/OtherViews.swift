@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 struct NewsView: View {
     var body: some View {
@@ -128,8 +129,47 @@ enum NoteKind: String, CaseIterable { case all, ai, goals, results
     var title: LocalizedStringKey { switch self { case .all: "الكل"; case .ai: "تحليلات"; case .goals: "أحداث"; case .results: "نتائج" } }
     var symbol: String { switch self { case .all: "tray.full"; case .ai: "brain.head.profile"; case .goals: "soccerball.inverse"; case .results: "flag.checkered" } }
     func match(_ i: Insight) -> Bool {
-        switch self { case .all: true; case .ai: ["pressure", "shift", "possession"].contains(i.type); case .goals: i.type == "red"; case .results: ["ht", "ft"].contains(i.type) }
+        switch self {
+        case .all: true
+        case .ai: ["pressure", "shift", "possession"].contains(i.type)
+        case .goals: ["goal", "red", "kickoff", "second"].contains(i.type)
+        case .results: ["ht", "ft"].contains(i.type)
+        }
     }
+}
+
+/// Pure helpers for the notifications list (dedupe + day/match grouping), unit tested.
+enum NoteGrouping {
+    struct Group: Identifiable { var id: String; var day: Date; var fixture: Int; var items: [Insight] }
+    static func dedupe(_ list: [Insight]) -> [Insight] {
+        var seen = Set<Int>(), seenKey = Set<String>()
+        return list.filter { i in
+            let k = "\(i.fixture)|\(i.type)|\(i.minute)|\(i.title)"
+            return seen.insert(i.id).inserted && seenKey.insert(k).inserted
+        }
+    }
+    /// Newest day first; inside a day, matches ordered by their latest note; notes newest first.
+    static func groups(_ list: [Insight], calendar: Calendar = .current) -> [Group] {
+        let items = dedupe(list).sorted { $0.at > $1.at }
+        var order: [String] = [], map: [String: Group] = [:]
+        for i in items {
+            let day = calendar.startOfDay(for: i.date)
+            let key = "\(Int(day.timeIntervalSince1970))-\(i.fixture)"
+            if map[key] == nil { order.append(key); map[key] = Group(id: key, day: day, fixture: i.fixture, items: []) }
+            map[key]!.items.append(i)
+        }
+        return order.compactMap { map[$0] }
+    }
+    static func tint(_ type: String) -> Color {
+        switch type {
+        case "goal": Color("BrandGreen")
+        case "red": .red
+        case "ht", "ft", "second", "kickoff": .orange
+        case "pressure", "shift", "possession": .cyan
+        default: .secondary
+        }
+    }
+    static func clean(_ s: String) -> String { s.replacingOccurrences(of: " — ", with: " · ") }
 }
 
 struct NotificationsView: View {
@@ -137,33 +177,93 @@ struct NotificationsView: View {
     @State private var kind: NoteKind = .all
     var body: some View {
         @Bindable var s = store
+        let groups = NoteGrouping.groups(store.notifications.filter(kind.match))
         List {
             Section {
-                Picker("النوع", selection: $kind) { ForEach(NoteKind.allCases, id: \.self) { Label($0.title, systemImage: $0.symbol).tag($0) } }.pickerStyle(.segmented)
+                ScrollView(.horizontal) {
+                    GlassEffectContainer(spacing: 8) {
+                        HStack(spacing: 8) {
+                            ForEach(NoteKind.allCases, id: \.self) { k in
+                                Button { withAnimation(.smooth) { kind = k } } label: {
+                                    Label(k.title, systemImage: k.symbol).font(.subheadline.weight(.semibold)).fixedSize()
+                                        .padding(.horizontal, 14).frame(minHeight: 40)
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(kind == k ? Color.black : Color.primary)
+                                .glassEffect(kind == k ? .regular.tint(Color("BrandGreen")).interactive() : .regular.interactive(), in: .capsule)
+                                .accessibilityIdentifier("notif-filter-\(k.rawValue)")
+                                .accessibilityAddTraits(kind == k ? .isSelected : [])
+                            }
+                        }.padding(.vertical, 2)
+                    }
+                }.scrollIndicators(.hidden)
                 Picker(selection: $s.alertDensity) {
                     Text("المهم فقط").tag(0); Text("متوازن").tag(1); Text("الكل").tag(2)
                 } label: { Label("كثافة التنبيهات", systemImage: "slider.horizontal.3") }
-            }
-            let list = store.notifications.filter(kind.match)
-            if list.isEmpty { EmptyState(symbol: "bell", title: "لا توجد إشعارات").listRowBackground(Color.clear) }
-            ForEach(list) { i in
-                NavigationLink(value: Route.match(i.fixture)) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: i.symbol).font(.title3).foregroundStyle(["pressure", "shift", "possession"].contains(i.type) ? .cyan : .secondary)
-                            .frame(width: 36, height: 36).glassEffect(.regular, in: .circle)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(i.title).font(.subheadline.bold())
-                            Text(i.body).font(.caption).foregroundStyle(.secondary)
-                            Text(Fmt.ago(i.date)).font(.caption2).foregroundStyle(.tertiary)
-                        }
+            }.listRowBackground(Color.clear)
+            if groups.isEmpty { EmptyState(symbol: "bell", title: "لا توجد إشعارات").listRowBackground(Color.clear) }
+            ForEach(groups) { g in
+                Section {
+                    ForEach(g.items) { i in
+                        NavigationLink(value: Route.match(i.fixture)) { NoteRow(i: i) }
+                            .listRowBackground(Color.clear)
+                            .accessibilityIdentifier("notif-\(i.id)")
                     }
-                }.listRowBackground(Color.clear)
+                } header: { header(g) }
             }
         }
         .scrollContentBackground(.hidden)
         .screenBackground()
         .navigationTitle("الإشعارات")
         .onAppear { store.unread = 0 }
+    }
+
+    func header(_ g: NoteGrouping.Group) -> some View {
+        let m = g.items.first?.match
+        return HStack(spacing: 6) {
+            if let m {
+                RemoteImage(url: m.homeLogo, size: 18)
+                Text(verbatim: "\(m.home) \(m.score ?? "×") \(m.away)").lineLimit(1).minimumScaleFactor(0.8)
+                RemoteImage(url: m.awayLogo, size: 18)
+            } else { Text("مباراة") }
+            Spacer()
+            Text(Fmt.dateLabel(g.day)).foregroundStyle(.secondary)
+        }.font(.caption.bold()).textCase(nil)
+    }
+}
+
+struct NoteRow: View {
+    let i: Insight
+    var logo: String? {
+        guard let m = i.match, let t = i.team, !t.isEmpty else { return nil }
+        return t == m.home ? m.homeLogo : (t == m.away ? m.awayLogo : nil)
+    }
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack(alignment: .bottomTrailing) {
+                if let logo { RemoteImage(url: logo, size: 30).frame(width: 38, height: 38).glassEffect(.regular, in: .circle) }
+                else {
+                    Image(systemName: i.symbol).font(.body.weight(.semibold)).foregroundStyle(NoteGrouping.tint(i.type))
+                        .frame(width: 38, height: 38).glassEffect(.regular, in: .circle)
+                }
+                if logo != nil {
+                    Image(systemName: i.symbol).font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                        .frame(width: 18, height: 18).background(NoteGrouping.tint(i.type), in: .circle)
+                }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(verbatim: NoteGrouping.clean(i.title)).font(.subheadline.bold()).lineLimit(2)
+                    Spacer(minLength: 4)
+                    Text(verbatim: "\(i.minute)'").font(.caption.bold()).monospacedDigit()
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(NoteGrouping.tint(i.type).opacity(0.18), in: .capsule)
+                }
+                Text(verbatim: NoteGrouping.clean(i.body)).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                Text(Fmt.ago(i.date)).font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -195,11 +295,31 @@ struct SettingsView: View {
                 Picker(selection: $s.tz) { ForEach(Self.zones, id: \.self) { Text($0).tag($0) } } label: { Label("المنطقة الزمنية", systemImage: "clock") }
             } header: { Text("اللغة والمنطقة") }
             Section {
-                Button { Task { notifOK = await Notifier.requestPermission() } } label: { Label("تفعيل الإشعارات", systemImage: "bell.badge") }
-                if let ok = notifOK { Text(ok ? "تم التفعيل" : "تم الرفض، فعّلها من إعدادات الآيفون").font(.caption) }
-                Label(LiveActivities.enabled ? "Live Activities مفعلة" : "Live Activities غير مفعلة", systemImage: "platter.filled.bottom.iphone")
+                HStack {
+                    Label("إذن الإشعارات", systemImage: "bell.badge")
+                    Spacer()
+                    Text(notifStatusText).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("settings-notif-status")
+                }
+                if notifStatus != .authorized {
+                    Button { Task { notifOK = await Notifier.requestPermission(); await refreshStatus() } } label: { Label("طلب إذن الإشعارات", systemImage: "hand.tap") }
+                }
+                if notifOK == false { Text("تم الرفض، فعّلها من إعدادات الآيفون").font(.caption).foregroundStyle(.secondary) }
                 Picker(selection: $s.alertDensity) { Text("المهم فقط").tag(0); Text("متوازن").tag(1); Text("الكل").tag(2) } label: { Label("كثافة التنبيهات", systemImage: "slider.horizontal.3") }
-            } header: { Text("الإشعارات") }
+                    .accessibilityIdentifier("settings-density")
+                Text("المهم فقط: الأهداف والطرد والنهاية. متوازن: يضيف الاستراحة وأهم التحليلات. الكل: كل التحليلات.").font(.caption).foregroundStyle(.secondary)
+            } header: { Text("الإشعارات") } footer: {
+                Label("إشعارات الخادم الفورية تحتاج اختباراً على آيفون حقيقي بعد التوقيع.", systemImage: "iphone.gen3").font(.caption)
+            }
+            Section {
+                HStack {
+                    Label("الأنشطة المباشرة", systemImage: "platter.filled.bottom.iphone")
+                    Spacer()
+                    Text(LiveActivities.enabled ? "مسموحة في النظام" : "متوقفة من إعدادات الآيفون").font(.footnote).foregroundStyle(.secondary)
+                }
+                Text("تظهر نتيجة مباريات فرقك المفضلة على شاشة القفل والجزيرة التفاعلية.").font(.caption).foregroundStyle(.secondary)
+            } header: { Text("الأنشطة المباشرة والجزيرة التفاعلية") } footer: {
+                Label("لم تُختبر بعد على آيفون حقيقي، تحتاج اختباراً فعلياً قبل اعتمادها.", systemImage: "exclamationmark.triangle").font(.caption)
+            }
             Section {
                 Label("لا نجمع أي بيانات شخصية. المفضلة محفوظة بمعرّف جهاز عشوائي.", systemImage: "hand.raised").font(.footnote)
                 TextField("عنوان الخادم (اختياري)", text: $apiOverride).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -212,5 +332,16 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .screenBackground()
         .navigationTitle("الإعدادات")
+        .task { await refreshStatus() }
     }
+
+    @State private var notifStatus: UNAuthorizationStatus = .notDetermined
+    var notifStatusText: LocalizedStringKey {
+        switch notifStatus {
+        case .authorized, .provisional, .ephemeral: "مفعّل"
+        case .denied: "مرفوض"
+        default: "غير محدد"
+        }
+    }
+    func refreshStatus() async { notifStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus }
 }

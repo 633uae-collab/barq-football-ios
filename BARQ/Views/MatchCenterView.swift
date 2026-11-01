@@ -132,19 +132,26 @@ enum TimelineOrder {
     enum Row: Hashable { case event(index: Int, MatchEvent), marker(Marker) }
     static let pastHT: Set<String> = ["HT", "2H", "ET", "BT", "P", "FT", "AET", "PEN"]
     static func rows(_ events: [MatchEvent], status: String) -> [Row] {
-        typealias K = (Int, Int, Int)
-        var items: [(K, Row)] = events.enumerated().map { i, e in ((e.time.elapsed ?? 0, e.time.extra ?? 0, i), .event(index: i, e)) }
+        // Same-minute ties: API-SPORTS reshuffles same-minute events between refreshes (seen in recorded real snapshots,
+        // e.g. 4 half-time subs), so ties are ordered deterministically by type priority then stable key, never by array index.
+        typealias K = (Int, Int, Int, String)
+        var items: [(K, Row)] = events.enumerated().map { i, e in ((e.time.elapsed ?? 0, e.time.extra ?? 0, priority(e), key(e)), .event(index: i, e)) }
         if pastHT.contains(status) {
             // HT sits above every first-half event (incl. 45+x stoppage) and below the first second-half event
-            items.append(((45, 999, Int.max), .marker(.ht)))
+            items.append(((45, 999, 0, ""), .marker(.ht)))
         }
-        if Fixture.doneCodes.contains(status) { items.append(((Int.max, 0, 0), .marker(.ft))) }
+        if Fixture.doneCodes.contains(status) { items.append(((Int.max, 0, 0, ""), .marker(.ft))) }
         let sorted = items.sorted { l, r in
             if l.0.0 != r.0.0 { return l.0.0 > r.0.0 }
             if l.0.1 != r.0.1 { return l.0.1 > r.0.1 }
-            return l.0.2 > r.0.2
+            if l.0.2 != r.0.2 { return l.0.2 > r.0.2 }
+            return l.0.3 > r.0.3
         }.map(\.1)
         return sorted + [.marker(.kickoff)]
+    }
+    /// Within one minute: goal above VAR above card above substitution.
+    static func priority(_ e: MatchEvent) -> Int {
+        switch e.type.lowercased() { case "goal": 4; case "var": 3; case "card": 2; case "subst": 1; default: 0 }
     }
     /// Stable identity per event: fixture-independent key of type+minute+extra+player+team (+detail),
     /// with an occurrence counter for genuine duplicates. Independent of API array position, so a refresh never re-creates rows.
@@ -155,7 +162,7 @@ enum TimelineOrder {
         // Vancouver-Seattle), so those details are excluded; subs use the outgoing player (assist) instead.
         let extra: String = switch t {
         case "subst": e.assist?.id.map(String.init) ?? e.assist?.name ?? ""
-        case "goal": ""
+        case "goal", "var": ""   // VAR detail also changes ("" -> "Penalty confirmed") on later refreshes
         default: e.detail ?? ""
         }
         return "\(t)|\(e.time.elapsed ?? 0)|\(e.time.extra ?? 0)|\(who)|\(e.team.id)|\(extra)"
@@ -205,22 +212,41 @@ struct TimelineSection: View {
                 .frame(width: 44, height: 26).glassEffect(.regular, in: .capsule)
             Group { if isHome { Color.clear.frame(height: 1) } else { card(e) } }.frame(maxWidth: .infinity)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 
-    func card(_ e: MatchEvent) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: symbol(e)).foregroundStyle(color(e)).font(.subheadline)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(e.player?.name ?? e.team.name).font(.caption.weight(.semibold)).lineLimit(1)
-                if let a = e.assist?.name { Text(e.type == "subst" ? "خروج: \(a)" : "صناعة: \(a)").font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
-                else if e.type.lowercased() == "var", let det = e.detail { Text(det).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+    @ViewBuilder func card(_ e: MatchEvent) -> some View {
+        let isSub = e.type.lowercased() == "subst"
+        HStack(alignment: .top, spacing: 6) {
+            if !isSub { Image(systemName: symbol(e)).foregroundStyle(color(e)).font(.subheadline) }
+            VStack(alignment: .leading, spacing: 2) {
+                if isSub {
+                    // API-Football subst: `player` comes on, `assist` goes off (same mapping the app used before).
+                    subLine(e.player?.name ?? e.team.name, inbound: true)
+                    if let a = e.assist?.name { subLine(a, inbound: false) }
+                } else {
+                    Text(verbatim: e.player?.name ?? e.team.name).font(.caption.weight(.semibold))
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    if let a = e.assist?.name { Text("صناعة: \(a)").font(.caption2).foregroundStyle(.secondary).lineLimit(2) }
+                    else if e.type.lowercased() == "var", let det = e.detail { Text(verbatim: det).font(.caption2).foregroundStyle(.secondary).lineLimit(2) }
+                }
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8).padding(.vertical, 6)
+        .padding(.horizontal, 7).padding(.vertical, 5)
         .glassEffect(.regular, in: .rect(cornerRadius: 12))
+    }
+
+    func subLine(_ name: String, inbound: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Image(systemName: inbound ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                .foregroundStyle(inbound ? Color("BrandGreen") : .red).font(.caption)
+                .accessibilityLabel(Text(inbound ? "دخول" : "خروج"))
+            Text(verbatim: name).font(inbound ? .caption.weight(.semibold) : .caption2)
+                .foregroundStyle(inbound ? .primary : .secondary)
+                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     func marker(_ m: TimelineOrder.Marker) -> some View {
@@ -232,7 +258,7 @@ struct TimelineSection: View {
         return Label(title, systemImage: sym).font(.caption.bold())
             .padding(.horizontal, 12).padding(.vertical, 5)
             .glassEffect(.regular.tint(Color("BrandGreen").opacity(0.25)), in: .capsule)
-            .frame(maxWidth: .infinity).padding(.vertical, 5)
+            .frame(maxWidth: .infinity).padding(.vertical, 3)
     }
     func symbol(_ e: MatchEvent) -> String {
         switch e.type.lowercased() {
@@ -373,7 +399,7 @@ struct PredictionSection: View {
                     Text("تقدير إحصائي وليس نتيجة مؤكدة").font(.caption).foregroundStyle(.secondary)
                     Chart {
                         BarMark(x: .value("p", pct(pc.home)), y: .value("t", t.home.name)).foregroundStyle(.blue)
-                        BarMark(x: .value("p", pct(pc.draw)), y: .value("t", String(localized: "تعادل"))).foregroundStyle(.gray)
+                        BarMark(x: .value("p", pct(pc.draw)), y: .value("t", L.s("تعادل"))).foregroundStyle(.gray)
                         BarMark(x: .value("p", pct(pc.away)), y: .value("t", t.away.name)).foregroundStyle(.purple)
                     }
                     .chartXScale(domain: 0...100).frame(height: 140)
@@ -400,7 +426,7 @@ struct WhyList: View {
                     let a = Double((c[k]?.away ?? "0").replacingOccurrences(of: "%", with: "")) ?? 0
                     HStack {
                         Text(Self.names[k] ?? k).frame(width: 90, alignment: .leading)
-                        Text(h > a ? t.home.name : (a > h ? t.away.name : String(localized: "متساوي"))).bold()
+                        Text(h > a ? t.home.name : (a > h ? t.away.name : L.s("متساوي"))).bold()
                         Spacer()
                         Text("\(Int(h))% - \(Int(a))%").monospacedDigit().foregroundStyle(.secondary)
                     }.font(.caption)
@@ -437,9 +463,9 @@ struct MatchAISection: View {
     }
     func statusText(_ r: InsightsResponse) -> String {
         switch r.status {
-        case "stale": return String(localized: "البيانات متأخرة، المحلل متوقف مؤقتاً")
-        case "not_tracked": return String(localized: "المحلل لا يتابع هذه المباراة")
-        default: return String(localized: "المحلل يتابع المباراة مباشرة")
+        case "stale": return L.s("البيانات متأخرة، المحلل متوقف مؤقتاً")
+        case "not_tracked": return L.s("المحلل لا يتابع هذه المباراة")
+        default: return L.s("المحلل يتابع المباراة مباشرة")
         }
     }
 }
