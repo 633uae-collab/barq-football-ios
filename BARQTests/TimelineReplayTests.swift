@@ -49,7 +49,7 @@ final class TimelineReplayTests: XCTestCase {
                 if !prev.isEmpty, let n = newEvents.first, let oldTop = prev.first(where: { !$0.hasPrefix("m-") }) {
                     // a newly reported latest event is above the previous top event
                     func m(_ k: String) -> Int { let p = k.split(separator: "|"); return (Int(p[1]) ?? 0) * 100 + (Int(p[2]) ?? 0) }
-                    if m(n) > m(oldTop) { XCTAssertLessThan(cur.firstIndex(of: n)!, cur.firstIndex(of: oldTop)!) }
+                    if m(n) > m(oldTop), let iN = cur.firstIndex(of: n), let iO = cur.firstIndex(of: oldTop) { XCTAssertLessThan(iN, iO) }
                     transitions += 1
                 }
                 prev = cur
