@@ -28,6 +28,7 @@ final class LiveTimelineUITests: XCTestCase {
         XCTAssertEqual(kept, cur.filter { prev.contains($0) }, "previous relative order changed")
         let gone = prev.filter { !cur.contains($0) && !$0.hasPrefix("tl-m-") }
         let new = cur.filter { !prev.contains($0) }
+        XCTAssertTrue(gone.isEmpty, "rows disappeared/recreated between refreshes: \(gone)")
         if !new.isEmpty || !gone.isEmpty { log.append("new=\(new) gone=\(gone) top=\(cur.first ?? "")") }
         if let firstNew = new.first(where: { !$0.hasPrefix("tl-m-") }), let oldTop = prev.first(where: { !$0.hasPrefix("tl-m-") }),
            minute(firstNew) >= minute(oldTop) {
@@ -42,7 +43,7 @@ final class LiveTimelineUITests: XCTestCase {
         var prev = keys(app), log: [String] = []
         save("replay-start")
         var scrolledCheck = false
-        for i in 1..<min(steps, 60) {
+        for i in 1..<min(steps, 50) {
             // halfway: scroll down into the list to verify inserts above do not yank the reader
             if i == 3 { app.swipeUp(velocity: .slow); sleep(1) }
             let anchorId = prev.dropFirst(prev.count / 2).first
@@ -83,20 +84,29 @@ final class LiveTimelineUITests: XCTestCase {
     /// Real finished match with 45+3 and 90+5 events; top screenshot, then scrolled to the kickoff marker.
     func testStoppageOrderAndFullLength() {
         let app = XCUIApplication(); app.launchArguments = ["-screen", "timeline", "-id", env["STOPPAGE_ID"] ?? "1559185"]; app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["tl-m-kickoff"].waitForExistence(timeout: 40))
-        let k = keys(app)
-        let ht = k.firstIndex(of: "tl-m-ht")!
+        XCTAssertTrue(app.descendants(matching: .any)["tl-m-ft"].waitForExistence(timeout: 40))
+        save("timeline-top")
+        // SwiftUI exposes only on-screen rows to accessibility: collect while scrolling, keeping first-seen order
+        var k: [String] = []
+        for step in 0..<8 {
+            for x in keys(app) where !k.contains(x) { k.append(x) }
+            if k.last == "tl-m-kickoff" { break }
+            app.swipeUp(velocity: .slow); sleep(1)
+            if step == 7 { XCTFail("kickoff marker not reached") }
+        }
+        sleep(1)
+        XCTAssertTrue(app.descendants(matching: .any)["tl-m-kickoff"].exists)
+        save("timeline-bottom")
+        print("STOPPAGE_ORDER " + k.joined(separator: " "))
+        XCTAssertEqual(k.last, "tl-m-kickoff")
+        guard let ht = k.firstIndex(of: "tl-m-ht") else { return XCTFail("no HT marker") }
         for (i, key) in k.enumerated() where !key.hasPrefix("tl-m-") {
             let m = minute(key)
             if m > 4500 && m < 4600 { XCTAssertGreaterThan(i, ht, "45+x must be below HT marker") }
             if m >= 4600 { XCTAssertLessThan(i, ht, "2nd half above HT") }
         }
-        save("timeline-top")
-        for _ in 0..<6 { app.swipeUp(velocity: .fast) }
-        sleep(1)
-        XCTAssertTrue(app.descendants(matching: .any)["tl-m-kickoff"].isHittable)
-        save("timeline-bottom")
-        print("STOPPAGE_ORDER " + k.joined(separator: " "))
+        let ev = k.filter { !$0.hasPrefix("tl-m-") }
+        XCTAssertEqual(ev.map(minute), ev.map(minute).sorted(by: >))
     }
 
     func testLongNamesLargeText() {

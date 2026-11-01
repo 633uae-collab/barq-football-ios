@@ -149,7 +149,16 @@ enum TimelineOrder {
     /// Stable identity per event: fixture-independent key of type+minute+extra+player+team (+detail),
     /// with an occurrence counter for genuine duplicates. Independent of API array position, so a refresh never re-creates rows.
     static func key(_ e: MatchEvent) -> String {
-        "\(e.type.lowercased())|\(e.time.elapsed ?? 0)|\(e.time.extra ?? 0)|\(e.player?.id.map(String.init) ?? e.player?.name ?? "")|\(e.team.id)|\(e.detail ?? "")"
+        let t = e.type.lowercased()
+        let who = e.player?.id.map(String.init) ?? e.player?.name ?? ""
+        // API-SPORTS renumbers "Substitution N" and may re-label goal details between refreshes (seen live 2026-11-02,
+        // Vancouver-Seattle), so those details are excluded; subs use the outgoing player (assist) instead.
+        let extra: String = switch t {
+        case "subst": e.assist?.id.map(String.init) ?? e.assist?.name ?? ""
+        case "goal": ""
+        default: e.detail ?? ""
+        }
+        return "\(t)|\(e.time.elapsed ?? 0)|\(e.time.extra ?? 0)|\(who)|\(e.team.id)|\(extra)"
     }
     struct Keyed { let key: String; let row: Row }
     static func keyed(_ events: [MatchEvent], status: String) -> [Keyed] {

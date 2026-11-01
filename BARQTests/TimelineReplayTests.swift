@@ -39,6 +39,8 @@ final class TimelineReplayTests: XCTestCase {
                 XCTAssertEqual(cur.last, "m-kickoff")
                 let kept = prev.filter { cur.contains($0) }
                 XCTAssertEqual(kept, cur.filter { prev.contains($0) }, "order of existing rows changed \(fx) \(u.lastPathComponent)")
+                let gone = prev.filter { !cur.contains($0) }
+                XCTAssertTrue(gone.filter { $0.hasPrefix("subst") || $0.hasPrefix("goal") }.isEmpty, "row identity churn \(fx) \(u.lastPathComponent): \(gone)")
                 let newEvents = cur.filter { !prev.contains($0) && !$0.hasPrefix("m-") }
                 if !prev.isEmpty, let n = newEvents.first, let oldTop = prev.first(where: { !$0.hasPrefix("m-") }) {
                     // a newly reported latest event is above the previous top event
