@@ -51,9 +51,14 @@ jobs:
       - name: UI tests (real backend data)
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test -skip-testing:BARQUITests/LiveTimelineUITests 2>&1 | tee uitest.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test -skip-testing:BARQUITests/LiveTimelineUITests -skip-testing:BARQUITests/HomeReviewUITests 2>&1 | tee uitest.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
           grep -q "TEST SUCCEEDED" uitest.log
           mkdir -p shots; cp /tmp/fotiq-springboard.png shots/v4-00-home-screen-icon.png || echo "no springboard capture"
+      - name: Home design review captures (screenshots only)
+        continue-on-error: true
+        run: |
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test -only-testing:BARQUITests/HomeReviewUITests 2>&1 | tee review.log | grep -E "Test Case|HOME_REVIEW|error:" || true
+          mkdir -p shots/review; cp /tmp/review-home-*.png shots/review/ || true
       - name: Live timeline tests (live match now + replay of recorded real snapshots)
         run: |
           API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
