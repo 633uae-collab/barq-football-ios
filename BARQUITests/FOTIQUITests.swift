@@ -43,4 +43,22 @@ final class FOTIQUITests: XCTestCase {
         app = launch(["-screen", "monthpicker"])
         XCTAssertTrue(app.datePickers.firstMatch.waitForExistence(timeout: 15))
     }
+
+    /// Grants notification permission through the real system alert (so CI can test an APNs payload banner),
+    /// then captures the home screen page that holds the FOTIQ icon.
+    func testZNotificationPermissionAndHomeIcon() {
+        let app = launch(["-screen", "settings", "-requestNotifs", "YES"])
+        let sb = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = sb.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "السماح"])).firstMatch
+        if allow.waitForExistence(timeout: 15) { allow.tap() }
+        app.terminate()
+        XCUIDevice.shared.press(.home)
+        sleep(2)
+        for _ in 0..<4 {
+            if sb.icons["FOTIQ"].exists && sb.icons["FOTIQ"].isHittable { break }
+            sb.swipeLeft(); sleep(1)
+        }
+        XCTAssertTrue(sb.icons["FOTIQ"].exists, "FOTIQ icon on home screen")
+        try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/fotiq-springboard.png"))
+    }
 }

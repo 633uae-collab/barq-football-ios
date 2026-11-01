@@ -99,6 +99,7 @@ struct ScreenRouter: View {
                         store.favTeams = [TeamRef(id: i.id, name: i.name, logo: i.logo, winner: nil)]
                     }
                     if screen == "liveactivity" { await startActivity() }
+                    if d.bool(forKey: "requestNotifs") { _ = await Notifier.requestPermission() }
                 }
         } else {
             RootView()

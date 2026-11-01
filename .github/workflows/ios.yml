@@ -53,14 +53,14 @@ jobs:
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test 2>&1 | tee uitest.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
           grep -q "TEST SUCCEEDED" uitest.log
+          mkdir -p shots; cp /tmp/fotiq-springboard.png shots/v4-00-home-screen-icon.png || echo "no springboard capture"
       - name: Screenshots of all 17 screens (real API-SPORTS data via backend)
         run: |
           xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
           APP=$(find dd/Build/Products -name BARQ.app -path "*iphonesimulator*" | head -1)
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl ui "$UDID" appearance dark
-          mkdir -p shots; sleep 8
-          xcrun simctl io "$UDID" screenshot shots/v4-00-springboard.png   # home screen with FOTIQ icon + name
+          mkdir -p shots
           xcrun simctl status_bar "$UDID" override --time 9:41 || true
           mkdir -p shots
           API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
