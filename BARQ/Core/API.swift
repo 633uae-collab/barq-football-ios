@@ -45,8 +45,7 @@ actor API {
         let data: Data, resp: URLResponse
         do { (data, resp) = try await session.data(for: req) } catch { base = nil; throw APIError.offline }
         if let h = resp as? HTTPURLResponse, h.statusCode >= 400 {
-            struct E: Decodable { var error: String? }
-            throw APIError.server((try? JSONDecoder().decode(E.self, from: data))?.error ?? "HTTP \(h.statusCode)")
+            throw APIError.server((try? JSONDecoder().decode(ServerError.self, from: data))?.error ?? "HTTP \(h.statusCode)")
         }
         mem[path] = (Date(), data)
         return try JSONDecoder().decode(T.self, from: data)
@@ -103,3 +102,5 @@ enum Fmt {
         return String(localized: "قبل \(m / 60) س")
     }
 }
+
+struct ServerError: Decodable { var error: String? }
