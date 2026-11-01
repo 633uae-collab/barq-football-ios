@@ -105,37 +105,92 @@ struct Scoreboard: View {
     }
 }
 
+/// Timeline ordering: newest at top, kickoff at bottom. Sort key = elapsed, then extra, then API order (later on top).
+enum TimelineOrder {
+    enum Marker: String { case kickoff, ht, ft }
+    enum Row: Hashable { case event(index: Int, MatchEvent), marker(Marker) }
+    static let pastHT: Set<String> = ["HT", "2H", "ET", "BT", "P", "FT", "AET", "PEN"]
+    static func rows(_ events: [MatchEvent], status: String) -> [Row] {
+        typealias K = (Int, Int, Int)
+        var items: [(K, Row)] = events.enumerated().map { i, e in ((e.time.elapsed ?? 0, e.time.extra ?? 0, i), .event(index: i, e)) }
+        if pastHT.contains(status) {
+            // HT sits above every first-half event (incl. 45+x stoppage) and below the first second-half event
+            items.append(((45, 999, Int.max), .marker(.ht)))
+        }
+        if Fixture.doneCodes.contains(status) { items.append(((Int.max, 0, 0), .marker(.ft))) }
+        let sorted = items.sorted { l, r in
+            if l.0.0 != r.0.0 { return l.0.0 > r.0.0 }
+            if l.0.1 != r.0.1 { return l.0.1 > r.0.1 }
+            return l.0.2 > r.0.2
+        }.map(\.1)
+        return sorted + [.marker(.kickoff)]
+    }
+}
+
 struct TimelineSection: View {
     let d: MatchDetail
     var body: some View {
-        if d.events.isEmpty { EmptyState(symbol: "list.bullet.below.rectangle", title: "لا توجد أحداث بعد") }
+        if d.events.isEmpty && d.match.isUpcoming { EmptyState(symbol: "list.bullet.below.rectangle", title: "لا توجد أحداث بعد") }
         else {
-            VStack(spacing: 8) {
-                ForEach(Array(d.events.enumerated()), id: \.offset) { _, e in
-                    let isHome = e.team.id == d.match.home.id
-                    HStack {
-                        if !isHome { Spacer() }
-                        HStack(spacing: 8) {
-                            Text("\(e.time.elapsed ?? 0)'" + (e.time.extra.map { "+\($0)" } ?? "")).font(.caption.bold()).monospacedDigit().frame(width: 40)
-                            Image(systemName: symbol(e)).foregroundStyle(color(e))
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(e.player?.name ?? "").font(.subheadline.weight(.semibold))
-                                if let a = e.assist?.name { Text(e.type == "subst" ? "خروج: \(a)" : "صناعة: \(a)").font(.caption2).foregroundStyle(.secondary) }
-                            }
-                        }
-                        .padding(10).glassEffect(.regular, in: .rect(cornerRadius: 14))
-                        if isHome { Spacer() }
+            VStack(spacing: 0) {
+                ForEach(TimelineOrder.rows(d.events, status: d.match.status.short), id: \.self) { row in
+                    switch row {
+                    case .marker(let m): marker(m)
+                    case .event(_, let e): eventRow(e)
                     }
                 }
             }
+            .padding(.vertical, 6)
+            .background(alignment: .center) { Rectangle().fill(.secondary.opacity(0.35)).frame(width: 2) }
+            .animation(.snappy, value: d.events.count)
         }
+    }
+
+    func minuteText(_ e: MatchEvent) -> String { "\(e.time.elapsed ?? 0)'" + (e.time.extra.map { "+\($0)" } ?? "") }
+
+    @ViewBuilder func eventRow(_ e: MatchEvent) -> some View {
+        let isHome = e.team.id == d.match.home.id
+        HStack(spacing: 6) {
+            Group { if isHome { card(e) } else { Color.clear.frame(height: 1) } }.frame(maxWidth: .infinity)
+            Text(minuteText(e)).font(.caption2.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                .frame(width: 44, height: 26).glassEffect(.regular, in: .capsule)
+            Group { if isHome { Color.clear.frame(height: 1) } else { card(e) } }.frame(maxWidth: .infinity)
+        }
+        .padding(.vertical, 3)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    func card(_ e: MatchEvent) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol(e)).foregroundStyle(color(e)).font(.subheadline)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(e.player?.name ?? e.team.name).font(.caption.weight(.semibold)).lineLimit(1)
+                if let a = e.assist?.name { Text(e.type == "subst" ? "خروج: \(a)" : "صناعة: \(a)").font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                else if e.type.lowercased() == "var", let det = e.detail { Text(det).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .glassEffect(.regular, in: .rect(cornerRadius: 12))
+    }
+
+    func marker(_ m: TimelineOrder.Marker) -> some View {
+        let (title, sym): (LocalizedStringKey, String) = switch m {
+        case .kickoff: ("بداية المباراة", "flag")
+        case .ht: ("نهاية الشوط الأول", "pause.circle")
+        case .ft: ("نهاية المباراة", "flag.checkered")
+        }
+        return Label(title, systemImage: sym).font(.caption.bold())
+            .padding(.horizontal, 12).padding(.vertical, 5)
+            .glassEffect(.regular.tint(Color("BrandGreen").opacity(0.25)), in: .capsule)
+            .frame(maxWidth: .infinity).padding(.vertical, 5)
     }
     func symbol(_ e: MatchEvent) -> String {
         switch e.type.lowercased() {
         case "goal": return e.detail == "Missed Penalty" ? "xmark.circle" : "soccerball.inverse"
         case "card": return "rectangle.portrait.fill"
         case "subst": return "arrow.up.arrow.down"
-        case "var": return "tv"
+        case "var": return "video.badge.checkmark"
         default: return "circle"
         }
     }

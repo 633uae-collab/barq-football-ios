@@ -88,6 +88,7 @@ struct ScreenRouter: View {
     @State private var monthOffset = 0
     @State private var preview: Fixture?
     @State private var laStatus = ""
+    @State private var timelineMatch: MatchDetail?
     private let d = UserDefaults.standard
     var body: some View {
         if let screen = d.string(forKey: "screen") {
@@ -117,6 +118,17 @@ struct ScreenRouter: View {
         case "preview":
             Group { if let f = preview { MatchPreview(f: f) } else { ProgressView() } }
                 .task { preview = (try? await API.shared.get("/api/match/\(id)") as MatchDetail)?.match }
+        case "timeline":
+            ScrollView {
+                if let m = timelineMatch {
+                    VStack(spacing: 8) {
+                        Text("\(m.match.home.name) \(m.match.scoreText) \(m.match.away.name)").font(.headline)
+                        TimelineSection(d: m)
+                    }.padding(.horizontal)
+                } else { ProgressView() }
+            }
+            .screenBackground()
+            .task { timelineMatch = try? await API.shared.get("/api/match/\(id)") }
         case "ai": AIView()
         case "favorites": FavoritesView()
         case "search": SearchView(initialQuery: d.string(forKey: "q") ?? "")

@@ -69,7 +69,7 @@ jobs:
           TEAM=$(curl -s -H "$H" "$API/api/match/$MID" | python3 -c "import json,sys;print(json.load(sys.stdin)['match']['home']['id'])")
           PLAYER=$(curl -s -H "$H" "$API/api/topscorers/39" | python3 -c "import json,sys;print(json.load(sys.stdin)['players'][0]['id'])")
           echo "match=$MID team=$TEAM player=$PLAYER" | tee shots/ids.txt
-          shot() { n=$1; shift; xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true; xcrun simctl launch "$UDID" ae.barq.football -qaFavTeam "$TEAM" "$@" >/dev/null; sleep 20; xcrun simctl io "$UDID" screenshot "shots/v4-$n.png"; }
+          shot() { n=$1; shift; xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true; xcrun simctl launch "$UDID" ae.barq.football -qaFavTeam "$TEAM" "$@" >/dev/null; sleep 20; xcrun simctl io "$UDID" screenshot "shots/$( [[ $n == v5-* ]] && echo $n || echo v4-$n ).png"; }
           shot 01-home -screen home
           shot 02-matches -screen matches
           shot 03-calendar -screen calendar
@@ -88,6 +88,9 @@ jobs:
           shot 16-player -screen player -id "$PLAYER"
           shot 17-reorder -screen reorder
           shot 18-tabbar-root
+          shot v5-timeline -screen timeline -id 1494795
+          shot v5-timeline-en -screen timeline -id 1494795 -lang en
+          shot v5-match-center-timeline -screen match -id 1494795
           shot 25-home-english -lang en
           shot 26-match-english -screen match -id "$MID" -lang en
           xcrun simctl ui "$UDID" appearance light

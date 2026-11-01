@@ -1860,6 +1860,36 @@
           }
         }
       }
+    },
+    "بداية المباراة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kick-off"
+          }
+        }
+      }
+    },
+    "نهاية الشوط الأول": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Half-time"
+          }
+        }
+      }
+    },
+    "نهاية المباراة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full time"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
