@@ -182,7 +182,7 @@ struct MatchPreview: View {
     }
 }
 
-enum Route: Hashable { case match(Int), league(Int), team(Int), player(Int), notifications, settings, calendar, leagues }
+enum Route: Hashable { case match(Int), league(Int), team(Int), player(Int), notifications, settings, calendar, leagues, news }
 
 extension View {
     func barqDestinations() -> some View {
