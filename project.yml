@@ -1,0 +1,62 @@
+name: BARQFootball
+options:
+  bundleIdPrefix: ae.barq
+  deploymentTarget:
+    iOS: "26.0"
+  developmentLanguage: ar
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+targets:
+  BARQ:
+    type: application
+    platform: iOS
+    sources:
+      - BARQ
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ae.barq.football
+        PRODUCT_NAME: BARQ
+        INFOPLIST_FILE: BARQ/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: BARQ/Resources/BARQ.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+    dependencies:
+      - target: BARQWidgets
+  BARQWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - BARQWidgets
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ae.barq.football.widgets
+        INFOPLIST_FILE: BARQWidgets/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+  BARQTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [BARQTests]
+    dependencies:
+      - target: BARQ
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/BARQ.app/BARQ"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  BARQ:
+    build:
+      targets:
+        BARQ: all
+        BARQWidgets: all
+    test:
+      targets: [BARQTests]

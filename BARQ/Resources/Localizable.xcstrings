@@ -1,0 +1,18 @@
+{
+  "sourceLanguage" : "ar",
+  "strings" : {
+    "الرئيسية" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Home" } } } },
+    "المباريات" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Matches" } } } },
+    "المحلل" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI" } } } },
+    "الأخبار" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "News" } } } },
+    "المفضلة" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Favorites" } } } },
+    "الإعدادات" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } } } },
+    "مباريات اليوم" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Today's matches" } } } },
+    "مباشر الآن" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Live now" } } } },
+    "الدوريات" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Leagues" } } } },
+    "الإشعارات" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Notifications" } } } },
+    "انتهت" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "FT" } } } },
+    "اليوم" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } } } }
+  },
+  "version" : "1.0"
+}
