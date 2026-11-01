@@ -43,7 +43,7 @@ final class PushPayloadTests: XCTestCase {
         XCTAssertNotNil(a["alert"])
     }
     func testAlertPayloadDeepLinksToFixture() throws {
-        let p = try payload("alert.apns")
+        let p = try payload("alert.json")
         let fixture = try XCTUnwrap(p["fixture"] as? Int)
         let alert = try XCTUnwrap((p["aps"] as? [String: Any])?["alert"] as? [String: Any])
         XCTAssertFalse((alert["title"] as? String ?? "").isEmpty)

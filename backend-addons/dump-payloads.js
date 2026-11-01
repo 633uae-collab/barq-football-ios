@@ -9,4 +9,4 @@ w('live-update.json', app.locals.livePayload({ ...fixture, status: { ...fixture.
 w('live-end.json', app.locals.livePayload({ ...fixture, status: { ...fixture.status, short: 'FT' } }));
 w('push-to-start.json', app.locals.startPayload(fixture));
 const alert = app.locals.alertPayload(insight); alert['Simulator Target Bundle'] = 'ae.barq.football';
-w('alert.apns', alert);
+w('alert.apns', alert); w('alert.json', alert);
