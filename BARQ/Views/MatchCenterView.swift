@@ -13,6 +13,13 @@ struct MatchCenterView: View {
     @State private var error: String?
     @State private var tab: MCTab = .timeline
     @State private var msg: String?
+    // Scroll stability: when new events are inserted above while the user is scrolled down, keep their view in place.
+    @State private var scrollPos = ScrollPosition(edge: .top)
+    @State private var offsetY: CGFloat = 0
+    @State private var holdPosition = false
+    @State private var replayStep = 0
+    private var replay: Bool { UserDefaults.standard.bool(forKey: "replay") }
+    private var refreshSeconds: Double { replay ? 6 : 15 }
 
     var body: some View {
         ScrollView {
@@ -33,7 +40,7 @@ struct MatchCenterView: View {
                         }.scrollIndicators(.hidden)
                     }
                     switch tab {
-                    case .timeline: TimelineSection(d: d)
+                    case .timeline: TimelineSection(d: d, animateInsert: !holdPosition)
                     case .lineups: LineupSection(lineups: d.lineups)
                     case .stats: StatsSection(stats: d.statistics)
                     case .h2h: H2HSection(home: d.match.home.id, away: d.match.away.id)
@@ -42,6 +49,11 @@ struct MatchCenterView: View {
                     }
                 }.padding(.horizontal).padding(.bottom, 30)
             }
+        }
+        .scrollPosition($scrollPos)
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, y in offsetY = y }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
+            if holdPosition, new > old { scrollPos.scrollTo(y: offsetY + (new - old)) }
         }
         .screenBackground()
         .navigationTitle(d.map { "\($0.match.home.name) × \($0.match.away.name)" } ?? "المباراة")
@@ -63,13 +75,22 @@ struct MatchCenterView: View {
         .task { await load() }
         .task {
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
-                if d?.match.isLive == true { await load(); if let f = d?.match { await LiveActivities.update(f) } }
+                try? await Task.sleep(for: .seconds(refreshSeconds))
+                if d?.match.isLive == true || replay { await load(); if let f = d?.match, !replay { await LiveActivities.update(f) } }
             }
         }
     }
     func load() async {
-        do { d = try await API.shared.get("/api/match/\(fixtureId)"); error = nil } catch { self.error = error.localizedDescription }
+        // QA replay mode (-replay YES): steps through REAL snapshots recorded from the backend during a live match.
+        let path = replay ? "/api/replay/\(fixtureId)/\(replayStep)" : "/api/match/\(fixtureId)"
+        do {
+            let new: MatchDetail = try await API.shared.get(path)
+            if replay { replayStep += 1 }
+            let grew = new.events.count > (d?.events.count ?? 0) && d != nil
+            holdPosition = grew && offsetY > 260   // user is reading further down: do not yank the list
+            d = new; error = nil
+            if holdPosition { try? await Task.sleep(for: .milliseconds(600)); holdPosition = false }
+        } catch { if d == nil { self.error = error.localizedDescription } }
     }
 }
 
@@ -125,24 +146,43 @@ enum TimelineOrder {
         }.map(\.1)
         return sorted + [.marker(.kickoff)]
     }
+    /// Stable identity per event: fixture-independent key of type+minute+extra+player+team (+detail),
+    /// with an occurrence counter for genuine duplicates. Independent of API array position, so a refresh never re-creates rows.
+    static func key(_ e: MatchEvent) -> String {
+        "\(e.type.lowercased())|\(e.time.elapsed ?? 0)|\(e.time.extra ?? 0)|\(e.player?.id.map(String.init) ?? e.player?.name ?? "")|\(e.team.id)|\(e.detail ?? "")"
+    }
+    struct Keyed { let key: String; let row: Row }
+    static func keyed(_ events: [MatchEvent], status: String) -> [Keyed] {
+        var seen: [String: Int] = [:]
+        return rows(events, status: status).map { r in
+            switch r {
+            case .marker(let m): return Keyed(key: "m-" + m.rawValue, row: r)
+            case .event(_, let e):
+                let k = key(e); let n = seen[k, default: 0]; seen[k] = n + 1
+                return Keyed(key: n == 0 ? k : "\(k)#\(n)", row: r)
+            }
+        }
+    }
 }
 
 struct TimelineSection: View {
     let d: MatchDetail
+    var animateInsert = true
     var body: some View {
         if d.events.isEmpty && d.match.isUpcoming { EmptyState(symbol: "list.bullet.below.rectangle", title: "لا توجد أحداث بعد") }
         else {
             VStack(spacing: 0) {
-                ForEach(TimelineOrder.rows(d.events, status: d.match.status.short), id: \.self) { row in
-                    switch row {
-                    case .marker(let m): marker(m)
-                    case .event(_, let e): eventRow(e)
+                ForEach(TimelineOrder.keyed(d.events, status: d.match.status.short), id: \.key) { item in
+                    switch item.row {
+                    case .marker(let m): marker(m).accessibilityElement(children: .combine).accessibilityIdentifier("tl-\(item.key)")
+                    case .event(_, let e): eventRow(e).accessibilityElement(children: .combine).accessibilityIdentifier("tl-\(item.key)")
                     }
                 }
             }
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             .padding(.vertical, 6)
             .background(alignment: .center) { Rectangle().fill(.secondary.opacity(0.35)).frame(width: 2) }
-            .animation(.snappy, value: d.events.count)
+            .animation(animateInsert ? .snappy : nil, value: d.events.count)
         }
     }
 

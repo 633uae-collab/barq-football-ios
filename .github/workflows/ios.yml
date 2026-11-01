@@ -51,9 +51,23 @@ jobs:
       - name: UI tests (real backend data)
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test 2>&1 | tee uitest.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test -skip-testing:BARQUITests/LiveTimelineUITests 2>&1 | tee uitest.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
           grep -q "TEST SUCCEEDED" uitest.log
           mkdir -p shots; cp /tmp/fotiq-springboard.png shots/v4-00-home-screen-icon.png || echo "no springboard capture"
+      - name: Live timeline tests (live match now + replay of recorded real snapshots)
+        run: |
+          API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
+          H="X-Pinggy-No-Screen: 1"
+          LIVE=$(curl -s -H "$H" "$API/api/fixtures" | python3 -c "
+          import json,sys;f=[x for x in json.load(sys.stdin)['fixtures'] if x['status']['short'] in('1H','2H') and (x['status']['elapsed'] or 0)<80]
+          f.sort(key=lambda x:-(x.get('imp') or 0)); print(f[0]['id'] if f else '')")
+          REP=$(curl -s -H "$H" "$API/api/replay" | python3 -c "import json,sys;r=sorted(json.load(sys.stdin),key=lambda x:-x['steps']);print(r[0]['id'],r[0]['steps']) if r else print('')")
+          echo "live=$LIVE replay=$REP" | tee live-ids.txt
+          export TEST_RUNNER_LIVE_ID="$LIVE" TEST_RUNNER_LIVE_MINUTES=8 TEST_RUNNER_REPLAY_ID="${REP% *}" TEST_RUNNER_REPLAY_STEPS="${REP#* }" TEST_RUNNER_STOPPAGE_ID=1559185
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test -only-testing:BARQUITests/LiveTimelineUITests 2>&1 | tee livetest.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:|REPLAY_LOG|LIVE_LOG|STOPPAGE_ORDER|new=|scroll anchor|start:" || true
+          mkdir -p shots; for f in /tmp/fotiq-*.png; do cp "$f" "shots/v6-$(basename $f .png | sed 's/fotiq-//').png"; done; cp live-ids.txt shots/
+          grep -q "TEST SUCCEEDED" livetest.log
       - name: Screenshots of all 17 screens (real API-SPORTS data via backend)
         run: |
           xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
