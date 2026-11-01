@@ -265,14 +265,15 @@ struct PredictionSection: View {
         LoadState(value: p, error: error) { p in
             if let pc = p.percent, let t = p.teams {
                 VStack(alignment: .leading, spacing: 14) {
-                    Label("احتمالات الفوز (API-Football)", systemImage: "chart.pie").font(.headline)
+                    Label("احتمالات تقديرية للفوز (API-SPORTS)", systemImage: "chart.pie").font(.headline)
+                    Text("تقدير إحصائي وليس نتيجة مؤكدة").font(.caption).foregroundStyle(.secondary)
                     Chart {
                         BarMark(x: .value("p", pct(pc.home)), y: .value("t", t.home.name)).foregroundStyle(.blue)
                         BarMark(x: .value("p", pct(pc.draw)), y: .value("t", String(localized: "تعادل"))).foregroundStyle(.gray)
                         BarMark(x: .value("p", pct(pc.away)), y: .value("t", t.away.name)).foregroundStyle(.purple)
                     }
                     .chartXScale(domain: 0...100).frame(height: 140)
-                    if let a = p.advice { Label(a, systemImage: "lightbulb").font(.callout) }
+                    if let a = p.advice { Label("نصيحة تقديرية: \(a)", systemImage: "lightbulb").font(.callout) }
                     WhyList(p: p)
                 }.padding().glassEffect(.regular, in: .rect(cornerRadius: 22))
             } else { EmptyState(symbol: "chart.pie", title: "لا يوجد توقع لهذه المباراة") }

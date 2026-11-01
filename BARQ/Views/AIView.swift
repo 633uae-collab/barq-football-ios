@@ -36,7 +36,7 @@ struct AIView: View {
             }.padding(.horizontal).padding(.bottom, 30)
         }
         .screenBackground()
-        .navigationTitle("BARQ AI")
+        .navigationTitle("FOTIQ AI")
         .barqDestinations()
         .task { await load() }
         .refreshable { await load() }
@@ -51,7 +51,7 @@ struct AIView: View {
                     .rotation3DEffect(.degrees(spin ? 360 : 0), axis: (x: 0.3, y: 1, z: 0))
             }
             .onAppear { withAnimation(.linear(duration: 14).repeatForever(autoreverses: false)) { spin = true } }
-            Text("محلل BARQ الذكي").font(.title2.bold())
+            Text("محلل FOTIQ الذكي").font(.title2.bold())
             Text("يتابع \(feed?.tracking ?? 0) مباراة مباشرة الآن").font(.subheadline).foregroundStyle(.secondary)
             Button {
                 let text = feed?.insights.first.map { "\($0.title). \($0.body)" } ?? String(localized: "لا توجد تحليلات حالياً")

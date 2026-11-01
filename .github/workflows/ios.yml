@@ -3,6 +3,14 @@ on:
   push:
   workflow_dispatch:
 jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: cd server && node --test test/
+
   simulator:
     runs-on: macos-26
     timeout-minutes: 60
@@ -34,12 +42,25 @@ jobs:
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test 2>&1 | tee test.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
           grep -q "TEST SUCCEEDED" test.log
+      - name: App bundle must not contain the API-SPORTS key or direct provider calls
+        run: |
+          APP=$(find dd/Build/Products -name BARQ.app -path "*iphonesimulator*" | head -1)
+          if grep -rIl "x-apisports-key\|v3.football.api-sports.io" "$APP"; then echo "::error::provider key/host found in app bundle"; exit 1; fi
+          strings "$APP/BARQ" | grep -iE "apisports-key|v3\.football" && exit 1 || echo "OK: no API key / provider host in app binary"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP/Info.plist"
+      - name: UI tests (real backend data)
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test 2>&1 | tee uitest.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
+          grep -q "TEST SUCCEEDED" uitest.log
       - name: Screenshots of all 17 screens (real API-SPORTS data via backend)
         run: |
           xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
           APP=$(find dd/Build/Products -name BARQ.app -path "*iphonesimulator*" | head -1)
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl ui "$UDID" appearance dark
+          mkdir -p shots; sleep 8
+          xcrun simctl io "$UDID" screenshot shots/v4-00-springboard.png   # home screen with FOTIQ icon + name
           xcrun simctl status_bar "$UDID" override --time 9:41 || true
           mkdir -p shots
           API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
@@ -48,7 +69,7 @@ jobs:
           TEAM=$(curl -s -H "$H" "$API/api/match/$MID" | python3 -c "import json,sys;print(json.load(sys.stdin)['match']['home']['id'])")
           PLAYER=$(curl -s -H "$H" "$API/api/topscorers/39" | python3 -c "import json,sys;print(json.load(sys.stdin)['players'][0]['id'])")
           echo "match=$MID team=$TEAM player=$PLAYER" | tee shots/ids.txt
-          shot() { n=$1; shift; xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true; xcrun simctl launch "$UDID" ae.barq.football -qaFavTeam "$TEAM" "$@" >/dev/null; sleep 20; xcrun simctl io "$UDID" screenshot "shots/v3-$n.png"; }
+          shot() { n=$1; shift; xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true; xcrun simctl launch "$UDID" ae.barq.football -qaFavTeam "$TEAM" "$@" >/dev/null; sleep 20; xcrun simctl io "$UDID" screenshot "shots/v4-$n.png"; }
           shot 01-home -screen home
           shot 02-matches -screen matches
           shot 03-calendar -screen calendar
@@ -67,6 +88,8 @@ jobs:
           shot 16-player -screen player -id "$PLAYER"
           shot 17-reorder -screen reorder
           shot 18-tabbar-root
+          shot 25-home-english -lang en
+          shot 26-match-english -screen match -id "$MID" -lang en
           xcrun simctl ui "$UDID" appearance light
           shot 19-home-light -screen home -theme light
           shot 20-match-light -screen match -id "$MID" -theme light
@@ -80,16 +103,16 @@ jobs:
           xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
           xcrun simctl launch --console-pty "$UDID" ae.barq.football -screen liveactivity -id "$MID" > shots/la-console.txt 2>&1 &
           sleep 25
-          xcrun simctl io "$UDID" screenshot shots/v3-21-liveactivity-app.png
+          xcrun simctl io "$UDID" screenshot shots/v4-21-liveactivity-app.png
           # Send the app to background so the Dynamic Island shows the activity
           xcrun simctl launch "$UDID" com.apple.Preferences; sleep 6
-          xcrun simctl io "$UDID" screenshot shots/v3-22-dynamic-island.png
+          xcrun simctl io "$UDID" screenshot shots/v4-22-dynamic-island.png
           # Live Activity update via simulated push (Xcode 26 simctl) - outcome recorded, not assumed
           xcrun simctl push "$UDID" ae.barq.football.push-type.liveactivity BARQTests/Payloads/live-update.json > shots/la-push.txt 2>&1 || true; echo "exit=$?" >> shots/la-push.txt
-          sleep 5; xcrun simctl io "$UDID" screenshot shots/v3-23-dynamic-island-after-push.png
+          sleep 5; xcrun simctl io "$UDID" screenshot shots/v4-23-dynamic-island-after-push.png
           # Regular APNs alert payload (from push.js) via simctl push
           xcrun simctl push "$UDID" ae.barq.football BARQTests/Payloads/alert.apns > shots/alert-push.txt 2>&1 || true; echo "exit=$?" >> shots/alert-push.txt
-          sleep 3; xcrun simctl io "$UDID" screenshot shots/v3-24-notification-banner.png
+          sleep 3; xcrun simctl io "$UDID" screenshot shots/v4-24-notification-banner.png
           kill %1 2>/dev/null || true
           cat shots/la-console.txt shots/la-push.txt shots/alert-push.txt
       - uses: actions/upload-artifact@v4

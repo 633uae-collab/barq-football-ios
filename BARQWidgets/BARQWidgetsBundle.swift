@@ -28,6 +28,7 @@ struct MatchLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 4) {
+                        Text("FOTIQ").font(.caption2.weight(.heavy)).foregroundStyle(Color("BrandGreen"))
                         Label("\(context.state.minute)'", systemImage: "dot.radiowaves.left.and.right")
                             .font(.caption).foregroundStyle(.red)
                         if let ev = context.state.lastEvent { Text(ev).font(.caption2).lineLimit(1) }
@@ -41,7 +42,7 @@ struct MatchLiveActivity: Widget {
             } compactTrailing: {
                 Text("\(context.state.awayGoals) \(context.attributes.awayShort)").font(.caption.bold()).monospacedDigit()
             } minimal: {
-                Text("\(context.state.homeGoals)-\(context.state.awayGoals)").font(.caption2.bold()).monospacedDigit()
+                Text("\(context.state.homeGoals)-\(context.state.awayGoals)").font(.caption2.bold()).monospacedDigit().foregroundStyle(Color("BrandGreen"))
             }
             .widgetURL(URL(string: "barq://match/\(context.attributes.fixtureId)"))
         }
@@ -53,7 +54,7 @@ struct LockScreenView: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack {
-                Image(systemName: "soccerball").foregroundStyle(.blue)
+                Text("FOTIQ").font(.caption.weight(.heavy)).foregroundStyle(Color("BrandGreen"))
                 Text(context.attributes.league).font(.caption).lineLimit(1)
                 Spacer()
                 Label(context.state.status == "FT" ? "انتهت" : "\(context.state.minute)'", systemImage: "circle.fill")

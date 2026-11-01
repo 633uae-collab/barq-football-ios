@@ -6,7 +6,7 @@ enum ThemeMode: String, CaseIterable, Codable { case system, dark, light }
 /// User preferences, persisted locally and synced to backend /api/prefs/:device (same as web app).
 @Observable
 final class AppStore {
-    static let accents: [(String, Color)] = [("blue", .blue), ("cyan", .cyan), ("green", .green), ("orange", .orange), ("pink", .pink), ("purple", .purple)]
+    static let accents: [(String, Color)] = [("fotiq", Color("BrandGreen")), ("blue", .blue), ("cyan", .cyan), ("green", .green), ("orange", .orange), ("pink", .pink), ("purple", .purple)]
 
     var favTeams: [TeamRef] { didSet { save() } }
     var favLeagues: [Int] { didSet { save() } }
@@ -38,13 +38,13 @@ final class AppStore {
         homeSections = load("homeSections", Self.defaultSections)
         mutedTeams = load("mutedTeams", [])
         theme = ThemeMode(rawValue: d.string(forKey: "theme") ?? "") ?? .dark
-        accentKey = d.string(forKey: "accent") ?? "blue"
+        accentKey = d.string(forKey: "accent") ?? "fotiq"
         lang = d.string(forKey: "lang") ?? "ar"
         tz = d.string(forKey: "tz") ?? "Asia/Dubai"
         alertDensity = d.object(forKey: "alertDensity") as? Int ?? 1
     }
 
-    var accent: Color { Self.accents.first { $0.0 == accentKey }?.1 ?? .blue }
+    var accent: Color { Self.accents.first { $0.0 == accentKey }?.1 ?? Color("BrandGreen") }
     var colorScheme: ColorScheme? { theme == .system ? nil : (theme == .dark ? .dark : .light) }
 
     func isFav(team id: Int) -> Bool { favTeams.contains { $0.id == id } }
@@ -69,10 +69,11 @@ final class AppStore {
         d.set(theme.rawValue, forKey: "theme")
         d.set(accentKey, forKey: "accent")
         d.set(alertDensity, forKey: "alertDensity")
-        let snapshot = PrefsPayload(favTeams: favTeams.map(\.id), favLeagues: favLeagues, saved: savedMatches)
+        let snapshot = PrefsPayload(favTeams: favTeams.map(\.id), favLeagues: favLeagues, saved: savedMatches, muted: mutedTeams, level: alertDensity)
         let id = deviceId
         Task.detached { try? await API.shared.send("PUT", "/api/prefs/\(id)", body: snapshot) }
     }
 }
 
-struct PrefsPayload: Codable { var favTeams: [Int]; var favLeagues: [Int]; var saved: [Int] }
+/// Matches backend catalog.js prefs (favTeams/saved/muted/level) used by the server push system (notify.js).
+struct PrefsPayload: Codable { var favTeams: [Int]; var favLeagues: [Int]; var saved: [Int]; var muted: [Int] = []; var level: Int = 1 }

@@ -21,7 +21,7 @@ struct HomeView: View {
             .padding(.bottom, 30)
         }
         .screenBackground()
-        .navigationTitle("BARQ")
+        .navigationTitle("FOTIQ")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 NavigationLink(value: Route.notifications) {

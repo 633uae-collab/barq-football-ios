@@ -18,9 +18,15 @@ struct NewsView: View {
 struct FavoritesView: View {
     @Environment(AppStore.self) private var store
     @State private var upcoming: [Fixture] = []
+    @State private var saved: [Fixture] = []
     @State private var editing = false
     var body: some View {
         List {
+            if !saved.isEmpty {
+                Section {
+                    ForEach(saved) { MatchRow(f: $0).listRowBackground(Color.clear).listRowSeparator(.hidden) }
+                } header: { Label("مبارياتي المحفوظة", systemImage: "bookmark.fill") }
+            }
             if store.favTeams.isEmpty {
                 EmptyState(symbol: "star", title: "ما عندك فرق مفضلة", message: "اضغط النجمة في صفحة أي فريق أو اضغط مطولاً على مباراة").listRowBackground(Color.clear)
             } else {
@@ -60,6 +66,13 @@ struct FavoritesView: View {
                 if let r: TeamResponse = try? await API.shared.get("/api/team/\(t.id)", maxAge: 1800) { out += (r.next ?? []).prefix(2) }
             }
             upcoming = Array(Set(out)).sorted { $0.ts < $1.ts }
+        }
+        .task(id: store.savedMatches) {
+            var out: [Fixture] = []
+            for id in store.savedMatches.suffix(15) {
+                if let d: MatchDetail = try? await API.shared.get("/api/match/\(id)", maxAge: 60) { out.append(d.match) }
+            }
+            saved = out.sorted { $0.ts > $1.ts }
         }
     }
 }
@@ -193,7 +206,7 @@ struct SettingsView: View {
                     .onSubmit { Task { await API.shared.resetBase() } }
             } header: { Text("الخصوصية والخادم") }
             Section {
-                Text("البيانات من API-SPORTS عبر خادم BARQ. مفتاح API لا يُخزن في التطبيق.").font(.footnote).foregroundStyle(.secondary)
+                Text("البيانات من API-SPORTS عبر خادم FOTIQ. مفتاح API لا يُخزن في التطبيق.").font(.footnote).foregroundStyle(.secondary)
             }
         }
         .scrollContentBackground(.hidden)

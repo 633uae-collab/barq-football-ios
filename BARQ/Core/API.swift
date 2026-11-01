@@ -1,16 +1,20 @@
 import Foundation
 
-/// Talks to the existing BARQ Node backend. The API-SPORTS key never lives in the app.
+/// Talks to the FOTIQ Node backend. The API-SPORTS key never lives in the app.
 /// Base URL resolves like the web app: published config.json -> {"api": "..."}; overridable in Settings.
 actor API {
     static let shared = API()
     private var base: String?
-    private let session: URLSession = {
+    private let session: URLSession
+    /// `protocolClasses` lets unit tests inject a URLProtocol stub (offline / server error / missing data).
+    init(protocolClasses: [AnyClass]? = nil, fixedBase: String? = nil) {
         let c = URLSessionConfiguration.default
         c.urlCache = URLCache(memoryCapacity: 32 << 20, diskCapacity: 256 << 20)
         c.timeoutIntervalForRequest = 20
-        return URLSession(configuration: c)
-    }()
+        if let p = protocolClasses { c.protocolClasses = p; c.urlCache = nil }
+        session = URLSession(configuration: c)
+        base = fixedBase
+    }
     private var mem: [String: (Date, Data)] = [:]
 
     static var configURL: String {
@@ -22,6 +26,7 @@ actor API {
     func resetBase() { base = nil }
 
     func resolveBase() async throws -> String {
+        if let b = base { return b }
         if let o = UserDefaults.standard.string(forKey: "apiOverride"), !o.isEmpty { return o.trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
         if let b = base { return b }
         guard let url = URL(string: Self.configURL + "?t=\(Int(Date().timeIntervalSince1970))") else { throw APIError.offline }

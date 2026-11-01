@@ -1,18 +1,1866 @@
 {
-  "sourceLanguage" : "ar",
-  "strings" : {
-    "الرئيسية" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Home" } } } },
-    "المباريات" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Matches" } } } },
-    "المحلل" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI" } } } },
-    "الأخبار" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "News" } } } },
-    "المفضلة" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Favorites" } } } },
-    "الإعدادات" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } } } },
-    "مباريات اليوم" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Today's matches" } } } },
-    "مباشر الآن" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Live now" } } } },
-    "الدوريات" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Leagues" } } } },
-    "الإشعارات" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Notifications" } } } },
-    "انتهت" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "FT" } } } },
-    "اليوم" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } } } }
+  "sourceLanguage": "ar",
+  "strings": {
+    "الرئيسية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home"
+          }
+        }
+      }
+    },
+    "المباريات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matches"
+          }
+        }
+      }
+    },
+    "المحلل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analyst"
+          }
+        }
+      }
+    },
+    "الأخبار": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "News"
+          }
+        }
+      }
+    },
+    "المفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorites"
+          }
+        }
+      }
+    },
+    "الإعدادات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "مباريات اليوم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today's matches"
+          }
+        }
+      }
+    },
+    "مباشر الآن": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live now"
+          }
+        }
+      }
+    },
+    "الدوريات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leagues"
+          }
+        }
+      }
+    },
+    "الإشعارات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications"
+          }
+        }
+      }
+    },
+    "انتهت": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full time"
+          }
+        }
+      }
+    },
+    "اليوم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today"
+          }
+        }
+      }
+    },
+    "Live Activities غير مفعلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Activities off"
+          }
+        }
+      }
+    },
+    "Live Activities مفعلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Activities on"
+          }
+        }
+      }
+    },
+    "%lld من %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld of %lld"
+          }
+        }
+      }
+    },
+    "آخر النتائج": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest results"
+          }
+        }
+      }
+    },
+    "آخر تحليل AI": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest AI insight"
+          }
+        }
+      }
+    },
+    "أحداث": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Events"
+          }
+        }
+      }
+    },
+    "أضف لتقويم الآيفون": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to iPhone Calendar"
+          }
+        }
+      }
+    },
+    "أضف للمفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to favorites"
+          }
+        }
+      }
+    },
+    "أمس": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yesterday"
+          }
+        }
+      }
+    },
+    "أهداف منعها الحارس": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goals prevented"
+          }
+        }
+      }
+    },
+    "أهداف": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goals"
+          }
+        }
+      }
+    },
+    "أهم المباريات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top matches"
+          }
+        }
+      }
+    },
+    "إزالة من المحفوظة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from saved"
+          }
+        }
+      }
+    },
+    "إعادة المحاولة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        }
+      }
+    },
+    "ابحث عن دوري": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search leagues"
+          }
+        }
+      }
+    },
+    "احتمالات تقديرية للفوز (API-SPORTS)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estimated win probabilities (API-SPORTS)"
+          }
+        }
+      }
+    },
+    "اختر يوم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick a day"
+          }
+        }
+      }
+    },
+    "استراحة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Half-time"
+          }
+        }
+      }
+    },
+    "اسمع آخر تحليل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listen to latest insight"
+          }
+        }
+      }
+    },
+    "اضغط النجمة في صفحة أي فريق أو اضغط مطولاً على مباراة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap the star on any team page or long-press a match"
+          }
+        }
+      }
+    },
+    "افتراضي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default"
+          }
+        }
+      }
+    },
+    "اقتراحات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggestions"
+          }
+        }
+      }
+    },
+    "الآن": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Now"
+          }
+        }
+      }
+    },
+    "الأحداث": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Events"
+          }
+        }
+      }
+    },
+    "الأخبار قريباً": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "News coming soon"
+          }
+        }
+      }
+    },
+    "الأخطاء": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fouls"
+          }
+        }
+      }
+    },
+    "الأهداف المتوقعة xG": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expected goals xG"
+          }
+        }
+      }
+    },
+    "الأهداف": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goals"
+          }
+        }
+      }
+    },
+    "الإحصائيات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statistics"
+          }
+        }
+      }
+    },
+    "الإشعارات مفعلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications on"
+          }
+        }
+      }
+    },
+    "الإشعارات مكتومة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications muted"
+          }
+        }
+      }
+    },
+    "الاحتياط": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Substitutes"
+          }
+        }
+      }
+    },
+    "الاستحواذ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Possession"
+          }
+        }
+      }
+    },
+    "الانتقالات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transfers"
+          }
+        }
+      }
+    },
+    "البطولات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Competitions"
+          }
+        }
+      }
+    },
+    "البيانات متأخرة، المحلل متوقف مؤقتاً": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Data delayed, analyst paused"
+          }
+        }
+      }
+    },
+    "البيانات من API-SPORTS عبر خادم FOTIQ. مفتاح API لا يُخزن في التطبيق.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Data from API-SPORTS via the FOTIQ server. The API key is never stored in the app."
+          }
+        }
+      }
+    },
+    "التاريخ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date"
+          }
+        }
+      }
+    },
+    "التحليل المباشر": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live analysis"
+          }
+        }
+      }
+    },
+    "التحليل يظهر فقط أثناء المباريات المباشرة وبأرقام حقيقية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analysis appears only during live matches, based on real numbers"
+          }
+        }
+      }
+    },
+    "الترتيب": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standings"
+          }
+        }
+      }
+    },
+    "التسديدات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shots"
+          }
+        }
+      }
+    },
+    "التسلل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offsides"
+          }
+        }
+      }
+    },
+    "التشكيلة لم تُعلن بعد": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lineup not announced yet"
+          }
+        }
+      }
+    },
+    "التشكيلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lineup"
+          }
+        }
+      }
+    },
+    "التقويم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendar"
+          }
+        }
+      }
+    },
+    "التمريرات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passes"
+          }
+        }
+      }
+    },
+    "التوقعات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Predictions"
+          }
+        }
+      }
+    },
+    "الحالة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        }
+      }
+    },
+    "الخادم غير متاح مؤقتاً، جرّب بعد شوي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server temporarily unavailable, try again shortly"
+          }
+        }
+      }
+    },
+    "الخصوصية والخادم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privacy & server"
+          }
+        }
+      }
+    },
+    "الدفاع": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Defence"
+          }
+        }
+      }
+    },
+    "الركنيات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corners"
+          }
+        }
+      }
+    },
+    "العربية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arabic"
+          }
+        }
+      }
+    },
+    "الفرق": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teams"
+          }
+        }
+      }
+    },
+    "الفريق": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team"
+          }
+        }
+      }
+    },
+    "الفورمة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Form"
+          }
+        }
+      }
+    },
+    "القادمة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upcoming"
+          }
+        }
+      }
+    },
+    "القسم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Section"
+          }
+        }
+      }
+    },
+    "الكل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        }
+      }
+    },
+    "اللاعب غير موجود": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Player not found"
+          }
+        }
+      }
+    },
+    "اللاعبون": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Players"
+          }
+        }
+      }
+    },
+    "اللغة والمنطقة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language & region"
+          }
+        }
+      }
+    },
+    "اللغة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language"
+          }
+        }
+      }
+    },
+    "المباراة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match"
+          }
+        }
+      }
+    },
+    "المباريات القادمة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upcoming matches"
+          }
+        }
+      }
+    },
+    "المجموع": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total"
+          }
+        }
+      }
+    },
+    "المحلل لا يتابع هذه المباراة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The analyst is not tracking this match"
+          }
+        }
+      }
+    },
+    "المحلل يتابع المباراة مباشرة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The analyst is tracking this match live"
+          }
+        }
+      }
+    },
+    "المحلل يجمع البيانات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The analyst is collecting data"
+          }
+        }
+      }
+    },
+    "المظهر": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appearance"
+          }
+        }
+      }
+    },
+    "المنطقة الزمنية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Time zone"
+          }
+        }
+      }
+    },
+    "المهم فقط": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Important only"
+          }
+        }
+      }
+    },
+    "المواجهات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Head to head"
+          }
+        }
+      }
+    },
+    "النتائج": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Results"
+          }
+        }
+      }
+    },
+    "النوع": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type"
+          }
+        }
+      }
+    },
+    "الهجوم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attack"
+          }
+        }
+      }
+    },
+    "الهدافون": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top scorers"
+          }
+        }
+      }
+    },
+    "انتقالات فرقك المفضلة متاحة من صفحة كل نادي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your favourite teams' transfers are on each club page"
+          }
+        }
+      }
+    },
+    "بحث": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search"
+          }
+        }
+      }
+    },
+    "بحثنا عن: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searched for: %@"
+          }
+        }
+      }
+    },
+    "بدأت المتابعة المباشرة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live tracking started"
+          }
+        }
+      }
+    },
+    "بطاقات حمراء": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Red cards"
+          }
+        }
+      }
+    },
+    "بطاقات صفراء": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yellow cards"
+          }
+        }
+      }
+    },
+    "بطاقة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Card"
+          }
+        }
+      }
+    },
+    "بطولاتي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My competitions"
+          }
+        }
+      }
+    },
+    "بكرة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tomorrow"
+          }
+        }
+      }
+    },
+    "تابع على شاشة القفل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow on Lock Screen"
+          }
+        }
+      }
+    },
+    "تحليل AI": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI analysis"
+          }
+        }
+      }
+    },
+    "تحليلات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Insights"
+          }
+        }
+      }
+    },
+    "ترتيب الأقسام": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrange sections"
+          }
+        }
+      }
+    },
+    "ترتيب": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reorder"
+          }
+        }
+      }
+    },
+    "تسديد": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shots"
+          }
+        }
+      }
+    },
+    "تسديدات خارج الصندوق": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shots outside box"
+          }
+        }
+      }
+    },
+    "تسديدات خارج المرمى": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shots off target"
+          }
+        }
+      }
+    },
+    "تسديدات داخل الصندوق": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shots inside box"
+          }
+        }
+      }
+    },
+    "تسديدات على المرمى": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shots on target"
+          }
+        }
+      }
+    },
+    "تسديدات مصدودة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocked shots"
+          }
+        }
+      }
+    },
+    "تصديات الحارس": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goalkeeper saves"
+          }
+        }
+      }
+    },
+    "تظهر عادة قبل المباراة بساعة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usually published about an hour before kickoff"
+          }
+        }
+      }
+    },
+    "تعادل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Draw"
+          }
+        }
+      }
+    },
+    "تعذر التحميل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't load"
+          }
+        }
+      }
+    },
+    "تفعيل الإشعارات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable notifications"
+          }
+        }
+      }
+    },
+    "تفعيل تنبيهات المحلل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable analyst alerts"
+          }
+        }
+      }
+    },
+    "تقدير إحصائي وليس نتيجة مؤكدة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A statistical estimate, not a certain outcome"
+          }
+        }
+      }
+    },
+    "تقييم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rating"
+          }
+        }
+      }
+    },
+    "تم التفعيل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enabled"
+          }
+        }
+      }
+    },
+    "تم الرفض، فعّلها من إعدادات الآيفون": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denied, enable it in iPhone Settings"
+          }
+        }
+      }
+    },
+    "تم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "تمت الإضافة للتقويم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added to Calendar"
+          }
+        }
+      }
+    },
+    "تمريرات دقيقة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accurate passes"
+          }
+        }
+      }
+    },
+    "تمريرات مفتاحية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key passes"
+          }
+        }
+      }
+    },
+    "توزيع بواسون": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poisson distribution"
+          }
+        }
+      }
+    },
+    "توقعات ومقارنة الفرق": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Predictions & team comparison"
+          }
+        }
+      }
+    },
+    "حسب الجهاز": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System"
+          }
+        }
+      }
+    },
+    "حفظ المباراة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save match"
+          }
+        }
+      }
+    },
+    "خروج: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Out: %@"
+          }
+        }
+      }
+    },
+    "دقائق": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minutes"
+          }
+        }
+      }
+    },
+    "دقة التمرير": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pass accuracy"
+          }
+        }
+      }
+    },
+    "صناع الأهداف": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top assists"
+          }
+        }
+      }
+    },
+    "صناعة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assists"
+          }
+        }
+      }
+    },
+    "صناعة: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assist: %@"
+          }
+        }
+      }
+    },
+    "طلب غير صالح": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid request"
+          }
+        }
+      }
+    },
+    "على المرمى": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On target"
+          }
+        }
+      }
+    },
+    "عنوان الخادم (اختياري)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server URL (optional)"
+          }
+        }
+      }
+    },
+    "فرقك اليوم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your teams today"
+          }
+        }
+      }
+    },
+    "فرقي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My teams"
+          }
+        }
+      }
+    },
+    "فريق، لاعب، بطولة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team, player, competition"
+          }
+        }
+      }
+    },
+    "فوز": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Win"
+          }
+        }
+      }
+    },
+    "في المفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In favorites"
+          }
+        }
+      }
+    },
+    "قبل %lld س": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld h ago"
+          }
+        }
+      }
+    },
+    "قبل %lld د": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld min ago"
+          }
+        }
+      }
+    },
+    "قطع": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tackles"
+          }
+        }
+      }
+    },
+    "كثافة التنبيهات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alert level"
+          }
+        }
+      }
+    },
+    "كل الدوريات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All leagues"
+          }
+        }
+      }
+    },
+    "لا توجد أحداث بعد": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No events yet"
+          }
+        }
+      }
+    },
+    "لا توجد إحصائيات بعد": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No statistics yet"
+          }
+        }
+      }
+    },
+    "لا توجد إحصائيات للموسم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No season statistics"
+          }
+        }
+      }
+    },
+    "لا توجد إشعارات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No notifications"
+          }
+        }
+      }
+    },
+    "لا توجد بيانات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No data"
+          }
+        }
+      }
+    },
+    "لا توجد تحليلات حالياً": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No insights right now"
+          }
+        }
+      }
+    },
+    "لا توجد مباريات اليوم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No matches today"
+          }
+        }
+      }
+    },
+    "لا توجد مباريات في هذا اليوم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No matches on this day"
+          }
+        }
+      }
+    },
+    "لا توجد مباريات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No matches"
+          }
+        }
+      }
+    },
+    "لا توجد مواجهات سابقة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No previous meetings"
+          }
+        }
+      }
+    },
+    "لا نجمع أي بيانات شخصية. المفضلة محفوظة بمعرّف جهاز عشوائي.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We collect no personal data. Favorites are stored under a random device ID."
+          }
+        }
+      }
+    },
+    "لا يوجد توقع لهذه المباراة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No prediction for this match"
+          }
+        }
+      }
+    },
+    "لا يوجد جدول ترتيب لهذه البطولة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No standings for this competition"
+          }
+        }
+      }
+    },
+    "لعب": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Played"
+          }
+        }
+      }
+    },
+    "لم يتم السماح بالوصول للتقويم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendar access not allowed"
+          }
+        }
+      }
+    },
+    "لون التطبيق": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App color"
+          }
+        }
+      }
+    },
+    "ليش؟": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Why?"
+          }
+        }
+      }
+    },
+    "ليلي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dark"
+          }
+        }
+      }
+    },
+    "ما عندك فرق مفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No favourite teams yet"
+          }
+        }
+      }
+    },
+    "ما لقينا نتائج": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No results found"
+          }
+        }
+      }
+    },
+    "مباراة %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match %lld"
+          }
+        }
+      }
+    },
+    "مباريات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matches"
+          }
+        }
+      }
+    },
+    "مبارياتهم القادمة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Their upcoming matches"
+          }
+        }
+      }
+    },
+    "مبارياتي المحفوظة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My saved matches"
+          }
+        }
+      }
+    },
+    "مباشر": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live"
+          }
+        }
+      }
+    },
+    "متساوي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Level"
+          }
+        }
+      }
+    },
+    "متوازن": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balanced"
+          }
+        }
+      }
+    },
+    "محلل FOTIQ الذكي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FOTIQ AI Analyst"
+          }
+        }
+      }
+    },
+    "مراوغات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dribbles"
+          }
+        }
+      }
+    },
+    "مفضلة: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favourite: %@"
+          }
+        }
+      }
+    },
+    "مقارنة اللاعبين": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Player comparison"
+          }
+        }
+      }
+    },
+    "نتائج": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Results"
+          }
+        }
+      }
+    },
+    "نصيحة تقديرية: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estimated advice: %@"
+          }
+        }
+      }
+    },
+    "نقاط": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Points"
+          }
+        }
+      }
+    },
+    "ننتظر ربط مصدر أخبار مرخّص. لن نعرض أخباراً أو صوراً غير موثقة.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for a licensed news source. We won't show unverified news or images."
+          }
+        }
+      }
+    },
+    "نهاري": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light"
+          }
+        }
+      }
+    },
+    "هدف": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goal"
+          }
+        }
+      }
+    },
+    "يتابع %lld مباراة مباشرة الآن": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tracking %lld live matches now"
+          }
+        }
+      }
+    },
+    "يحتاج ٨ دقائق من الإحصائيات المباشرة قبل أي تحليل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs 8 minutes of live stats before any analysis"
+          }
+        }
+      }
+    }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

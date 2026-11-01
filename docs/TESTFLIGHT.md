@@ -1,4 +1,4 @@
-# نشر BARQ Football على TestFlight من الآيفون فقط (بدون ماك)
+# نشر FOTIQ على TestFlight من الآيفون فقط (بدون ماك)
 
 كل البناء والتوقيع يصير على خوادم GitHub Actions المجانية (macOS 26 + Xcode 26). أنت تحتاج الآيفون والمتصفح فقط.
 
@@ -27,7 +27,7 @@
 
 ## الخطوة 4: سجل التطبيق في App Store Connect
 1. https://appstoreconnect.apple.com ثم Apps ثم + ثم New App.
-2. المنصة iOS، الاسم `BARQ Football` (أو أي اسم متاح)، اللغة العربية، Bundle ID: `ae.barq.football`، SKU: `barq-football`.
+2. المنصة iOS، الاسم `FOTIQ` (لو كان محجوزاً جرّب `FOTIQ Football` أو `FOTIQ - Live Scores`)، اللغة العربية، Bundle ID: `ae.barq.football`، SKU: `barq-football`.
 
 ## الخطوة 5: مفتاح App Store Connect API
 1. App Store Connect ثم Users and Access ثم Integrations ثم App Store Connect API ثم Team Keys.
