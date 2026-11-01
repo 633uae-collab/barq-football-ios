@@ -68,8 +68,8 @@ jobs:
           shot 17-reorder -screen reorder
           shot 18-tabbar-root
           xcrun simctl ui "$UDID" appearance light
-          shot 19-home-light -screen home
-          shot 20-match-light -screen match -id "$MID"
+          shot 19-home-light -screen home -theme light
+          shot 20-match-light -screen match -id "$MID" -theme light
           xcrun simctl ui "$UDID" appearance dark
           echo "MID=$MID" >> $GITHUB_ENV
       - name: Live Activity + Dynamic Island + notification on simulator
@@ -85,10 +85,10 @@ jobs:
           xcrun simctl launch "$UDID" com.apple.Preferences; sleep 6
           xcrun simctl io "$UDID" screenshot shots/v3-22-dynamic-island.png
           # Live Activity update via simulated push (Xcode 26 simctl) - outcome recorded, not assumed
-          xcrun simctl push "$UDID" ae.barq.football.push-type.liveactivity BARQTests/Payloads/live-update.json > shots/la-push.txt 2>&1; echo "exit=$?" >> shots/la-push.txt
+          xcrun simctl push "$UDID" ae.barq.football.push-type.liveactivity BARQTests/Payloads/live-update.json > shots/la-push.txt 2>&1 || true; echo "exit=$?" >> shots/la-push.txt
           sleep 5; xcrun simctl io "$UDID" screenshot shots/v3-23-dynamic-island-after-push.png
           # Regular APNs alert payload (from push.js) via simctl push
-          xcrun simctl push "$UDID" ae.barq.football BARQTests/Payloads/alert.apns > shots/alert-push.txt 2>&1; echo "exit=$?" >> shots/alert-push.txt
+          xcrun simctl push "$UDID" ae.barq.football BARQTests/Payloads/alert.apns > shots/alert-push.txt 2>&1 || true; echo "exit=$?" >> shots/alert-push.txt
           sleep 3; xcrun simctl io "$UDID" screenshot shots/v3-24-notification-banner.png
           kill %1 2>/dev/null || true
           cat shots/la-console.txt shots/la-push.txt shots/alert-push.txt

@@ -60,7 +60,7 @@ struct ClubView: View {
                                 RemoteImage(url: x.in.logo, size: 24)
                                 Text(x.player.name ?? "").font(.subheadline.bold()).lineLimit(1)
                                 Spacer()
-                                VStack(alignment: .trailing) { Text(x.date).font(.caption2.monospacedDigit()); Text(x.type ?? "").font(.caption2).foregroundStyle(.secondary) }
+                                VStack(alignment: .trailing) { Text(x.date ?? "").font(.caption2.monospacedDigit()); Text(x.type ?? "").font(.caption2).foregroundStyle(.secondary) }
                             }.padding(10).glassEffect(.regular, in: .rect(cornerRadius: 14))
                         }
                     }
@@ -110,7 +110,7 @@ struct StatBlock: View {
     var items: [(String, Int)] { [("أهداف", s.goals), ("صناعة", s.assists), ("تسديد", s.shots), ("على المرمى", s.sot), ("مراوغات", s.dribbles), ("قطع", s.tackles), ("تمريرات مفتاحية", s.keyPasses)] }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack { RemoteImage(url: s.league.logo, fallback: "trophy", size: 22); Text(s.league.name).font(.subheadline.bold()); Spacer(); RemoteImage(url: s.team.logo, size: 22) }
+            HStack { RemoteImage(url: s.league.logo, fallback: "trophy", size: 22); Text(s.league.name ?? "").font(.subheadline.bold()); Spacer(); RemoteImage(url: s.team.logo, size: 22) }
             HStack {
                 stat("\(s.apps ?? 0)", "مباريات", "sportscourt"); stat("\(s.minutes ?? 0)", "دقائق", "stopwatch")
                 stat(s.rating.flatMap { Double($0) }.map { String(format: "%.1f", $0) } ?? "-", "تقييم", "star")

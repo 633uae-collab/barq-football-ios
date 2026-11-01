@@ -85,7 +85,15 @@ enum LiveActivities {
     static func start(attrs: MatchActivityAttributes, state: MatchActivityAttributes.ContentState) throws -> String {
         let fid = attrs.fixtureId
         // pushType .token -> per-activity APNs token sent to backend (needs paid account to actually receive pushes).
-        let act = try Activity.request(attributes: attrs, content: .init(state: state, staleDate: Date().addingTimeInterval(600)), pushType: .token)
+        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(600))
+        let act: Activity<MatchActivityAttributes>
+        do { act = try Activity.request(attributes: attrs, content: content, pushType: .token) }
+        catch {
+            // Without the aps-environment entitlement (unsigned/simulator builds) token-based activities are refused;
+            // fall back to a local-only activity updated by the app while it runs.
+            print("BARQ_LA: token activity refused (\(error)), starting local-only")
+            act = try Activity.request(attributes: attrs, content: content, pushType: nil)
+        }
         Task {
             for await tok in act.pushTokenUpdates {
                 let hex = tok.map { String(format: "%02x", $0) }.joined()

@@ -220,8 +220,10 @@ struct LeagueFixtures: Codable { var league: LeagueMeta?; var next: [Fixture]; v
 struct TeamInfo: Codable, Hashable { var id: Int; var name: String; var logo: String?; var country: String?; var founded: Int? }
 struct VenueInfo: Codable, Hashable { var name: String?; var city: String?; var capacity: Int?; var image: String? }
 struct SquadPlayer: Codable, Hashable, Identifiable { var id: Int; var name: String; var photo: String?; var number: Int?; var pos: String?; var age: Int? }
+/// API-SPORTS returns null ids for free agents / unknown clubs and null league ids for some qualifiers.
+struct LooseRef: Codable, Hashable { var id: Int?; var name: String?; var logo: String?; var season: Int? }
 struct Transfer: Codable, Hashable {
-    var player: NamedRef; var date: String; var type: String?; var `in`: TeamRef; var out: TeamRef
+    var player: NamedRef; var date: String?; var type: String?; var `in`: LooseRef; var out: LooseRef
 }
 struct TeamResponse: Codable {
     var team: TeamInfo?; var venue: VenueInfo?
@@ -232,10 +234,21 @@ struct PlayerInfo: Codable, Hashable {
     var nationality: String?; var height: String?; var weight: String?; var photo: String?
 }
 struct PlayerSeasonStat: Codable, Hashable {
-    var team: TeamRef; var league: LeagueRef
+    var team: LooseRef; var league: LooseRef
     var apps: Int?; var minutes: Int?; var rating: String?; var pos: String?
     var goals: Int; var assists: Int; var shots: Int; var sot: Int; var passes: Int; var keyPasses: Int
     var dribbles: Int; var tackles: Int; var yellow: Int; var red: Int
+    enum CodingKeys: String, CodingKey { case team, league, apps, minutes, rating, pos, goals, assists, shots, sot, passes, keyPasses, dribbles, tackles, yellow, red }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        func n(_ k: CodingKeys) -> Int { (try? c.decodeIfPresent(Int.self, forKey: k)) ?? 0 }
+        team = (try? c.decode(LooseRef.self, forKey: .team)) ?? LooseRef()
+        league = (try? c.decode(LooseRef.self, forKey: .league)) ?? LooseRef()
+        apps = try? c.decodeIfPresent(Int.self, forKey: .apps); minutes = try? c.decodeIfPresent(Int.self, forKey: .minutes)
+        rating = try? c.decodeIfPresent(String.self, forKey: .rating); pos = try? c.decodeIfPresent(String.self, forKey: .pos)
+        goals = n(.goals); assists = n(.assists); shots = n(.shots); sot = n(.sot); passes = n(.passes); keyPasses = n(.keyPasses)
+        dribbles = n(.dribbles); tackles = n(.tackles); yellow = n(.yellow); red = n(.red)
+    }
 }
 struct PlayerResponse: Codable { var player: PlayerInfo?; var stats: [PlayerSeasonStat]? }
 

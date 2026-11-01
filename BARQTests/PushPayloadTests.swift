@@ -70,4 +70,23 @@ final class PushPayloadTests: XCTestCase {
         let s = MatchActivityAttributes.ContentState.from(d)
         XCTAssertEqual(s.minute, 70); XCTAssertEqual(s.homeGoals, 1); XCTAssertEqual(s.lastEvent, "هدف - Salah 12'")
     }
+
+    // Real backend responses (API-SPORTS via BARQ server) captured 2026-11-01; regression for null ids in transfers / league.
+    func raw(_ n: String) throws -> Data {
+        let b = Bundle(for: Self.self)
+        return try Data(contentsOf: XCTUnwrap(b.url(forResource: n, withExtension: "json")))
+    }
+    func testRealTeamDecodes() throws {
+        let t = try JSONDecoder().decode(TeamResponse.self, from: raw("real-team-40"))
+        XCTAssertEqual(t.team?.id, 40); XCTAssertFalse(t.squad?.isEmpty ?? true)
+    }
+    func testRealPlayerDecodes() throws {
+        let p = try JSONDecoder().decode(PlayerResponse.self, from: raw("real-player-1100"))
+        XCTAssertEqual(p.player?.id, 1100); XCTAssertFalse(p.stats?.isEmpty ?? true)
+    }
+    func testRealMatchDecodes() throws {
+        let m = try JSONDecoder().decode(MatchDetail.self, from: raw("real-match-1557453"))
+        XCTAssertEqual(m.match.id, 1557453)
+        _ = MatchActivityAttributes.ContentState.from(m)
+    }
 }
