@@ -77,7 +77,7 @@ final class FOTIQPersistenceUITests: XCTestCase {
         app = XCUIApplication(); app.launchArguments = ["-screen", "settings"]; app.launch()
         XCTAssertTrue(app.buttons["settings-density"].firstMatch.waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["settings-density"].firstMatch.label.contains("الكل"), "density not persisted: \(app.buttons["settings-density"].firstMatch.label)")
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-settings"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-settings"; shot.lifetime = .keepAlways; add(shot); try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/\(shot.name ?? "v7-x").png"))
     }
     func testReorderPersistsAndResets() {
         var app = XCUIApplication(); app.launch()
@@ -87,7 +87,7 @@ final class FOTIQPersistenceUITests: XCTestCase {
         let from = app.cells.containing(.any, identifier: "reorder-row-today").buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Reorder' OR label CONTAINS 'ترتيب' OR label CONTAINS 'إعادة'")).firstMatch
         let to = app.cells.containing(.any, identifier: "reorder-row-carousel").firstMatch
         if from.exists { from.press(forDuration: 0.6, thenDragTo: to) }
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-reorder"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-reorder"; shot.lifetime = .keepAlways; add(shot); try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/\(shot.name ?? "v7-x").png"))
         let firstBefore = app.cells.element(boundBy: 0).label
         app.buttons["تم"].firstMatch.tap()
         app.terminate()
@@ -105,7 +105,7 @@ final class FOTIQPersistenceUITests: XCTestCase {
             let chip = app.buttons["notif-filter-\(k)"].firstMatch
             XCTAssertTrue(chip.waitForExistence(timeout: 20), k); chip.tap()
             XCTAssertTrue(chip.isSelected, "\(k) not selected")
-            let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-notifications-\(k)"; shot.lifetime = .keepAlways; add(shot)
+            let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-notifications-\(k)"; shot.lifetime = .keepAlways; add(shot); try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/\(shot.name ?? "v7-x").png"))
         }
     }
 }
