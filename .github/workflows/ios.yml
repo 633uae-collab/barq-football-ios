@@ -32,8 +32,17 @@ jobs:
           APP=$(find dd/Build/Products -name BARQ.app -path "*iphonesimulator*" | head -1)
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl ui "$UDID" appearance dark
-          xcrun simctl launch "$UDID" ae.barq.football; sleep 25
-          mkdir -p shots; xcrun simctl io "$UDID" screenshot shots/home.png
+          shot() { xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true; xcrun simctl launch "$UDID" ae.barq.football "${@:2}"; sleep 22; xcrun simctl io "$UDID" screenshot "shots/v2-$1.png"; }
+          mkdir -p shots
+          API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
+          MID=$(curl -s -H "X-Pinggy-No-Screen: 1" "$API/api/fixtures" | python3 -c "import json,sys;f=json.load(sys.stdin)['fixtures'];L={'1H','2H','HT'};f=sorted(f,key=lambda x:(x['status']['short'] not in L,-(x.get('imp') or 0)));print(f[0]['id'])" || echo 0)
+          echo "match $MID"
+          shot home
+          shot matches -startTab matches
+          shot match-center -openMatch "$MID"
+          shot ai -startTab ai
+          shot favorites -startTab favorites
+          shot search -startTab search
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: screens, path: shots, if-no-files-found: ignore }

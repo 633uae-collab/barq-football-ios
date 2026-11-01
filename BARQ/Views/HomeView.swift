@@ -29,6 +29,7 @@ struct HomeView: View {
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                NavigationLink(value: Route.news) { Image(systemName: "newspaper") }
                 Button { editing = true } label: { Image(systemName: "rectangle.3.group") }
                 NavigationLink(value: Route.settings) { Image(systemName: "gearshape") }
             }
@@ -182,7 +183,7 @@ struct LiveTicker: View {
                                     RemoteImage(url: f.home.logo, size: 22)
                                     Text(f.scoreText).font(.subheadline.bold()).monospacedDigit().environment(\.layoutDirection, .leftToRight)
                                     RemoteImage(url: f.away.logo, size: 22)
-                                    LivePill(minute: f.status.elapsed)
+                                    LivePill(minute: f.status.elapsed, extra: f.status.extra, status: f.status.short)
                                 }
                                 .padding(.horizontal, 12).padding(.vertical, 8)
                                 .glassEffect(.regular.interactive(), in: .capsule)

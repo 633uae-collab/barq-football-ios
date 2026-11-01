@@ -28,11 +28,12 @@ struct RootView: View {
 
     var body: some View {
         // Native iOS 26 floating Liquid Glass tab bar (system-provided material, not a blur imitation).
+        // iPhone shows at most 5 tab items (incl. the search tab) before UIKit adds "More",
+        // so News lives in Home's toolbar + its own screen; Search uses the native search-role tab.
         TabView(selection: $tab) {
             Tab("الرئيسية", systemImage: "house", value: AppTab.home) { NavigationStack { HomeView() } }
             Tab("المباريات", systemImage: "soccerball", value: AppTab.matches) { NavigationStack { MatchesView() } }
             Tab("المحلل", systemImage: "brain.head.profile", value: AppTab.ai) { NavigationStack { AIView() } }
-            Tab("الأخبار", systemImage: "newspaper", value: AppTab.news) { NavigationStack { NewsView() } }
             Tab("المفضلة", systemImage: "star", value: AppTab.favorites) { NavigationStack { FavoritesView() } }
             Tab(value: AppTab.search, role: .search) { NavigationStack { SearchView() } }
         }
@@ -40,7 +41,13 @@ struct RootView: View {
         .sheet(item: Binding(get: { deepLink.fixtureId.map { IdBox(id: $0) } }, set: { deepLink.fixtureId = $0?.id })) { box in
             NavigationStack { MatchCenterView(fixtureId: box.id) }
         }
-        .task { poller.start(store: store) }
+        .task {
+            poller.start(store: store)
+            // Launch arguments used by CI screenshots: -startTab matches|ai|favorites|search, -openMatch <id>
+            let d = UserDefaults.standard
+            switch d.string(forKey: "startTab") { case "matches": tab = .matches; case "ai": tab = .ai; case "favorites": tab = .favorites; case "search": tab = .search; case "news": tab = .home; default: break }
+            let m = d.integer(forKey: "openMatch"); if m > 0 { deepLink.fixtureId = m }
+        }
         .onOpenURL { url in
             if url.host == "match", let id = Int(url.lastPathComponent) { deepLink.fixtureId = id }
         }

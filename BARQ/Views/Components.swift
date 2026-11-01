@@ -1,26 +1,51 @@
 import SwiftUI
 
-/// Cached remote image (URLSession shared cache) with an SF Symbol placeholder.
+/// Remote image with in-memory cache, shared disk URLCache and retry (AsyncImage gives up on the first
+/// failure/cancellation, which left placeholder shields in fast-scrolling carousels).
+final class ImageStore {
+    static let shared = ImageStore()
+    let mem = NSCache<NSString, UIImage>()
+    let session: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.urlCache = URLCache(memoryCapacity: 24 << 20, diskCapacity: 200 << 20)
+        c.requestCachePolicy = .returnCacheDataElseLoad
+        c.timeoutIntervalForRequest = 15
+        c.httpMaximumConnectionsPerHost = 6
+        return URLSession(configuration: c)
+    }()
+    func image(_ url: URL) async -> UIImage? {
+        let key = url.absoluteString as NSString
+        if let i = mem.object(forKey: key) { return i }
+        for attempt in 0..<3 {
+            if let (d, r) = try? await session.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200, let img = UIImage(data: d) {
+                mem.setObject(img, forKey: key); return img
+            }
+            if Task.isCancelled { return nil }
+            try? await Task.sleep(for: .milliseconds(400 * (attempt + 1)))
+        }
+        return nil
+    }
+}
+
 struct RemoteImage: View {
     let url: String?
     var fallback: String = "shield"
     var size: CGFloat = 32
     var circle = false
+    @State private var img: UIImage?
     var body: some View {
         Group {
-            if let s = url, let u = URL(string: s) {
-                AsyncImage(url: u, transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
-                    switch phase {
-                    case .success(let img): img.resizable().scaledToFit()
-                    default: Image(systemName: fallback).resizable().scaledToFit().foregroundStyle(.secondary).padding(size * 0.18)
-                    }
-                }
-            } else {
-                Image(systemName: fallback).resizable().scaledToFit().foregroundStyle(.secondary).padding(size * 0.18)
-            }
+            if let img { Image(uiImage: img).resizable().scaledToFit().transition(.opacity) }
+            else { Image(systemName: fallback).resizable().scaledToFit().foregroundStyle(.secondary).padding(size * 0.18) }
         }
         .frame(width: size, height: size)
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(Rectangle()))
+        .task(id: url) {
+            guard let s = url, let u = URL(string: s) else { img = nil; return }
+            if let c = ImageStore.shared.mem.object(forKey: s as NSString) { img = c; return }
+            let r = await ImageStore.shared.image(u)
+            withAnimation(.easeOut(duration: 0.2)) { img = r }
+        }
     }
 }
 
@@ -47,12 +72,19 @@ struct SectionHeader: View {
 
 struct LivePill: View {
     var minute: Int?
+    var extra: Int? = nil
+    var status: String? = nil
+    var label: String {
+        if status == "HT" { return String(localized: "استراحة") }
+        guard let m = minute else { return "LIVE" }
+        return extra.map { "\(m)+\($0)'" } ?? "\(m)'"
+    }
     @State private var pulse = false
     var body: some View {
         HStack(spacing: 4) {
             Circle().fill(.red).frame(width: 7, height: 7).opacity(pulse ? 0.35 : 1)
                 .animation(.easeInOut(duration: 0.8).repeatForever(), value: pulse)
-            Text(minute.map { "\($0)'" } ?? "LIVE").font(.caption.bold()).monospacedDigit()
+            Text(label).font(.caption.bold()).monospacedDigit()
         }
         .foregroundStyle(.red)
         .padding(.horizontal, 8).padding(.vertical, 3)
@@ -64,7 +96,7 @@ struct LivePill: View {
 struct StatusBadge: View {
     let f: Fixture
     var body: some View {
-        if f.isLive { LivePill(minute: f.status.elapsed) }
+        if f.isLive { LivePill(minute: f.status.elapsed, extra: f.status.extra, status: f.status.short) }
         else if f.isDone { Label("انتهت", systemImage: "flag.checkered").font(.caption).foregroundStyle(.secondary) }
         else { Label(Fmt.time(f.kickoff), systemImage: "clock").font(.caption).foregroundStyle(.secondary) }
     }
@@ -164,6 +196,7 @@ extension View {
             case .settings: SettingsView()
             case .calendar: CalendarView()
             case .leagues: LeaguesView()
+            case .news: NewsView()
             }
         }
     }
