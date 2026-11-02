@@ -88,19 +88,15 @@ final class WalkthroughRecordingUITests: XCTestCase {
         if tab("بحث") || { let s = app.tabBars.buttons.element(boundBy: 4); if s.exists { s.tap(); pause(3); return true }; return false }() {
             let field = app.searchFields.firstMatch
             if field.waitForExistence(timeout: 10) {
-                for (q, expect) in [("liverpool", "Liverpool"), ("haaland", "Haaland"), ("premier", "Premier League")] {
-                    field.tap(); if let v = field.value as? String, !v.isEmpty, v != field.placeholderValue { field.buttons.firstMatch.tap() }
-                    field.typeText(q); pause(2)
-                    let r = text(expect)
-                    if r.waitForExistence(timeout: 120) { pause(3); r.tap(); pause(10); slowUp(3); slowDown(3); log("7/8 search \(q) opened \(expect)"); back() }
-                    else { log("7/8 SKIP search \(q) no result") }
-                    let c = app.buttons["Cancel"].exists ? app.buttons["Cancel"] : app.buttons["إلغاء"]
-                    if c.exists { c.tap(); pause(2) }
-                }
+                field.tap(); pause(1); field.typeText("liverpool"); pause(2)
+                let r = app.staticTexts.matching(NSPredicate(format: "label == 'Liverpool'")).firstMatch
+                if r.waitForExistence(timeout: 40) { pause(6); app.swipeUp(velocity: .slow); pause(3); log("8 search liverpool results shown") } else { log("8 SKIP search no result in 40s") }
+                let c = app.buttons["Cancel"].exists ? app.buttons["Cancel"] : app.buttons["إلغاء"]
+                if c.exists { c.tap() } else { app.typeText("\n") }; pause(2)
             } else { log("8 SKIP no search field") }
         }
         // fallbacks (real screens) in case search taps did not navigate
-        if Date().timeIntervalSince(t0) < 240 {
+        do {
             relaunch(["-screen", "club", "-id", "40"]); pause(12); slowUp(3); log("7 club page (direct)")
             relaunch(["-screen", "player", "-id", "1100"]); pause(12); slowUp(2); log("7 player page (direct)")
             relaunch(["-screen", "league", "-id", "39"]); pause(12); slowUp(3); log("7 league page (direct)")

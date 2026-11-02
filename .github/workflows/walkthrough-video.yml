@@ -4,11 +4,11 @@ on:
     inputs:
       runner: { description: "macOS runner label", required: false, default: "macos-26" }
   push:
-    paths: [".github/workflows/walkthrough-video.yml"]
+    paths: ["ci/walkthrough-trigger"]
 jobs:
   record:
     runs-on: ${{ inputs.runner || 'macos-26' }}
-    timeout-minutes: 75
+    timeout-minutes: 90
     env:
       FOTIQ_API_BASE: ${{ secrets.FOTIQ_API_BASE }}
     steps:
@@ -40,9 +40,12 @@ jobs:
           REC=$!; sleep 5
           TEST_RUNNER_WALKTHROUGH=1 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/WalkthroughRecordingUITests 2>&1 | tee walk.log | grep -E "WALK|Test Case|error:" || true
           sleep 3; kill -INT $REC; wait $REC || true; cat rec.log; ls -la raw.mp4
+      - name: Keep raw recording
+        if: always()
+        run: mkdir -p out && cp raw.mp4 out/fotiq-walkthrough-raw.mp4 || true
       - name: Encode 1080p (no speed change)
         run: |
-          ffmpeg -y -i raw.mp4 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p" -c:v libx264 -preset medium -crf 20 -r 30 -movflags +faststart fotiq-walkthrough.mp4
+          ffmpeg -y -i raw.mp4 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p" -c:v libx264 -preset veryfast -crf 20 -r 30 -movflags +faststart fotiq-walkthrough.mp4
           ffprobe -v error -show_entries format=duration:stream=width,height,codec_name -of default=nw=1 fotiq-walkthrough.mp4
           mkdir -p out; mv fotiq-walkthrough.mp4 out/; grep WALK walk.log > out/walk-steps.txt || true
       - uses: actions/upload-artifact@v4
