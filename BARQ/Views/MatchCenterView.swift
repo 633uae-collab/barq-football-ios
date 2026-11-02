@@ -156,7 +156,7 @@ enum TimelineOrder {
         // Same-minute ties: API-SPORTS reshuffles same-minute events between refreshes (seen in recorded real snapshots,
         // e.g. 4 half-time subs), so ties are ordered deterministically by type priority then stable key, never by array index.
         typealias K = (Int, Int, Int, String)
-        var items: [(K, Row)] = events.map { e in ((e.time.elapsed ?? 0, e.time.extra ?? 0, priority(e), key(e) + "|" + (e.player?.name ?? "")), .event(index: 0, e)) }   // index unused for order; constant so retained/reordered API arrays do not re-render every row
+        var items: [(K, Row)] = events.enumerated().map { i, e in ((e.time.elapsed ?? 0, e.time.extra ?? 0, priority(e), key(e) + "|" + (e.player?.name ?? "")), .event(index: i, e)) }
         if pastHT.contains(status) {
             // HT sits above every first-half event (incl. 45+x stoppage) and below the first second-half event
             items.append(((45, 999, 0, ""), .marker(.ht)))
