@@ -90,7 +90,7 @@ final class FOTIQPersistenceUITests: XCTestCase {
         let btn = app.buttons["home-reorder"].firstMatch
         XCTAssertTrue(btn.waitForExistence(timeout: 30)); btn.tap()
         let start = order(app)
-        XCTAssertEqual(start.count, 5, "rows: \(start)")
+        XCTAssertEqual(start.count, 3, "rows: \(start)")
         // Drag the last row's reorder handle to the top (handle sits at the row's trailing/leading edge).
         let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'reorder-row-'"))
         var seenR = Set<String>()
@@ -113,7 +113,7 @@ final class FOTIQPersistenceUITests: XCTestCase {
         XCTAssertEqual(order(app), edited, "order not persisted after relaunch")
         app.buttons["reorder-reset"].firstMatch.tap()
         sleep(1)
-        XCTAssertEqual(order(app), ["reorder-row-carousel", "reorder-row-ticker", "reorder-row-ai", "reorder-row-favorites", "reorder-row-today"])
+        XCTAssertEqual(order(app), ["reorder-row-carousel", "reorder-row-stars", "reorder-row-upcoming"])
         app.buttons["تم"].firstMatch.tap()
     }
     func testNotificationFilters() {

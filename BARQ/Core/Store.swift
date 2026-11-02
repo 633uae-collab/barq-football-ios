@@ -23,7 +23,9 @@ final class AppStore {
 
     let deviceId: String
 
-    static let defaultSections = ["carousel", "ticker", "ai", "favorites", "today"]
+    static let defaultSections = ["carousel", "stars", "upcoming"]
+    /// Pre-v8 Home sections (kept for reference; their views still exist in HomeView).
+    static let legacySections = ["carousel", "ticker", "ai", "favorites", "today"]
 
     init() {
         let d = UserDefaults.standard
@@ -35,7 +37,9 @@ final class AppStore {
         favTeams = load("favTeams", [])
         favLeagues = load("favLeagues", [301, 307, 39, 140, 2])
         savedMatches = load("savedMatches", [])
-        homeSections = load("homeSections", Self.defaultSections)
+        // v8 Home layout (favorites hero / FOTIQ STARS / upcoming): migrate once from the old section list.
+        if d.bool(forKey: "homeLayoutV8") { homeSections = load("homeSections", Self.defaultSections) }
+        else { homeSections = Self.defaultSections; d.set(try? JSONEncoder().encode(Self.defaultSections), forKey: "homeSections"); d.set(true, forKey: "homeLayoutV8") }
         mutedTeams = load("mutedTeams", [])
         theme = ThemeMode(rawValue: d.string(forKey: "theme") ?? "") ?? .dark
         accentKey = d.string(forKey: "accent") ?? "fotiq"

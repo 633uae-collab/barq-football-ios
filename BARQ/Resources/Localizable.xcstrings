@@ -2140,6 +2140,136 @@
           }
         }
       }
+    },
+    "لا توجد مباريات مباشرة حالياً": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No live matches right now"
+          }
+        }
+      }
+    },
+    "إضافة مباريات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add matches"
+          }
+        }
+      }
+    },
+    "عرض التشكيلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View lineup"
+          }
+        }
+      }
+    },
+    "على البداية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "to kickoff"
+          }
+        }
+      }
+    },
+    "بتوقيت الإمارات": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UAE time"
+          }
+        }
+      }
+    },
+    "لا توجد بيانات لاعبين لمباريات اليوم بعد": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No player data for today's matches yet"
+          }
+        }
+      }
+    },
+    "التقييم": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rating"
+          }
+        }
+      }
+    },
+    "إزالة من المفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from favorites"
+          }
+        }
+      }
+    },
+    "إضافة للمفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to favorites"
+          }
+        }
+      }
+    },
+    "لا توجد مباريات قادمة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No upcoming matches"
+          }
+        }
+      }
+    },
+    "الأندية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clubs"
+          }
+        }
+      }
+    },
+    "المباريات المفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite matches"
+          }
+        }
+      }
+    },
+    "نجوم الملاعب": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FOTIQ Stars"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

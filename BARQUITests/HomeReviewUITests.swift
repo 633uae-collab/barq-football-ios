@@ -19,14 +19,16 @@ final class HomeReviewUITests: XCTestCase {
         sleep(12)
         shot("top")
         // full page top -> bottom, ~one screen per step
-        var lastPNG = Data()
-        for step in 1...25 {
-            let png = XCUIScreen.main.screenshot().pngRepresentation
-            if png == lastPNG { break }
-            try? png.write(to: URL(fileURLWithPath: String(format: "/tmp/review-home-full-%02d.png", step)))
-            lastPNG = png
-            let win = app.windows.firstMatch
-            win.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).press(forDuration: 0.1, thenDragTo: win.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+        // Stops as soon as the bottom ("كل الدوريات") is fully on screen, so no duplicate shots.
+        let win = app.windows.firstMatch
+        let allLeagues = app.buttons["كل الدوريات"].firstMatch
+        var prevY: CGFloat = -1
+        for step in 1...12 {
+            try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: String(format: "/tmp/review-home-full-%02d.png", step)))
+            if allLeagues.exists && allLeagues.frame.maxY < win.frame.maxY - 110 && allLeagues.frame.minY > 60 { print("HOME_FULL bottom at step \(step)"); break }
+            if allLeagues.exists && abs(allLeagues.frame.minY - prevY) < 2 { print("HOME_FULL no movement at step \(step)"); break }
+            prevY = allLeagues.exists ? allLeagues.frame.minY : -1
+            win.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(forDuration: 0.1, thenDragTo: win.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)))
             sleep(3)
         }
         // back to top

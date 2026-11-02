@@ -8,6 +8,13 @@ struct HomeView: View {
     @State private var error: String?
     @State private var loaded = false
     @State private var editing = false
+    @State private var tomorrow: [Fixture] = []
+    @State private var stars: [StarPlayer]?
+    @State private var lineupsReady: Set<Int> = []
+    @State private var now = Date()
+    @State private var visible = false
+    @State private var adding = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
@@ -46,14 +53,43 @@ struct HomeView: View {
             }
         }
         .sheet(isPresented: $editing) { ReorderSectionsSheet() }
+        .sheet(isPresented: $adding) { AddFavoritesSheet(fixtures: today + tomorrow) }
         .barqDestinations()
-        .task { await load() }
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
+        // Live refresh loop: runs only while Home is visible and the app is active.
+        .task(id: visible && scenePhase == .active) {
+            await load()
+            guard visible, scenePhase == .active else { return }
+            while !Task.isCancelled {
+                let hot = today.contains { $0.isLive || HomeFeed.heroEligible($0, now: Date()) }
+                try? await Task.sleep(for: .seconds(hot ? 20 : 60))
+                if Task.isCancelled { break }
+                await load()
+            }
+        }
         .refreshable { await load() }
     }
 
     @ViewBuilder func section(_ key: String) -> some View {
         switch key {
-        case "carousel": if !top.isEmpty { TopCarousel(matches: top) }
+        case "carousel":
+            // Favorites hero: always present (empty state keeps the same size), never hidden.
+            if loaded {
+                FavoritesHero(matches: heroMatches, lineupsReady: lineupsReady) { adding = true }
+            }
+        case "stars":
+            if loaded { StarsCard(players: stars, active: visible && scenePhase == .active) }
+        case "upcoming":
+            if loaded {
+                SectionHeader(title: "المباريات القادمة", symbol: "calendar")
+                let list = HomeFeed.upcoming(today + tomorrow, now: now)
+                if list.isEmpty { EmptyState(symbol: "calendar", title: "لا توجد مباريات قادمة") }
+                ForEach(list) { UpcomingRow(f: $0) }
+                NavigationLink(value: Route.leagues) {
+                    Label("كل الدوريات", systemImage: "trophy").frame(maxWidth: .infinity)
+                }.buttonStyle(.glass)
+            }
         case "ticker":
             let live = today.filter(\.isLive)
             if !live.isEmpty { LiveTicker(matches: live) }
@@ -82,6 +118,11 @@ struct HomeView: View {
         }
     }
 
+    var favorites: HomeFeed.Favorites {
+        .init(matches: Set(store.savedMatches), teams: Set(store.favTeams.map(\.id)), leagues: Set(store.favLeagues))
+    }
+    var heroMatches: [Fixture] { HomeFeed.hero(today + tomorrow, favorites: favorites, now: now) }
+
     func load() async {
         do {
             async let a: FixturesResponse = API.shared.get("/api/fixtures?date=\(Fmt.day(0))", maxAge: 15)
@@ -89,9 +130,18 @@ struct HomeView: View {
             async let c: FeedResponse? = try? API.shared.get("/api/feed", maxAge: 30)
             let (t, tm, feed) = try await (a, b, c)
             today = t.fixtures
+            tomorrow = tm?.fixtures ?? []
             top = MatchSort.topN(today: t.fixtures, tomorrow: tm?.fixtures ?? [])
             latestAI = feed?.insights.first
+            now = Date()
             loaded = true; error = nil
+            if let s: StarsResponse = try? await API.shared.get("/api/stars", maxAge: 60) { stars = s.players } else if stars == nil { stars = [] }
+            // Official lineups for pre-match hero cards only (few requests, cached server-side).
+            var ready = lineupsReady
+            for f in heroMatches where !f.isLive && !ready.contains(f.id) {
+                if let d: MatchDetail = try? await API.shared.get("/api/match/\(f.id)", maxAge: 120), d.lineups.count >= 2 { ready.insert(f.id) }
+            }
+            lineupsReady = ready
         } catch { self.error = error.localizedDescription }
     }
 }
@@ -252,8 +302,9 @@ struct ReorderSectionsSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     static let names: [String: (LocalizedStringKey, String)] = [
-        "carousel": ("أهم المباريات", "sparkles.rectangle.stack"), "ticker": ("مباشر الآن", "dot.radiowaves.left.and.right"),
+        "carousel": ("المباريات المفضلة", "sparkles.rectangle.stack"), "ticker": ("مباشر الآن", "dot.radiowaves.left.and.right"),
         "ai": ("آخر تحليل AI", "brain.head.profile"), "favorites": ("فرقك اليوم", "star"), "today": ("مباريات اليوم", "soccerball"),
+        "stars": ("نجوم الملاعب", "star.circle"), "upcoming": ("المباريات القادمة", "calendar"),
     ]
     var body: some View {
         @Bindable var s = store
