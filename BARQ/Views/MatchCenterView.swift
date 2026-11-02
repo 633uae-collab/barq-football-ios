@@ -96,12 +96,13 @@ struct MatchCenterView: View {
         do {
             let new: MatchDetail = try await API.shared.get(path)
             if replay { replayStep += 1 }
-            let grew = new.events.count > (d?.events.count ?? 0) && d != nil
+            var merged = new
+            if let old = d, old.match.id == new.match.id { merged.events = stabilizer.merge(previous: old.events, incoming: new.events) }
+            // compare what is displayed (merged), not the raw response, which may be transiently shorter
+            let grew = merged.events.count > (d?.events.count ?? 0) && d != nil
             pendingY = nil
             holdPosition = grew && offsetY > 260   // user is reading further down: do not yank the list
             let y0 = offsetY, h0 = contentH
-            var merged = new
-            if let old = d, old.match.id == new.match.id { merged.events = stabilizer.merge(previous: old.events, incoming: new.events) }
             d = merged; error = nil
             if holdPosition {
                 // Final exact correction once lazy rows have been measured: keep the reader's content where it was.
@@ -155,7 +156,7 @@ enum TimelineOrder {
         // Same-minute ties: API-SPORTS reshuffles same-minute events between refreshes (seen in recorded real snapshots,
         // e.g. 4 half-time subs), so ties are ordered deterministically by type priority then stable key, never by array index.
         typealias K = (Int, Int, Int, String)
-        var items: [(K, Row)] = events.enumerated().map { i, e in ((e.time.elapsed ?? 0, e.time.extra ?? 0, priority(e), key(e) + "|" + (e.player?.name ?? "")), .event(index: i, e)) }
+        var items: [(K, Row)] = events.map { e in ((e.time.elapsed ?? 0, e.time.extra ?? 0, priority(e), key(e) + "|" + (e.player?.name ?? "")), .event(index: 0, e)) }   // index unused for order; constant so retained/reordered API arrays do not re-render every row
         if pastHT.contains(status) {
             // HT sits above every first-half event (incl. 45+x stoppage) and below the first second-half event
             items.append(((45, 999, 0, ""), .marker(.ht)))

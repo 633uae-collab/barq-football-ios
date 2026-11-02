@@ -58,7 +58,7 @@ final class HomeReviewUITests: XCTestCase {
         for _ in 0..<3 { app.swipeUp(velocity: .slow) }
         sleep(2)
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS ' - ' OR label CONTAINS ':'")).element(boundBy: 2)
-        if row.exists { row.press(forDuration: 1.5); sleep(3); shot("longpress-preview"); app.tap(); sleep(2) }
+        if row.exists, row.isHittable { row.press(forDuration: 1.5); sleep(3); shot("longpress-preview"); app.tap(); sleep(2) }
         // "all leagues" link at the bottom
         for _ in 0..<12 { app.swipeUp(velocity: .fast) }
         let all = app.buttons["كل الدوريات"]
