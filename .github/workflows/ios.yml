@@ -111,7 +111,7 @@ jobs:
           shot 12-settings -screen settings
           shot 13-leagues -screen leagues
           shot 14-league-center -screen league -id 39
-          shot 15-club -screen club -id "$TEAM"
+          shot 15-club -screen club -id 40
           shot 16-player -screen player -id "$PLAYER"
           shot 17-reorder -screen reorder
           shot 18-tabbar-root

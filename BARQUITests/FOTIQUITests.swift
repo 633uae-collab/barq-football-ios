@@ -36,6 +36,11 @@ final class FOTIQUITests: XCTestCase {
     func testClubAndPlayerPages() {
         var app = launch(["-screen", "club", "-id", "40"])
         XCTAssertTrue(anyText(app, containing: "Anfield", timeout: Self.realData))
+        // Screenshot of Liverpool's club page with the venue (Anfield) on screen.
+        let anfield = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "Anfield")).firstMatch
+        for _ in 0..<8 where !(anfield.exists && anfield.isHittable) { app.swipeUp(); sleep(1) }
+        sleep(2)
+        try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/v7-15-club-liverpool-anfield.png"))
         app.terminate()
         app = launch(["-screen", "player", "-id", "1100"])
         XCTAssertTrue(anyText(app, containing: "Haaland", timeout: Self.realData))
