@@ -62,9 +62,9 @@ struct HomeView: View {
             await load()
             while !Task.isCancelled {
                 let hot = today.contains { $0.isLive || HomeFeed.heroEligible($0, now: Date()) }
-                try? await Task.sleep(for: .seconds(hot ? 20 : 60))
+                try? await Task.sleep(for: .seconds(error != nil && !loaded ? 5 : (hot ? 20 : 60)))
                 if Task.isCancelled { break }
-                if visible && scenePhase == .active { await load() }
+                if (visible && scenePhase == .active) || !loaded { await load() }
             }
         }
         .refreshable { await load() }

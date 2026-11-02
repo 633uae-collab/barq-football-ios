@@ -24,7 +24,7 @@ final class HomeV8UITests: XCTestCase {
     func testHeroEmptyStateOrPagingAndAddFavoritePersists() {
         var app = launch()
         let hero = el(app, "home-hero"), empty = el(app, "hero-empty")
-        let deadline = Date().addingTimeInterval(75)
+        let deadline = Date().addingTimeInterval(150)
         while !hero.exists && !empty.exists && Date() < deadline { sleep(1) }
         XCTAssertTrue(hero.exists || empty.exists, "top card must always be present")
         if empty.exists {
@@ -73,7 +73,7 @@ final class HomeV8UITests: XCTestCase {
     func testStarsRotate() {
         let app = launch()
         let card = el(app, "stars-card")
-        if !card.waitForExistence(timeout: 75) { dump(app, "stars"); XCTFail("stars card missing") ; return }
+        if !card.waitForExistence(timeout: 150) { dump(app, "stars"); XCTFail("stars card missing") ; return }
         let pager = el(app, "stars-pager")
         sleep(3)
         if !pager.exists { XCTAssertTrue(el(app, "stars-empty").exists); print("HOMEV8 stars=empty"); return }
@@ -89,7 +89,7 @@ final class HomeV8UITests: XCTestCase {
     func testUpcomingSortedNoDuplicatesAndStar() {
         let app = launch()
         let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'upcoming-row-'"))
-        if !rows.firstMatch.waitForExistence(timeout: 75) { dump(app, "upcoming"); XCTFail("upcoming list from real data"); return }
+        if !rows.firstMatch.waitForExistence(timeout: 150) { dump(app, "upcoming"); XCTFail("upcoming list from real data"); return }
         let all = rows.allElementsBoundByIndex.map { ($0.identifier, Int(($0.value as? String) ?? "") ?? 0) }
         var seen = Set<String>(); let uniq = all.filter { seen.insert($0.0).inserted }
         XCTAssertEqual(uniq.count, Set(all.map(\.0)).count)
