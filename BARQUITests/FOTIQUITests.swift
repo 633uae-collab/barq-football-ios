@@ -82,7 +82,8 @@ final class FOTIQPersistenceUITests: XCTestCase {
     func order(_ app: XCUIApplication) -> [String] {
         let q = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'reorder-row-'"))
         _ = q.firstMatch.waitForExistence(timeout: 10)
-        return q.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }.map { $0.identifier }
+        var seen = Set<String>()
+        return q.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }.map { $0.identifier }.filter { seen.insert($0).inserted }
     }
     func testReorderPersistsAndResets() {
         var app = XCUIApplication(); app.launch()
@@ -92,7 +93,8 @@ final class FOTIQPersistenceUITests: XCTestCase {
         XCTAssertEqual(start.count, 5, "rows: \(start)")
         // Drag the last row's reorder handle to the top (handle sits at the row's trailing/leading edge).
         let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'reorder-row-'"))
-        let byY = rows.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }
+        var seenR = Set<String>()
+        let byY = rows.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }.filter { seenR.insert($0.identifier).inserted }
         if let last = byY.last, let first = byY.first {
             let win = app.windows.firstMatch.frame
             let handleX = (last.frame.minX - win.minX) > (win.maxX - last.frame.maxX) ? 0.06 : 0.94
