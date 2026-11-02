@@ -38,7 +38,11 @@ final class LiveTimelineUITests: XCTestCase {
         if !new.isEmpty || !gone.isEmpty { log.append("new=\(new) gone=\(gone) top=\(cur.first ?? "")") }
         if let firstNew = new.first(where: { !$0.hasPrefix("tl-m-") }), let oldTop = prev.first(where: { !$0.hasPrefix("tl-m-") }),
            minute(firstNew) >= minute(oldTop) {
-            XCTAssertLessThan(cur.firstIndex(of: firstNew)!, cur.firstIndex(of: oldTop)!, "new event must be above previous top event")
+            if let iN = cur.firstIndex(of: firstNew), let iO = cur.firstIndex(of: oldTop) {
+                XCTAssertLessThan(iN, iO, "new event must be above previous top event")
+            } else {
+                XCTFail("previous top event \(oldTop) missing after refresh; new top \(firstNew)")
+            }
         }
     }
 

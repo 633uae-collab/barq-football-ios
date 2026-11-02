@@ -18,6 +18,7 @@ struct MatchCenterView: View {
     @State private var offsetY: CGFloat = 0
     @State private var holdPosition = false
     @State private var pendingY: CGFloat?   // last compensated offset; offsetY lags one layout pass behind scrollTo
+    @State private var stabilizer = TimelineOrder.Stabilizer()   // keeps events across transiently shorter API responses
     @State private var contentH: CGFloat = 0
     @State private var replayStep = 0
     private var replay: Bool { UserDefaults.standard.bool(forKey: "replay") }
@@ -99,7 +100,9 @@ struct MatchCenterView: View {
             pendingY = nil
             holdPosition = grew && offsetY > 260   // user is reading further down: do not yank the list
             let y0 = offsetY, h0 = contentH
-            d = new; error = nil
+            var merged = new
+            if let old = d, old.match.id == new.match.id { merged.events = stabilizer.merge(previous: old.events, incoming: new.events) }
+            d = merged; error = nil
             if holdPosition {
                 // Final exact correction once lazy rows have been measured: keep the reader's content where it was.
                 try? await Task.sleep(for: .milliseconds(450))
@@ -152,7 +155,7 @@ enum TimelineOrder {
         // Same-minute ties: API-SPORTS reshuffles same-minute events between refreshes (seen in recorded real snapshots,
         // e.g. 4 half-time subs), so ties are ordered deterministically by type priority then stable key, never by array index.
         typealias K = (Int, Int, Int, String)
-        var items: [(K, Row)] = events.enumerated().map { i, e in ((e.time.elapsed ?? 0, e.time.extra ?? 0, priority(e), key(e)), .event(index: i, e)) }
+        var items: [(K, Row)] = events.enumerated().map { i, e in ((e.time.elapsed ?? 0, e.time.extra ?? 0, priority(e), key(e) + "|" + (e.player?.name ?? "")), .event(index: i, e)) }
         if pastHT.contains(status) {
             // HT sits above every first-half event (incl. 45+x stoppage) and below the first second-half event
             items.append(((45, 999, 0, ""), .marker(.ht)))
@@ -174,7 +177,9 @@ enum TimelineOrder {
     /// with an occurrence counter for genuine duplicates. Independent of API array position, so a refresh never re-creates rows.
     static func key(_ e: MatchEvent) -> String {
         let t = e.type.lowercased()
-        let who = e.player?.id.map(String.init) ?? e.player?.name ?? ""
+        // Goals/VAR: the scorer is often missing on the first report and filled in a refresh later (seen live 2026-11-02,
+        // goal 69' team 21159), so the player is not part of their identity; same-slot duplicates get the #n counter.
+        let who = (t == "goal" || t == "var") ? "" : (e.player?.id.map(String.init) ?? e.player?.name ?? "")
         // API-SPORTS renumbers "Substitution N" and may re-label goal details between refreshes (seen live 2026-11-02,
         // Vancouver-Seattle), so those details are excluded; subs use the outgoing player (assist) instead.
         let extra: String = switch t {
@@ -183,6 +188,32 @@ enum TimelineOrder {
         default: e.detail ?? ""
         }
         return "\(t)|\(e.time.elapsed ?? 0)|\(e.time.extra ?? 0)|\(who)|\(e.team.id)|\(extra)"
+    }
+    /// Keeps previously seen events across refreshes: API-SPORTS sometimes returns a transiently shorter events list.
+    /// An event missing from a response is kept until it has been absent `maxMisses` consecutive responses
+    /// (a genuine API revision, e.g. an event deleted after VAR); revised fields of still-present events always win.
+    struct Stabilizer {
+        static let maxMisses = 3
+        var misses: [String: Int] = [:]
+        mutating func merge(previous: [MatchEvent], incoming: [MatchEvent]) -> [MatchEvent] {
+            let inKeys = Set(TimelineOrder.keyedEvents(incoming).map(\.0))
+            let prevKeyed = TimelineOrder.keyedEvents(previous), prevKeys = Set(prevKeyed.map(\.0))
+            // In-place revision: a new key of the same type+team replaces the missing one (e.g. goal minute corrected 10' -> 22').
+            func slot(_ k: String) -> String { let p = k.split(separator: "|", omittingEmptySubsequences: false); return p.count > 4 ? "\(p[0])|\(p[4])" : k }
+            var revisedSlots: [String: Int] = [:]
+            for k in inKeys where !prevKeys.contains(k) { revisedSlots[slot(k), default: 0] += 1 }
+            var out = incoming
+            for (k, e) in prevKeyed where !inKeys.contains(k) {
+                if let r = revisedSlots[slot(k)], r > 0 { revisedSlots[slot(k)] = r - 1; misses[k] = nil; continue }
+                let n = misses[k, default: 0] + 1
+                if n < Self.maxMisses { misses[k] = n; out.append(e) } else { misses[k] = nil }
+            }
+            for k in inKeys { misses[k] = nil }
+            return out
+        }
+    }
+    static func keyedEvents(_ events: [MatchEvent]) -> [(String, MatchEvent)] {
+        keyed(events, status: "").compactMap { if case .event(_, let e) = $0.row { return ($0.key, e) }; return nil }
     }
     struct Keyed { let key: String; let row: Row }
     static func keyed(_ events: [MatchEvent], status: String) -> [Keyed] {
