@@ -17,6 +17,7 @@ struct MatchCenterView: View {
     @State private var scrollPos = ScrollPosition(edge: .top)
     @State private var offsetY: CGFloat = 0
     @State private var holdPosition = false
+    @State private var pendingY: CGFloat?   // last compensated offset; offsetY lags one layout pass behind scrollTo
     @State private var replayStep = 0
     private var replay: Bool { UserDefaults.standard.bool(forKey: "replay") }
     private var refreshSeconds: Double { replay ? 6 : 15 }
@@ -53,7 +54,13 @@ struct MatchCenterView: View {
         .scrollPosition($scrollPos)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, y in offsetY = y }
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
-            if holdPosition, new > old { scrollPos.scrollTo(y: offsetY + (new - old)) }
+            if holdPosition, new > old {
+                // Content can grow in several layout passes (two-line names measured lazily); accumulate from the
+                // last target instead of the not-yet-updated offset, otherwise later passes under-compensate.
+                let target = (pendingY ?? offsetY) + (new - old)
+                pendingY = target
+                scrollPos.scrollTo(y: target)
+            }
         }
         .screenBackground()
         .navigationTitle(d.map { "\($0.match.home.name) × \($0.match.away.name)" } ?? "المباراة")
@@ -87,9 +94,10 @@ struct MatchCenterView: View {
             let new: MatchDetail = try await API.shared.get(path)
             if replay { replayStep += 1 }
             let grew = new.events.count > (d?.events.count ?? 0) && d != nil
+            pendingY = nil
             holdPosition = grew && offsetY > 260   // user is reading further down: do not yank the list
             d = new; error = nil
-            if holdPosition { try? await Task.sleep(for: .milliseconds(600)); holdPosition = false }
+            if holdPosition { try? await Task.sleep(for: .milliseconds(1200)); holdPosition = false; pendingY = nil }
         } catch { if d == nil { self.error = error.localizedDescription } }
     }
 }
