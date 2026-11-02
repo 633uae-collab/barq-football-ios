@@ -10,7 +10,9 @@ final class LiveTimelineUITests: XCTestCase {
     func keys(_ app: XCUIApplication) -> [String] {
         // A row can surface twice in the accessibility tree (container + child); identity uniqueness of the data itself is unit tested.
         var seen = Set<String>()
-        return app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'tl-'")).allElementsBoundByIndex.map(\.identifier).filter { seen.insert($0).inserted }
+        return app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'tl-'")).allElementsBoundByIndex
+            .sorted { $0.frame.minY < $1.frame.minY }   // visual order (tree order can lag during insert animations)
+            .map(\.identifier).filter { seen.insert($0).inserted }
     }
     func save(_ name: String) {
         try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/fotiq-\(name).png"))
@@ -28,7 +30,9 @@ final class LiveTimelineUITests: XCTestCase {
         if cur.contains("tl-m-kickoff") { XCTAssertEqual(cur.last, "tl-m-kickoff", "kickoff must be last") }   // off-screen rows are pruned
         let kept = prev.filter { cur.contains($0) }
         XCTAssertEqual(kept, cur.filter { prev.contains($0) }, "previous relative order changed")
-        let gone = prev.filter { !cur.contains($0) && !$0.hasPrefix("tl-m-") }
+        // Rows below the visible window are pruned from the accessibility tree once new rows push them off-screen.
+        let lowest = cur.filter { !$0.hasPrefix("tl-m-") }.map(minute).min() ?? 0
+        let gone = prev.filter { !cur.contains($0) && !$0.hasPrefix("tl-m-") && (cur.contains("tl-m-kickoff") || minute($0) > lowest) }
         let new = cur.filter { !prev.contains($0) }
         XCTAssertTrue(gone.isEmpty, "rows disappeared/recreated between refreshes: \(gone)")
         if !new.isEmpty || !gone.isEmpty { log.append("new=\(new) gone=\(gone) top=\(cur.first ?? "")") }
