@@ -79,25 +79,40 @@ final class FOTIQPersistenceUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings-density"].firstMatch.label.contains("الكل"), "density not persisted: \(app.buttons["settings-density"].firstMatch.label)")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-settings"; shot.lifetime = .keepAlways; add(shot); try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/\(shot.name ?? "v7-x").png"))
     }
+    func order(_ app: XCUIApplication) -> [String] {
+        let q = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'reorder-row-'"))
+        _ = q.firstMatch.waitForExistence(timeout: 10)
+        return q.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }.map { $0.identifier }
+    }
     func testReorderPersistsAndResets() {
         var app = XCUIApplication(); app.launch()
         let btn = app.buttons["home-reorder"].firstMatch
         XCTAssertTrue(btn.waitForExistence(timeout: 30)); btn.tap()
-        XCTAssertTrue(app.otherElements["reorder-preview"].firstMatch.waitForExistence(timeout: 10) || app.staticTexts["معاينة الرئيسية"].exists)
-        let from = app.cells.containing(.any, identifier: "reorder-row-today").buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Reorder' OR label CONTAINS 'ترتيب' OR label CONTAINS 'إعادة'")).firstMatch
-        let to = app.cells.containing(.any, identifier: "reorder-row-carousel").firstMatch
-        if from.exists { from.press(forDuration: 0.6, thenDragTo: to) }
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-reorder"; shot.lifetime = .keepAlways; add(shot); try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/\(shot.name ?? "v7-x").png"))
-        let firstBefore = app.cells.element(boundBy: 0).label
+        let start = order(app)
+        XCTAssertEqual(start.count, 5, "rows: \(start)")
+        // Drag the last row's reorder handle to the top (handle sits at the row's trailing/leading edge).
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'reorder-row-'"))
+        let byY = rows.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }
+        if let last = byY.last, let first = byY.first {
+            let win = app.windows.firstMatch.frame
+            let handleX = (last.frame.minX - win.minX) > (win.maxX - last.frame.maxX) ? 0.06 : 0.94
+            let from = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: handleX, dy: last.frame.midY / win.height))
+            let to = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: handleX, dy: (first.frame.minY - 4) / win.height))
+            from.press(forDuration: 0.8, thenDragTo: to)
+        }
+        sleep(1)
+        let edited = order(app)
+        print("REORDER start=\(start) edited=\(edited)")
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-reorder"; shot.lifetime = .keepAlways; add(shot); try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/v7-reorder.png"))
         app.buttons["تم"].firstMatch.tap()
-        app.terminate()
+        sleep(1); app.terminate()
         app = XCUIApplication(); app.launch()
         XCTAssertTrue(app.buttons["home-reorder"].firstMatch.waitForExistence(timeout: 30)); app.buttons["home-reorder"].firstMatch.tap()
-        XCTAssertTrue(app.cells.element(boundBy: 0).waitForExistence(timeout: 10))
-        XCTAssertEqual(app.cells.element(boundBy: 0).label, firstBefore, "order not persisted")
+        XCTAssertEqual(order(app), edited, "order not persisted after relaunch")
         app.buttons["reorder-reset"].firstMatch.tap()
         sleep(1)
-        XCTAssertTrue(app.cells.element(boundBy: 0).label.contains("أهم المباريات"))
+        XCTAssertEqual(order(app), ["reorder-row-carousel", "reorder-row-ticker", "reorder-row-ai", "reorder-row-favorites", "reorder-row-today"])
+        app.buttons["تم"].firstMatch.tap()
     }
     func testNotificationFilters() {
         let app = XCUIApplication(); app.launchArguments = ["-screen", "notifications"]; app.launch()
