@@ -154,7 +154,6 @@ struct FavoriteHeroCard: View {
                     Text(verbatim: HomeFeed.countdown(to: f.kickoff, now: ctx.date))
                         .font(.system(size: 28, weight: .heavy, design: .rounded)).monospacedDigit()
                         .environment(\.layoutDirection, .leftToRight)
-                        .contentTransition(.numericText(countsDown: true))
                         .accessibilityIdentifier("hero-countdown")
                 }
                 Text("على البداية").font(.caption2).foregroundStyle(.secondary)
