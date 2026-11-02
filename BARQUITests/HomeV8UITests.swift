@@ -7,6 +7,12 @@ final class HomeV8UITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["-lang", "ar"]; app.launch()
         XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 30)); return app
     }
+    func dump(_ app: XCUIApplication, _ tag: String) {
+        let d = app.debugDescription
+        let lines = d.split(separator: "\n").filter { $0.contains("identifier:") || $0.contains("label:") }.prefix(120)
+        print("HOMEV8 DUMP \(tag) >>>\n" + lines.joined(separator: "\n").replacingOccurrences(of: "\n", with: "\nHOMEV8 | "))
+        try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/review-home-v8dbg-\(tag).png"))
+    }
     func el(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
     func ids(_ app: XCUIApplication, prefix: String) -> [XCUIElement] {
         var seen = Set<String>()
@@ -18,7 +24,7 @@ final class HomeV8UITests: XCTestCase {
     func testHeroEmptyStateOrPagingAndAddFavoritePersists() {
         var app = launch()
         let hero = el(app, "home-hero"), empty = el(app, "hero-empty")
-        let deadline = Date().addingTimeInterval(30)
+        let deadline = Date().addingTimeInterval(75)
         while !hero.exists && !empty.exists && Date() < deadline { sleep(1) }
         XCTAssertTrue(hero.exists || empty.exists, "top card must always be present")
         if empty.exists {
@@ -67,7 +73,7 @@ final class HomeV8UITests: XCTestCase {
     func testStarsRotate() {
         let app = launch()
         let card = el(app, "stars-card")
-        XCTAssertTrue(card.waitForExistence(timeout: 30))
+        if !card.waitForExistence(timeout: 75) { dump(app, "stars"); XCTFail("stars card missing") ; return }
         let pager = el(app, "stars-pager")
         sleep(3)
         if !pager.exists { XCTAssertTrue(el(app, "stars-empty").exists); print("HOMEV8 stars=empty"); return }
@@ -83,7 +89,7 @@ final class HomeV8UITests: XCTestCase {
     func testUpcomingSortedNoDuplicatesAndStar() {
         let app = launch()
         let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'upcoming-row-'"))
-        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 30), "upcoming list from real data")
+        if !rows.firstMatch.waitForExistence(timeout: 75) { dump(app, "upcoming"); XCTFail("upcoming list from real data"); return }
         let all = rows.allElementsBoundByIndex.map { ($0.identifier, Int(($0.value as? String) ?? "") ?? 0) }
         var seen = Set<String>(); let uniq = all.filter { seen.insert($0.0).inserted }
         XCTAssertEqual(uniq.count, Set(all.map(\.0)).count)

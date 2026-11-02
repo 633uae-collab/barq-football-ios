@@ -57,15 +57,14 @@ struct HomeView: View {
         .barqDestinations()
         .onAppear { visible = true }
         .onDisappear { visible = false }
-        // Live refresh loop: runs only while Home is visible and the app is active.
-        .task(id: visible && scenePhase == .active) {
+        // Live refresh loop: one stable task (no restarts that cancel in-flight loads); refreshes only while Home is visible and the app is active.
+        .task {
             await load()
-            guard visible, scenePhase == .active else { return }
             while !Task.isCancelled {
                 let hot = today.contains { $0.isLive || HomeFeed.heroEligible($0, now: Date()) }
                 try? await Task.sleep(for: .seconds(hot ? 20 : 60))
                 if Task.isCancelled { break }
-                await load()
+                if visible && scenePhase == .active { await load() }
             }
         }
         .refreshable { await load() }
