@@ -78,7 +78,7 @@ final class TimelineReplayTests: XCTestCase {
                     let keys = TimelineOrder.keyed(shown, status: "2H").map(\.key)
                     XCTAssertEqual(Set(keys).count, keys.count, "duplicate after merge \(u.lastPathComponent)")
                     // only an in-place API revision (new key of same type+team) may replace a row
-                    func slot(_ k: String) -> String { let p = k.split(separator: "|", omittingEmptySubsequences: false); return "\(p[0])|\(p[4])" }
+                    func slot(_ k: String) -> String { let p = k.split(separator: "|", omittingEmptySubsequences: false); return p.count > 4 ? "\(p[0])|\(p[4])" : k }
                     let added = Set(keys).subtracting(before).map(slot)
                     let vanished = before.subtracting(keys).filter { !added.contains(slot($0)) }
                     XCTAssertTrue(vanished.isEmpty, "event vanished on transient drop \(u.lastPathComponent): \(vanished)")
