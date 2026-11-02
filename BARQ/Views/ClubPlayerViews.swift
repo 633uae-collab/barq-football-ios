@@ -8,7 +8,7 @@ struct ClubView: View {
     @State private var error: String?
     var body: some View {
         ScrollView {
-            LoadState(value: t, error: error) { t in
+            LoadState(value: t, error: error, retry: { await load() }) { t in
                 VStack(spacing: 16) {
                     VStack(spacing: 10) {
                         RemoteImage(url: t.team?.logo, size: 96)
@@ -70,7 +70,11 @@ struct ClubView: View {
         .screenBackground()
         .navigationTitle(t?.team?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
-        .task { do { t = try await API.shared.get("/api/team/\(teamId)", maxAge: 600) } catch { self.error = error.localizedDescription } }
+        // Keeps retrying every 5 s while visible (task is cancelled on disappear) so a tunnel rotation self-heals.
+        .task { while t == nil, !Task.isCancelled { await load(); if t == nil { try? await Task.sleep(for: .seconds(5)) } } }
+    }
+    func load() async {
+        do { t = try await API.shared.get("/api/team/\(teamId)", maxAge: 600); error = nil } catch { self.error = error.localizedDescription }
     }
 }
 

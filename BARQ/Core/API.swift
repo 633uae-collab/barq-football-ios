@@ -5,6 +5,7 @@ import Foundation
 actor API {
     static let shared = API()
     private var base: String?
+    private var fixed: String?
     private let session: URLSession
     /// `protocolClasses` lets unit tests inject a URLProtocol stub (offline / server error / missing data).
     init(protocolClasses: [AnyClass]? = nil, fixedBase: String? = nil) {
@@ -13,7 +14,7 @@ actor API {
         c.timeoutIntervalForRequest = 20
         if let p = protocolClasses { c.protocolClasses = p; c.urlCache = nil }
         session = URLSession(configuration: c)
-        base = fixedBase
+        base = fixedBase; fixed = fixedBase
     }
     private var mem: [String: (Date, Data)] = [:]
 
@@ -39,22 +40,45 @@ actor API {
         return b
     }
 
+    /// Retries transient failures. The free Pinggy tunnel rotates its URL (the new one is published to config.json),
+    /// so a dead/old tunnel (network error, 5xx, or a non-JSON interstitial page) drops the cached base and re-resolves.
     func get<T: Decodable>(_ path: String, maxAge: TimeInterval = 0, as: T.Type = T.self) async throws -> T {
         if maxAge > 0, let hit = mem[path], Date().timeIntervalSince(hit.0) < maxAge {
             return try JSONDecoder().decode(T.self, from: hit.1)
         }
+        var last: Error = APIError.offline
+        for attempt in 0..<4 {
+            if attempt > 0 { try? await Task.sleep(for: .seconds(Double(attempt) * 2)) }
+            if Task.isCancelled { throw CancellationError() }
+            do { return try await fetchOnce(path) }
+            catch let e as APIError {
+                last = e
+                if case .server(let m) = e, m != "HTTP 5xx" { throw e }   // real backend error: don't hammer
+            } catch let e as DecodingError { last = e; base = fixed }
+        }
+        throw last
+    }
+
+    private func fetchOnce<T: Decodable>(_ path: String) async throws -> T {
         let b: String
         do { b = try await resolveBase() } catch { throw APIError.offline }
         guard let url = URL(string: b + path) else { throw APIError.bad }
         var req = URLRequest(url: url)
         req.setValue("1", forHTTPHeaderField: "X-Pinggy-No-Screen")
         let data: Data, resp: URLResponse
-        do { (data, resp) = try await session.data(for: req) } catch { base = nil; throw APIError.offline }
-        if let h = resp as? HTTPURLResponse, h.statusCode >= 400 {
-            throw APIError.server((try? JSONDecoder().decode(ServerError.self, from: data))?.error ?? "HTTP \(h.statusCode)")
+        do { (data, resp) = try await session.data(for: req) } catch { base = fixed; throw APIError.offline }
+        if let h = resp as? HTTPURLResponse {
+            let html = (h.value(forHTTPHeaderField: "Content-Type") ?? "").contains("html")
+            if h.statusCode >= 400 || html {
+                // A JSON {"error": ...} is the backend speaking: pass it through. Anything else (tunnel gateway page) = stale tunnel.
+                if !html, let m = (try? JSONDecoder().decode(ServerError.self, from: data))?.error { throw APIError.server(m) }
+                if h.statusCode >= 500 || html { base = fixed; throw APIError.server("HTTP 5xx") }
+                throw APIError.server("HTTP \(h.statusCode)")
+            }
         }
+        let v = try JSONDecoder().decode(T.self, from: data)
         mem[path] = (Date(), data)
-        return try JSONDecoder().decode(T.self, from: data)
+        return v
     }
 
     func send(_ method: String, _ path: String, body: Encodable) async throws {

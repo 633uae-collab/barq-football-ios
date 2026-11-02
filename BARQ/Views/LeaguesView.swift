@@ -120,7 +120,10 @@ struct LeagueCenterView: View {
                 } label: { Label(String(season ?? meta?.season ?? 0), systemImage: "calendar.badge.clock") }
             }
         }
-        .task(id: season) { await load() }
+        .task(id: season) {
+            await load()
+            while standings == nil, error != nil, !Task.isCancelled { try? await Task.sleep(for: .seconds(5)); await load() }
+        }
     }
 
     var table: some View {
