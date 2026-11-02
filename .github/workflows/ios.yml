@@ -53,6 +53,7 @@ jobs:
           strings "$APP/BARQ" | grep -iE "apisports-key|v3\.football" && exit 1 || echo "OK: no API key / provider host in app binary"
           /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP/Info.plist"
       - name: UI tests (real backend data)
+        timeout-minutes: 30
         run: |
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -skip-testing:BARQUITests/LiveTimelineUITests -skip-testing:BARQUITests/HomeReviewUITests 2>&1 | tee uitest.log | grep -E "Test Case|HOMEV8|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
