@@ -18,13 +18,16 @@ final class HomeReviewUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 30))
         sleep(12)
         shot("top")
-        // scroll top -> bottom
-        var last = ""
-        for i in 0..<12 {
-            app.swipeUp(velocity: .slow); sleep(2)
-            let sig = app.staticTexts.allElementsBoundByIndex.prefix(6).map(\.label).joined()
-            if sig == last { break }; last = sig
-            shot("scroll\(i + 1)")
+        // full page top -> bottom, ~one screen per step
+        var lastPNG = Data()
+        for step in 1...25 {
+            let png = XCUIScreen.main.screenshot().pngRepresentation
+            if png == lastPNG { break }
+            try? png.write(to: URL(fileURLWithPath: String(format: "/tmp/review-home-full-%02d.png", step)))
+            lastPNG = png
+            let win = app.windows.firstMatch
+            win.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).press(forDuration: 0.1, thenDragTo: win.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+            sleep(3)
         }
         // back to top
         for _ in 0..<14 { app.swipeDown(velocity: .fast) }
