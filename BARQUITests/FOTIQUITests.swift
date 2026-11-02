@@ -18,23 +18,27 @@ final class FOTIQUITests: XCTestCase {
             let b = app.tabBars.buttons[t]; XCTAssertTrue(b.exists, "tab \(t)"); b.tap()
         }
     }
+    /// Real-data waits. The free Pinggy tunnel expires/rotates (~hourly); measured outage = up to 25 s health-check
+    /// detection + reconnect + surge config.json redeploy (runs 41408553776 @08:00:45Z and 41416157145 @09:22:48Z failed
+    /// exactly inside that window). The app self-heals (API re-resolves config.json, views retry every 5 s), so give it 180 s.
+    static let realData: TimeInterval = 180
     func testSearchTeamsPlayersLeagues() {
         for (q, expect) in [("liverpool", "Liverpool"), ("haaland", "Haaland"), ("premier", "Premier")] {
             let app = launch(["-screen", "search", "-q", q])
-            XCTAssertTrue(anyText(app, containing: expect), "search \(q) -> \(expect)")
+            XCTAssertTrue(anyText(app, containing: expect, timeout: Self.realData), "search \(q) -> \(expect)")
             app.terminate()
         }
     }
     func testLeagueStandingsAndScorers() {
         let app = launch(["-screen", "league", "-id", "39"])
-        XCTAssertTrue(anyText(app, containing: "Arsenal"))
+        XCTAssertTrue(anyText(app, containing: "Arsenal", timeout: Self.realData))
     }
     func testClubAndPlayerPages() {
         var app = launch(["-screen", "club", "-id", "40"])
-        XCTAssertTrue(anyText(app, containing: "Anfield"))
+        XCTAssertTrue(anyText(app, containing: "Anfield", timeout: Self.realData))
         app.terminate()
         app = launch(["-screen", "player", "-id", "1100"])
-        XCTAssertTrue(anyText(app, containing: "Haaland"))
+        XCTAssertTrue(anyText(app, containing: "Haaland", timeout: Self.realData))
     }
     func testSettingsAndCalendarOpen() {
         var app = launch(["-screen", "settings"])

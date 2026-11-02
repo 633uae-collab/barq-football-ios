@@ -105,7 +105,12 @@ struct PlayerView: View {
         .screenBackground()
         .navigationTitle(r?.player?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
-        .task { do { r = try await API.shared.get("/api/player/\(playerId)", maxAge: 600) } catch { self.error = error.localizedDescription } }
+        .task {
+            while r == nil, !Task.isCancelled {
+                do { r = try await API.shared.get("/api/player/\(playerId)", maxAge: 600); error = nil }
+                catch { self.error = error.localizedDescription; try? await Task.sleep(for: .seconds(5)) }
+            }
+        }
     }
 }
 

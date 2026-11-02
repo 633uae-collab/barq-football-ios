@@ -113,6 +113,8 @@ struct SearchView: View {
             loading = true; defer { loading = false }
             let enc = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? term
             r = try? await API.shared.get("/api/search?q=\(enc)", maxAge: 300)
+            // Backend briefly unreachable (tunnel rotation): retry every 5 s while this query is still on screen.
+            while r == nil, !Task.isCancelled { try? await Task.sleep(for: .seconds(5)); r = try? await API.shared.get("/api/search?q=\(enc)", maxAge: 300) }
         }
     }
     func link(_ route: Route, _ img: String?, _ fb: String, _ title: String, _ sub: String?, circle: Bool = false) -> some View {
