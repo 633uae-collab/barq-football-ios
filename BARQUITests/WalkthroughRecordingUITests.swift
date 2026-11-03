@@ -25,13 +25,13 @@ final class WalkthroughRecordingUITests: XCTestCase {
         log("SKIP tab \(name) not found"); return false
     }
     func relaunch(_ args: [String]) {
-        app.terminate(); app = XCUIApplication(); app.launchArguments = ["-lang", "ar"] + args; app.launch(); pause(3)
+        app.terminate(); app = XCUIApplication.fotiq(); app.launchArguments = ["-lang", "ar"] + args; app.launch(); pause(3)
     }
 
     func testWalkthrough() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["WALKTHROUGH"] == "1", "only in walkthrough-video workflow")
         let t0 = Date()
-        app = XCUIApplication(); app.launchArguments = ["-lang", "ar"]; app.launch()
+        app = XCUIApplication.fotiq(); app.launchArguments = ["-lang", "ar"]; app.launch()
         log("1 launch nav=\(app.navigationBars["FOTIQ"].waitForExistence(timeout: 60))")
         let hero = el("home-hero"), empty = el("hero-empty")
         let dl = Date().addingTimeInterval(150)

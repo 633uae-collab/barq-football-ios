@@ -3,11 +3,12 @@ import SwiftUI
 @main
 struct BARQApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @State private var store = AppStore()
+    @State private var store: AppStore
+    init() { Onboarding.resetIfRequested(); _store = State(initialValue: AppStore()) }
 
     var body: some Scene {
         WindowGroup {
-            ScreenRouter()
+            LaunchFlow { ScreenRouter() }
                 .environment(store)
                 .environment(\.layoutDirection, store.lang == "en" ? .leftToRight : .rightToLeft)
                 .environment(\.locale, Locale(identifier: store.lang == "en" ? "en" : "ar"))

@@ -273,10 +273,15 @@ struct SettingsView: View {
     @Environment(AppStore.self) private var store
     @State private var notifOK: Bool?
     @AppStorage("apiOverride") private var apiOverride = ""
+    @State private var editFavs = false
     static let zones = ["Asia/Dubai", "Asia/Riyadh", "Asia/Qatar", "Asia/Kuwait", "Africa/Cairo", "Europe/London", "UTC"]
     var body: some View {
         @Bindable var s = store
         Form {
+            Section {
+                Button { editFavs = true } label: { Label("تعديل الأندية والدوريات المفضلة", systemImage: "star.circle") }
+                    .accessibilityIdentifier("settings-edit-favorites")
+            } header: { Text("المفضلة") }
             Section {
                 Picker(selection: $s.theme) {
                     Label("حسب الجهاز", systemImage: "iphone").tag(ThemeMode.system)
@@ -335,6 +340,7 @@ struct SettingsView: View {
         .screenBackground()
         .navigationTitle("الإعدادات")
         .task { await refreshStatus() }
+        .fullScreenCover(isPresented: $editFavs) { OnboardingView(editing: true) { editFavs = false } }
     }
 
     @State private var notifStatus: UNAuthorizationStatus = .notDetermined

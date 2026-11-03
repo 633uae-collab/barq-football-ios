@@ -54,13 +54,13 @@ final class AppStore {
     func isFav(team id: Int) -> Bool { favTeams.contains { $0.id == id } }
     func toggleFav(_ t: TeamRef) {
         if let i = favTeams.firstIndex(where: { $0.id == t.id }) { favTeams.remove(at: i) }
-        else { favTeams.append(TeamRef(id: t.id, name: t.name, logo: t.logo)) }
+        else { favTeams.append(TeamRef(id: t.id, name: t.name, logo: t.logo)); Haptics.favoriteAdded() }
     }
     func toggleLeague(_ id: Int) {
-        if let i = favLeagues.firstIndex(of: id) { favLeagues.remove(at: i) } else { favLeagues.append(id) }
+        if let i = favLeagues.firstIndex(of: id) { favLeagues.remove(at: i) } else { favLeagues.append(id); Haptics.favoriteAdded() }
     }
     func toggleSaved(_ id: Int) {
-        if let i = savedMatches.firstIndex(of: id) { savedMatches.remove(at: i) } else { savedMatches.append(id) }
+        if let i = savedMatches.firstIndex(of: id) { savedMatches.remove(at: i) } else { savedMatches.append(id); Haptics.favoriteAdded() }
     }
 
     private func save() {
@@ -81,3 +81,10 @@ final class AppStore {
 
 /// Matches backend catalog.js prefs (favTeams/saved/muted/level) used by the server push system (notify.js).
 struct PrefsPayload: Codable { var favTeams: [Int]; var favLeagues: [Int]; var saved: [Int]; var muted: [Int] = []; var level: Int = 1 }
+
+/// Shared favorite haptic: light impact only when a favorite is ADDED (removing is silent). Needs a real iPhone to feel.
+enum Haptics {
+    static func favoriteAdded() {
+        Task { @MainActor in let g = UIImpactFeedbackGenerator(style: .light); g.prepare(); g.impactOccurred() }
+    }
+}

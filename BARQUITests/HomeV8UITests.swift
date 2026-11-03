@@ -4,7 +4,7 @@ import XCTest
 final class HomeV8UITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     func launch() -> XCUIApplication {
-        let app = XCUIApplication(); app.launchArguments = ["-lang", "ar"]; app.launch()
+        let app = XCUIApplication.fotiq(); app.launchArguments = ["-lang", "ar"]; app.launch()
         XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 30)); return app
     }
     func dump(_ app: XCUIApplication, _ tag: String) {

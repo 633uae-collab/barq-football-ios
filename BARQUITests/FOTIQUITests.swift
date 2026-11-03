@@ -4,7 +4,7 @@ import XCTest
 final class FOTIQUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     func launch(_ args: [String]) -> XCUIApplication {
-        let a = XCUIApplication(); a.launchArguments = args; a.launch(); return a
+        let a = XCUIApplication.fotiq(); a.launchArguments = args; a.launch(); return a
     }
     func anyText(_ app: XCUIApplication, containing s: String, timeout: TimeInterval = 40) -> Bool {
         app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", s)).firstMatch.waitForExistence(timeout: timeout)
@@ -76,14 +76,14 @@ final class FOTIQUITests: XCTestCase {
 final class FOTIQPersistenceUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     func testSettingsPersistAfterRelaunch() {
-        var app = XCUIApplication(); app.launchArguments = ["-screen", "settings"]; app.launch()
+        var app = XCUIApplication.fotiq(); app.launchArguments = ["-screen", "settings"]; app.launch()
         let density = app.buttons["settings-density"].firstMatch
         XCTAssertTrue(density.waitForExistence(timeout: 20))
         density.tap()
         let all = app.buttons["الكل"].firstMatch
         XCTAssertTrue(all.waitForExistence(timeout: 5)); all.tap()
         sleep(1); app.terminate()
-        app = XCUIApplication(); app.launchArguments = ["-screen", "settings"]; app.launch()
+        app = XCUIApplication.fotiq(); app.launchArguments = ["-screen", "settings"]; app.launch()
         XCTAssertTrue(app.buttons["settings-density"].firstMatch.waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["settings-density"].firstMatch.label.contains("الكل"), "density not persisted: \(app.buttons["settings-density"].firstMatch.label)")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-settings"; shot.lifetime = .keepAlways; add(shot); try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/\(shot.name ?? "v7-x").png"))
@@ -95,7 +95,7 @@ final class FOTIQPersistenceUITests: XCTestCase {
         return q.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }.map { $0.identifier }.filter { seen.insert($0).inserted }
     }
     func testReorderPersistsAndResets() {
-        var app = XCUIApplication(); app.launch()
+        var app = XCUIApplication.fotiq(); app.launch()
         let btn = app.buttons["home-reorder"].firstMatch
         XCTAssertTrue(btn.waitForExistence(timeout: 30)); btn.tap()
         let start = order(app)
@@ -117,7 +117,7 @@ final class FOTIQPersistenceUITests: XCTestCase {
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "v7-reorder"; shot.lifetime = .keepAlways; add(shot); try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/v7-reorder.png"))
         app.buttons["تم"].firstMatch.tap()
         sleep(1); app.terminate()
-        app = XCUIApplication(); app.launch()
+        app = XCUIApplication.fotiq(); app.launch()
         XCTAssertTrue(app.buttons["home-reorder"].firstMatch.waitForExistence(timeout: 30)); app.buttons["home-reorder"].firstMatch.tap()
         XCTAssertEqual(order(app), edited, "order not persisted after relaunch")
         app.buttons["reorder-reset"].firstMatch.tap()
@@ -126,7 +126,7 @@ final class FOTIQPersistenceUITests: XCTestCase {
         app.buttons["تم"].firstMatch.tap()
     }
     func testNotificationFilters() {
-        let app = XCUIApplication(); app.launchArguments = ["-screen", "notifications"]; app.launch()
+        let app = XCUIApplication.fotiq(); app.launchArguments = ["-screen", "notifications"]; app.launch()
         for k in ["ai", "goals", "results", "all"] {
             let chip = app.buttons["notif-filter-\(k)"].firstMatch
             XCTAssertTrue(chip.waitForExistence(timeout: 20), k); chip.tap()

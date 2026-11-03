@@ -2270,6 +2270,116 @@
           }
         }
       }
+    },
+    "اختر أنديتك المفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose your favorite clubs"
+          }
+        }
+      }
+    },
+    "اختر دورياتك المفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose your favorite leagues"
+          }
+        }
+      }
+    },
+    "اختر بطولاتك المفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose your favorite competitions"
+          }
+        }
+      }
+    },
+    "اختر نادياً واحداً على الأقل": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick at least one club"
+          }
+        }
+      }
+    },
+    "اختياري، تقدر تتخطى": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional, you can skip"
+          }
+        }
+      }
+    },
+    "تخطي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip"
+          }
+        }
+      }
+    },
+    "ابدأ الآن": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start now"
+          }
+        }
+      }
+    },
+    "التالي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next"
+          }
+        }
+      }
+    },
+    "ابحث عن نادٍ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search for a club"
+          }
+        }
+      }
+    },
+    "ابحث عن بطولة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search for a competition"
+          }
+        }
+      }
+    },
+    "تعديل الأندية والدوريات المفضلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit favorite clubs & leagues"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

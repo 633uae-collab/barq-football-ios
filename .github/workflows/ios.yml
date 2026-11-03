@@ -3,6 +3,7 @@ on:
   push:
   workflow_dispatch:
     inputs:
+      runner: { description: "macOS runner label (macos-26-intel if arm queue is stuck)", required: false, default: "macos-26" }
       api_base: { description: "Optional FOTIQ backend base URL (else secret FOTIQ_API_BASE, else koora-ae.surge.sh/config.json)", required: false, default: "" }
 jobs:
   backend-tests:
@@ -14,7 +15,7 @@ jobs:
       - run: cd server && node --test test/
 
   simulator:
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 100
     env:
       FOTIQ_API_BASE: ${{ inputs.api_base || secrets.FOTIQ_API_BASE }}

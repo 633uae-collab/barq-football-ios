@@ -48,7 +48,7 @@ final class LiveTimelineUITests: XCTestCase {
 
     func testReplayRealSnapshots() throws {
         guard let id = env["REPLAY_ID"], let steps = Int(env["REPLAY_STEPS"] ?? "") else { throw XCTSkip("no replay id") }
-        let app = XCUIApplication(); app.launchArguments = ["-screen", "match", "-id", id, "-replay", "YES"]; app.launch()
+        let app = XCUIApplication.fotiq(); app.launchArguments = ["-screen", "match", "-id", id, "-replay", "YES"]; app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["tl-m-kickoff"].waitForExistence(timeout: 40))
         var prev = keys(app), log: [String] = []
         save("replay-start")
@@ -81,7 +81,7 @@ final class LiveTimelineUITests: XCTestCase {
     func testLiveMatchObservation() throws {
         guard let id = env["LIVE_ID"] else { throw XCTSkip("no live match right now") }
         let minutes = Int(env["LIVE_MINUTES"] ?? "8") ?? 8
-        let app = XCUIApplication(); app.launchArguments = ["-screen", "match", "-id", id]; app.launch()
+        let app = XCUIApplication.fotiq(); app.launchArguments = ["-screen", "match", "-id", id]; app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["tl-m-kickoff"].waitForExistence(timeout: 40))
         var prev = keys(app), log: [String] = ["start: \(prev.count) rows top=\(prev.first ?? "")"]
         save("live-0")
@@ -97,7 +97,7 @@ final class LiveTimelineUITests: XCTestCase {
 
     /// Real finished match with 45+3 and 90+5 events; top screenshot, then scrolled to the kickoff marker.
     func testStoppageOrderAndFullLength() {
-        let app = XCUIApplication(); app.launchArguments = ["-screen", "timeline", "-id", env["STOPPAGE_ID"] ?? "1559185"]; app.launch()
+        let app = XCUIApplication.fotiq(); app.launchArguments = ["-screen", "timeline", "-id", env["STOPPAGE_ID"] ?? "1559185"]; app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["tl-m-ft"].waitForExistence(timeout: 40))
         save("timeline-top")
         // SwiftUI exposes only on-screen rows to accessibility: collect while scrolling, keeping first-seen order
@@ -124,7 +124,7 @@ final class LiveTimelineUITests: XCTestCase {
     }
 
     func testLongNamesLargeText() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.fotiq()
         app.launchArguments = ["-screen", "timeline", "-id", env["STOPPAGE_ID"] ?? "1559185", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"]
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["tl-m-ft"].waitForExistence(timeout: 40))

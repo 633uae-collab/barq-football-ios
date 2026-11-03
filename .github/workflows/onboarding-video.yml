@@ -1,0 +1,53 @@
+name: Onboarding video
+on:
+  workflow_dispatch:
+    inputs:
+      runner: { description: "macOS runner label", required: false, default: "macos-26" }
+  push:
+    paths: ["ci/onboarding-trigger"]
+jobs:
+  record:
+    runs-on: ${{ inputs.runner || 'macos-26' }}
+    timeout-minutes: 90
+    env:
+      FOTIQ_API_BASE: ${{ secrets.FOTIQ_API_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"; xcodebuild -version
+      - run: brew install xcodegen ffmpeg && xcodegen generate
+      - name: Pick simulator, enable touch indicators, boot
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys;d=json.load(sys.stdin)['devices']
+          c=[x for k,v in sorted(d.items(),reverse=True) if 'iOS-26' in k for x in v if 'iPhone' in x['name']]
+          p=[x for x in c if 'Pro' in x['name'] and 'Max' not in x['name']] or c
+          print(p[0]['udid'])")
+          echo "UDID=$UDID" >> $GITHUB_ENV
+          defaults write com.apple.iphonesimulator ShowSingleTouches 1
+          defaults write com.apple.iphonesimulator ShowPinches 1
+          xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance dark
+          open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO build-for-testing 2>&1 | tail -5
+      - name: Record walkthrough (real time)
+        run: |
+          xcrun simctl io "$UDID" recordVideo --codec=h264 --force raw.mp4 > rec.log 2>&1 &
+          REC=$!; sleep 5
+          TEST_RUNNER_OB_PACE=1 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/OnboardingUITests/testFirstLaunchFlowSavesAndRelaunchSkipsOnboarding 2>&1 | tee walk.log | grep -E "Test Case|error:|XCTAssert" || true
+          sleep 3; kill -INT $REC; wait $REC || true; cat rec.log; ls -la raw.mp4
+      - name: Keep raw recording
+        if: always()
+        run: mkdir -p out && cp raw.mp4 out/fotiq-onboarding-raw.mp4 || true
+      - name: Encode 1080p (no speed change)
+        run: |
+          ffmpeg -y -i raw.mp4 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p" -c:v libx264 -preset veryfast -crf 20 -r 30 -movflags +faststart fotiq-onboarding.mp4
+          ffprobe -v error -show_entries format=duration:stream=width,height,codec_name -of default=nw=1 fotiq-onboarding.mp4
+          mkdir -p out; mv fotiq-onboarding.mp4 out/; grep -E "Test Case|error" walk.log > out/test-result.txt || true; mkdir -p out/screens; cp /tmp/onb-*.png out/screens/ || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: fotiq-onboarding-video, path: out/, retention-days: 30 }

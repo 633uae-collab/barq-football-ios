@@ -14,7 +14,7 @@ final class HomeReviewUITests: XCTestCase {
         sleep(2)
     }
     func testCaptureHome() {
-        let app = XCUIApplication(); app.launchArguments = ["-lang", "ar"]; app.launch()
+        let app = XCUIApplication.fotiq(); app.launchArguments = ["-lang", "ar"]; app.launch()
         XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 30))
         sleep(12)
         shot("top")
