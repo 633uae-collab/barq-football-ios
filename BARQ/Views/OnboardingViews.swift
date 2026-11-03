@@ -27,6 +27,15 @@ enum SplashDiag {
 /// Network/data work of the first screen waits until the splash is gone. Evidence (run 41687787714, splash-diag.log):
 /// mounting onboarding mid-push blocked the main thread 967 + 2187 + 1237 ms (data arrival -> grid of glass tiles +
 /// logo decoding), freezing the camera push. The screen is still built (empty) under the splash; only its loading waits.
+/// DIAGNOSTIC ONLY (env FOTIQ_DIAG_NOGLASS=1, set only by the splash-video workflow): onboarding glass -> flat fill,
+/// to measure whether first-draw of Liquid Glass causes the reveal hang. Users never get this.
+extension View {
+    @ViewBuilder func diagGlass<S: Shape>(_ g: Glass, in s: S) -> some View {
+        if ProcessInfo.processInfo.environment["FOTIQ_DIAG_NOGLASS"] == "1" { self.background(Color.white.opacity(0.08), in: s) }
+        else { self.glassEffect(g, in: s) }
+    }
+}
+
 @MainActor enum LaunchGate {
     static var open = false
     static func wait() async { while !open && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(50)) } }
@@ -81,6 +90,7 @@ final class SplashClock {
 }
 
 struct SplashView: View {
+    nonisolated(unsafe) static var holeLogged = false
     var onRevealStart: () -> Void = {}
     var onFinish: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -164,6 +174,7 @@ struct SplashView: View {
         let holeS = CGRect(x: hcS.x - hw * s / 2, y: hcS.y - hh * s / 2, width: hw * s, height: hh * s)
             .intersection(CGRect(x: -2, y: -2, width: W + 4, height: H + 4))
         _ = holeRect
+        if h > 0, !Self.holeLogged { Self.holeLogged = true; SplashDiag.log.notice("HOLE first open t=\(t, privacy: .public) +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms") }
         return ZStack(alignment: .topLeading) {
             Path { p in
                 p.addRect(CGRect(x: 0, y: 0, width: W, height: H))
@@ -193,7 +204,7 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            header.onAppear { SplashDiag.log.notice("ONB appear +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms") }
             Group {
                 switch step {
                 case 0: ClubPickStep(selected: $clubs)
@@ -226,7 +237,7 @@ struct OnboardingView: View {
                 }
                 Spacer()
                 Text(verbatim: (UserDefaults.standard.string(forKey: "lang") ?? "ar") == "en" ? "\(step + 1) of 3" : "\(step + 1) من 3").font(.footnote.weight(.semibold).monospacedDigit())
-                    .padding(.horizontal, 12).padding(.vertical, 6).glassEffect(.regular, in: .capsule)
+                    .padding(.horizontal, 12).padding(.vertical, 6).diagGlass(.regular, in: .capsule)
                     .accessibilityIdentifier("ob-progress")
             }
             HStack(spacing: 6) {
@@ -300,7 +311,7 @@ struct ClubPickStep: View {
                     .accessibilityIdentifier("ob-search")
                 if !q.isEmpty { Button { q = "" } label: { Image(systemName: "xmark.circle.fill") }.foregroundStyle(.secondary) }
             }
-            .padding(12).glassEffect(.regular, in: .capsule).padding(.horizontal)
+            .padding(12).diagGlass(.regular, in: .capsule).padding(.horizontal)
             ScrollView {
                 if shown.isEmpty {
                     ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading")
@@ -364,7 +375,7 @@ struct CompetitionPickStep: View {
                 TextField(kind == "Cup" ? "ابحث عن بطولة" : "ابحث عن دوري", text: $q).autocorrectionDisabled()
                     .accessibilityIdentifier("ob-search")
             }
-            .padding(12).glassEffect(.regular, in: .capsule).padding(.horizontal)
+            .padding(12).diagGlass(.regular, in: .capsule).padding(.horizontal)
             ScrollView {
                 if items.isEmpty { ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading") }
                 LazyVGrid(columns: cols, spacing: 12) {
@@ -412,7 +423,7 @@ struct PickTile: View {
                     .contentTransition(.symbolEffect(.replace))
             }
             .frame(maxWidth: .infinity).padding(.vertical, 12)
-            .glassEffect(on ? .regular.tint(Color("BrandGreen").opacity(0.25)) : .regular, in: .rect(cornerRadius: 18))
+            .diagGlass(on ? .regular.tint(Color("BrandGreen").opacity(0.25)) : .regular, in: .rect(cornerRadius: 18))
             .overlay { RoundedRectangle(cornerRadius: 18).stroke(on ? Color("BrandGreen") : .clear, lineWidth: 1.5) }
         }
         .buttonStyle(.plain)

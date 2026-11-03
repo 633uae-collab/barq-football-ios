@@ -5,7 +5,7 @@ final class OnboardingUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     static let realData: TimeInterval = 180
     func launch(reset: Bool) -> XCUIApplication {
-        let a = XCUIApplication(); a.launchEnvironment["FOTIQ_UI_TEST"] = "1"; a.launchArguments = ["-lang", "ar"] + (reset ? ["-resetOnboarding", "YES"] : []); a.launch(); return a
+        let a = XCUIApplication(); a.launchEnvironment["FOTIQ_UI_TEST"] = "1"; if let d = ProcessInfo.processInfo.environment["DIAG_NOGLASS"] { a.launchEnvironment["FOTIQ_DIAG_NOGLASS"] = d }; a.launchArguments = ["-lang", "ar"] + (reset ? ["-resetOnboarding", "YES"] : []); a.launch(); return a
     }
     func el(_ a: XCUIApplication, _ id: String) -> XCUIElement { a.descendants(matching: .any)[id].firstMatch }
     func first(_ a: XCUIApplication, _ p: String) -> XCUIElement {

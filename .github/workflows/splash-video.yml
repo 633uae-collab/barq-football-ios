@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       runner: { description: "macOS runner label", required: false, default: "macos-26" }
+      noglass: { description: "DIAG only: 1 = onboarding glass replaced by flat fill", required: false, default: "0" }
   push:
     paths: ["ci/splash-trigger"]
 jobs:
@@ -40,7 +41,7 @@ jobs:
           LOGP=$!
           xcrun simctl io "$UDID" recordVideo --codec=h264 --force raw.mp4 > rec.log 2>&1 &
           REC=$!; sleep 5
-          TEST_RUNNER_SPLASH_REC=1 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/OnboardingUITests/testSplashRecording 2>&1 | tee walk.log | grep -E "Test Case|error:|XCTAssert" || true
+          TEST_RUNNER_SPLASH_REC=1 TEST_RUNNER_DIAG_NOGLASS="${{ inputs.noglass || '0' }}" xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/OnboardingUITests/testSplashRecording 2>&1 | tee walk.log | grep -E "Test Case|error:|XCTAssert" || true
           sleep 3; kill $LOGP || true; kill -INT $REC; wait $REC || true; cat rec.log; ls -la raw.mp4
       - name: Keep raw recording
         if: always()
