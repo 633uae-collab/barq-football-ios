@@ -95,8 +95,17 @@ final class FOTIQPersistenceUITests: XCTestCase {
     func order(_ app: XCUIApplication) -> [String] {
         let q = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'reorder-row-'"))
         _ = q.firstMatch.waitForExistence(timeout: 10)
+        // One accessibility snapshot instead of one per row (.frame on each element re-snapshots the whole app,
+        // ~3.5 s each on the Intel simulator -> "Timed out while evaluating UI query" in run 41680207668).
+        guard let root = try? app.snapshot() else { return [] }
+        var rows: [(String, CGFloat)] = []
+        func walk(_ e: XCUIElementSnapshot) {
+            if e.identifier.hasPrefix("reorder-row-") { rows.append((e.identifier, e.frame.minY)) }
+            e.children.forEach(walk)
+        }
+        walk(root)
         var seen = Set<String>()
-        return q.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }.map { $0.identifier }.filter { seen.insert($0).inserted }
+        return rows.sorted { $0.1 < $1.1 }.map(\.0).filter { seen.insert($0).inserted }
     }
     func testReorderPersistsAndResets() {
         var app = XCUIApplication.fotiq(); app.launch()

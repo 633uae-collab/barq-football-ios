@@ -37,10 +37,18 @@ final class HomeV8UITests: XCTestCase {
             XCTAssertTrue(el(app, "hero-countdown").exists || el(app, "hero-score").exists)
             if pages.count > 1 {
                 let before = hero.value as? String
-                hero.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).press(forDuration: 0.05, thenDragTo: hero.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)))
+                // App runs in Arabic (RTL): page 2 sits to the LEFT, so the "next" swipe is finger left -> right.
+                hero.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).press(forDuration: 0.05, thenDragTo: hero.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
                 sleep(2)
                 let after = hero.value as? String
                 XCTAssertNotEqual(before, after, "swipe must change the visible match")
+                // and back (finger right -> left) returns to the first match
+                hero.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).press(forDuration: 0.05, thenDragTo: hero.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)))
+                sleep(2)
+                XCTAssertEqual(hero.value as? String, before, "swipe back returns to the first match")
+                hero.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).press(forDuration: 0.05, thenDragTo: hero.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+                sleep(2)
+                XCTAssertEqual(hero.value as? String, after)
                 sleep(25) // at least one live refresh
                 XCTAssertEqual(hero.value as? String, after, "refresh must keep the viewed match")
             }
