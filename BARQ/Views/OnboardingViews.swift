@@ -116,23 +116,25 @@ struct SplashView: View {
         let hw = g.width * side * h * grow, hh = g.height * side * h * grow
         let hc = CGPoint(x: Self.target.x * side, y: Self.target.y * side)
         let holeRect = CGRect(x: hc.x - hw / 2, y: hc.y - hh / 2, width: hw, height: hh)
-        let pad = side * 3
+        // Navy backdrop is drawn in SCREEN space (never scaled): scaling a vector shape 70x made SwiftUI rasterize a
+        // ~100k-pt layer every frame, which froze rendering (run 41676707424: zoom frame stuck ~5 s on relaunch).
+        let hcS = CGPoint(x: tgt.x + dx, y: tgt.y + dy)            // gap focus on screen (anchor + camera offset)
+        let holeS = CGRect(x: hcS.x - hw * s / 2, y: hcS.y - hh * s / 2, width: hw * s, height: hh * s)
+            .intersection(CGRect(x: -2, y: -2, width: W + 4, height: H + 4))
+        _ = holeRect
         return ZStack(alignment: .topLeading) {
             Path { p in
-                p.addRect(CGRect(x: -pad, y: -pad, width: side + 2 * pad, height: side + 2 * pad))
-                if h > 0 { p.addRoundedRect(in: holeRect, cornerSize: CGSize(width: hh * 0.25, height: hh * 0.25)) }
+                p.addRect(CGRect(x: 0, y: 0, width: W, height: H))
+                if h > 0, !holeS.isNull { p.addRoundedRect(in: holeS, cornerSize: CGSize(width: min(hh * s * 0.25, 40), height: min(hh * s * 0.25, 40))) }
             }
             .fill(Color("LaunchBackground"), style: FillStyle(eoFill: true))
             Image("SplashMark").resizable().interpolation(.high).frame(width: side, height: side)
+                .scaleEffect(s, anchor: Self.target)
+                .offset(x: dx, y: dy)
+                .position(x: origin.x + side / 2, y: origin.y + side / 2)
                 .accessibilityIdentifier("splash-logo")
         }
-        .frame(width: side, height: side, alignment: .topLeading)
-        .scaleEffect(s, anchor: Self.target)
-        .offset(x: dx, y: dy)
-        .position(x: origin.x + side / 2, y: origin.y + side / 2)
         .frame(width: W, height: H)
-        .background(alignment: .center) { if h == 0 { Color("LaunchBackground") } }
-
     }
 }
 
