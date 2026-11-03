@@ -117,7 +117,7 @@ struct SplashView: View {
         .position(x: origin.x + side / 2, y: origin.y + side / 2)
         .frame(width: W, height: H)
         .background(alignment: .center) { if h == 0 { Color("LaunchBackground") } }
-        .drawingGroup()
+
     }
 }
 
