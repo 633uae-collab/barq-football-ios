@@ -316,10 +316,14 @@ struct ClubPickStep: View {
                 if shown.isEmpty {
                     ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading")
                 }
-                LazyVGrid(columns: cols, spacing: 12) {
-                    ForEach(shown) { t in
-                        PickTile(id: "ob-club-\(t.id)", name: t.name, logo: t.logo, on: selected.contains { $0.id == t.id }) {
-                            if let i = selected.firstIndex(where: { $0.id == t.id }) { selected.remove(at: i) } else { selected.append(t) }
+                // One GlassEffectContainer for the grid: Apple's API to let many glass shapes share rendering passes.
+                GlassEffectContainer(spacing: 12) {
+                    LazyVGrid(columns: cols, spacing: 12) {
+                        ForEach(shown) { t in
+                            PickTile(id: "ob-club-\(t.id)", name: t.name, logo: t.logo, on: selected.contains { $0.id == t.id }) {
+                                if let i = selected.firstIndex(where: { $0.id == t.id }) { selected.remove(at: i) } else { selected.append(t) }
+                            }
+                            .equatable()
                         }
                     }
                 }
@@ -334,11 +338,19 @@ struct ClubPickStep: View {
     func loadPopular() async {
         await LaunchGate.wait()
         while popular.isEmpty, !Task.isCancelled {
-            for l in Self.sources {
-                guard let r: StandingsResponse = try? await API.shared.get("/api/standings/\(l)", maxAge: 3600) else { continue }
-                let add = (r.groups.first ?? []).prefix(8).map(\.team).filter { t in !popular.contains { $0.id == t.id } }
-                withAnimation(.easeOut(duration: 0.25)) { popular += add }
+            // all leagues in parallel, committed to state ONCE (was 7 sequential animated appends = 7 grid re-layouts)
+            let lists = await withTaskGroup(of: (Int, [TeamRef]).self) { g in
+                for (i, l) in Self.sources.enumerated() {
+                    g.addTask {
+                        let r: StandingsResponse? = try? await API.shared.get("/api/standings/\(l)", maxAge: 3600)
+                        return (i, (r?.groups.first ?? []).prefix(8).map(\.team))
+                    }
+                }
+                var out: [(Int, [TeamRef])] = []; for await x in g { out.append(x) }; return out
             }
+            var all: [TeamRef] = []
+            for (_, ts) in lists.sorted(by: { $0.0 < $1.0 }) { for t in ts where !all.contains(where: { $0.id == t.id }) { all.append(t) } }
+            if !all.isEmpty { withAnimation(.easeOut(duration: 0.25)) { popular = all } }
             if popular.isEmpty { try? await Task.sleep(for: .seconds(5)) }
         }
     }
@@ -407,7 +419,8 @@ struct CompetitionPickStep: View {
     }
 }
 
-struct PickTile: View {
+struct PickTile: View, Equatable {
+    static func == (a: PickTile, b: PickTile) -> Bool { a.id == b.id && a.on == b.on && a.name == b.name && a.logo == b.logo }
     let id: String
     let name: String
     let logo: String?
