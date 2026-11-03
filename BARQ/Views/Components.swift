@@ -89,7 +89,10 @@ struct LivePill: View {
         .foregroundStyle(.red)
         .padding(.horizontal, 8).padding(.vertical, 3)
         .glassEffect(.regular.tint(.red.opacity(0.25)), in: .capsule)
-        .onAppear { pulse = true }
+        // An endless repeatForever animation keeps the app from ever reporting "idle" to XCUITest
+        // (seen in run 41651134723: "App event loop idle notification not received" after opening Matches with live games),
+        // so UI-test launches (FOTIQ_UI_TEST=1) show the same dot without the pulse. Users always get the pulse.
+        .onAppear { if ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] != "1" { pulse = true } }
     }
 }
 

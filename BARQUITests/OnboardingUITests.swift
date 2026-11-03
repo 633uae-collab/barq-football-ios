@@ -5,7 +5,7 @@ final class OnboardingUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     static let realData: TimeInterval = 180
     func launch(reset: Bool) -> XCUIApplication {
-        let a = XCUIApplication(); a.launchArguments = ["-lang", "ar"] + (reset ? ["-resetOnboarding", "YES"] : []); a.launch(); return a
+        let a = XCUIApplication(); a.launchEnvironment["FOTIQ_UI_TEST"] = "1"; a.launchArguments = ["-lang", "ar"] + (reset ? ["-resetOnboarding", "YES"] : []); a.launch(); return a
     }
     func el(_ a: XCUIApplication, _ id: String) -> XCUIElement { a.descendants(matching: .any)[id].firstMatch }
     func first(_ a: XCUIApplication, _ p: String) -> XCUIElement {
@@ -90,7 +90,7 @@ final class OnboardingUITests: XCTestCase {
     /// Real frames of the splash animation (held via -splashHold): small logo at start, then mid-zoom.
     func testSplashFrames() {
         for (hold, name) in [("start", "00-splash-start"), ("zoom", "01-splash-zoom"), ("reveal", "01b-splash-reveal")] {
-            let a = XCUIApplication(); a.launchArguments = ["-lang", "ar", "-splashHold", hold]; a.launch()
+            let a = XCUIApplication(); a.launchEnvironment["FOTIQ_UI_TEST"] = "1"; a.launchArguments = ["-lang", "ar", "-splashHold", hold]; a.launch()
             XCTAssertTrue(a.descendants(matching: .any)["splash"].firstMatch.waitForExistence(timeout: 15), "splash shown")
             sleep(2); shot(name); a.terminate()
         }
