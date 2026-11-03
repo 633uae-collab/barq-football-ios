@@ -55,6 +55,26 @@ jobs:
           if grep -rIl "x-apisports-key\|v3.football.api-sports.io" "$APP"; then echo "::error::provider key/host found in app bundle"; exit 1; fi
           strings "$APP/BARQ" | grep -iE "apisports-key|v3\.football" && exit 1 || echo "OK: no API key / provider host in app binary"
           /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP/Info.plist"
+      - name: Launch profile (xctrace Time Profiler + Animation Hitches) + splash timing log, screenshots only
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          APP=$(find dd/Build/Products -name "BARQ.app" -path "*iphonesimulator*" | head -1); xcrun simctl install "$UDID" "$APP"
+          mkdir -p diag/trace
+          xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > diag/trace/launch-timing.log 2>&1 &
+          LP=$!
+          for T in "Time Profiler" "Animation Hitches"; do
+            N=$(echo "$T" | tr -d ' ')
+            xcrun xctrace record --template "$T" --device "$UDID" --time-limit 20s --output "diag/trace/$N.trace" \
+              --env FOTIQ_UI_TEST=1 --launch -- "$APP" -lang ar -resetOnboarding YES 2>&1 | tail -5 || true
+            xcrun simctl io "$UDID" screenshot "diag/trace/$N-end.png" || true
+            xcrun simctl terminate "$UDID" ae.barq.football || true
+          done
+          kill $LP || true
+          xcrun xctrace export --input diag/trace/TimeProfiler.trace --toc > diag/trace/tp-toc.xml 2>&1 || true
+          xcrun xctrace export --input diag/trace/TimeProfiler.trace --xpath '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]' > diag/trace/tp.xml 2>&1 || true
+          xcrun xctrace export --input diag/trace/AnimationHitches.trace --toc > diag/trace/ah-toc.xml 2>&1 || true
+          ls -la diag/trace; du -sh diag/trace
       - name: UI tests (real backend data)
         timeout-minutes: 50
         run: |
