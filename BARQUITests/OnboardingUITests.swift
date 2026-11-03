@@ -100,6 +100,16 @@ final class OnboardingUITests: XCTestCase {
         sleep(1); shot("10-relaunch-splash"); a.terminate()
     }
 
+    /// Splash recording only (splash-video workflow): first launch -> clubs page, relaunch -> home, at normal speed.
+    func testSplashRecording() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["SPLASH_REC"] == "1", "recording workflow only")
+        var a = launch(reset: true)
+        XCTAssertTrue(el(a, "ob-title").waitForExistence(timeout: 30)); sleep(5)
+        a.terminate(); sleep(2)
+        a = launch(reset: false)
+        XCTAssertTrue(a.navigationBars["FOTIQ"].waitForExistence(timeout: 30)); sleep(5)
+    }
+
     func testFavoritesEditableFromSettings() {
         let app = XCUIApplication.fotiq(); app.launchArguments = ["-lang", "ar"]; app.launch()
         XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 30))
