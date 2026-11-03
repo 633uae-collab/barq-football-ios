@@ -9,7 +9,7 @@ on:
 jobs:
   record:
     runs-on: ${{ inputs.runner || 'macos-26' }}
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       FOTIQ_API_BASE: ${{ secrets.FOTIQ_API_BASE }}
     steps:
@@ -37,6 +37,22 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO build-for-testing 2>&1 | tail -5
+      - name: Launch profile (xctrace Time Profiler + Animation Hitches), first launch with onboarding reset
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          APP=$(find dd/Build/Products -name "BARQ.app" -path "*iphonesimulator*" | head -1); xcrun simctl install "$UDID" "$APP"
+          mkdir -p out/trace
+          for T in "Time Profiler" "Animation Hitches"; do
+            N=$(echo "$T" | tr -d ' ')
+            xcrun xctrace record --template "$T" --device "$UDID" --time-limit 20s --output "out/trace/$N.trace" \
+              --env FOTIQ_UI_TEST=1 --launch -- "$APP" -lang ar -resetOnboarding YES 2>&1 | tail -5 || true
+            xcrun simctl terminate "$UDID" ae.barq.football || true
+          done
+          # main-thread heaviest symbols during launch (text, so it can be read without Instruments)
+          xcrun xctrace export --input out/trace/TimeProfiler.trace --toc > out/trace/tp-toc.xml 2>&1 || true
+          xcrun xctrace export --input out/trace/TimeProfiler.trace --xpath '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]' > out/trace/tp.xml 2>&1 || true
+          ls -la out/trace; du -sh out/trace
       - name: Record walkthrough (real time)
         run: |
           xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > splash-diag.log 2>&1 &
@@ -48,10 +64,14 @@ jobs:
       - name: Keep raw recording
         if: always()
         run: mkdir -p out && cp raw.mp4 out/fotiq-splash-raw.mp4 || true
+      - name: Save timing log + test result before encoding (encode of run 41704541429 hit the job limit with nothing uploaded)
+        if: always()
+        run: mkdir -p out; grep -E "Test Case|error" walk.log > out/test-result.txt || true; cp splash-diag.log rec.log out/ || true
       - name: Encode 1080p (no speed change)
+        timeout-minutes: 25
         run: |
           ffmpeg -y -i raw.mp4 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p" -c:v libx264 -preset veryfast -crf 20 -r 30 -movflags +faststart fotiq-splash.mp4
-          ffmpeg -y -i fotiq-splash.mp4 -vf "setpts=4*PTS" -an -c:v libx264 -preset veryfast -crf 20 -r 30 -pix_fmt yuv420p -movflags +faststart fotiq-splash-SLOWED-4x.mp4
+          ffmpeg -y -t 45 -i fotiq-splash.mp4 -vf "setpts=4*PTS" -an -c:v libx264 -preset veryfast -crf 20 -r 30 -pix_fmt yuv420p -movflags +faststart fotiq-splash-SLOWED-4x.mp4
           ffprobe -v error -show_entries format=duration:stream=width,height,codec_name -of default=nw=1 fotiq-splash.mp4
           mkdir -p out; mv fotiq-splash.mp4 fotiq-splash-SLOWED-4x.mp4 out/; grep -E "Test Case|error" walk.log > out/test-result.txt || true; cp splash-diag.log rec.log out/ || true; mkdir -p out/screens; cp /tmp/onb-*.png out/screens/ || true
       - uses: actions/upload-artifact@v4
