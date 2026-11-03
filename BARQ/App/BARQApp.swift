@@ -4,7 +4,12 @@ import SwiftUI
 struct BARQApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var store: AppStore
-    init() { Onboarding.resetIfRequested(); _store = State(initialValue: AppStore()) }
+    init() {
+        _ = SplashDiag.processStart; SplashDiag.startHangWatch()
+        SplashDiag.log.notice("APP init")
+        Onboarding.resetIfRequested(); _store = State(initialValue: AppStore())
+        SplashDiag.log.notice("APP store ready +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+    }
 
     var body: some Scene {
         WindowGroup {

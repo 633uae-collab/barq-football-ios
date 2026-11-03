@@ -1,4 +1,28 @@
 import SwiftUI
+import os
+
+/// Splash diagnostics (subsystem ae.barq.splash): per-frame progress, time-to-first-frame, main-thread hangs.
+enum SplashDiag {
+    static let log = Logger(subsystem: "ae.barq.splash", category: "splash")
+    static let processStart = Date()   // set when the app struct initialises (first touch of this enum)
+    nonisolated(unsafe) private static var watchdog: Thread?
+    /// Background thread pings main every 50 ms and logs any gap > 100 ms (= main thread blocked).
+    static func startHangWatch(seconds: Double = 12) {
+        guard watchdog == nil else { return }
+        let t = Thread {
+            let end = Date().addingTimeInterval(seconds)
+            while Date() < end {
+                let sent = Date(); let sem = DispatchSemaphore(value: 0)
+                DispatchQueue.main.async { sem.signal() }
+                sem.wait()
+                let ms = Date().timeIntervalSince(sent) * 1000
+                if ms > 100 { log.notice("HANG main blocked \(Int(ms), privacy: .public) ms at +\(Int(Date().timeIntervalSince(processStart) * 1000), privacy: .public) ms") }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+        watchdog = t; t.start()
+    }
+}
 
 // MARK: - Persistence (pure, unit-tested)
 
@@ -79,6 +103,7 @@ struct SplashView: View {
             } else {
                 TimelineView(.animation(minimumInterval: 1 / 60, paused: Self.held != nil)) { tl in
                     let el = clock.tick(tl.date)
+                    let _ = SplashDiag.log.notice("FRAME wall=+\(Int(tl.date.timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms el=\(Int(el * 1000), privacy: .public)ms")
                     let t = Self.held ?? max(0, min(1, (el - Self.hold) / Self.push))
                     scene(t: t, side: side, origin: origin, W: W, H: H)
                 }
