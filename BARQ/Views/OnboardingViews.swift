@@ -80,9 +80,18 @@ enum Onboarding {
 /// (first launch builds onboarding + decodes network data underneath) the camera move resumes where it was
 /// instead of jumping to t = 1. On a smooth 60 fps device this equals wall time.
 final class SplashClock {
+    /// Splash F is drawn first; the next page is mounted only after that first frame. The camera move starts
+    /// (hold 0.3 s -> push) once the next page has appeared, so its build can only lengthen the still F, never freeze the push.
+    nonisolated(unsafe) static var nextReady = false
+    nonisolated(unsafe) static var sawFirstFrame = false
     private var last: Date?
     private(set) var elapsed: Double = 0
     func tick(_ now: Date) -> Double {
+        if !Self.sawFirstFrame {
+            Self.sawFirstFrame = true
+            SplashDiag.log.notice("FIRST splash frame +\(Int(now.timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+        }
+        guard Self.nextReady else { last = now; return 0 }
         if let l = last { elapsed += min(max(0, now.timeIntervalSince(l)), 1.0 / 30) }
         last = now
         return elapsed
@@ -133,6 +142,9 @@ struct SplashView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("splash")
         .task {
+            if Self.held != nil || reduceMotion {   // no TimelineView tick here: mount the next page now
+                SplashClock.sawFirstFrame = true; SplashClock.nextReady = true
+            }
             if Self.held != nil { onRevealStart(); return }
             if reduceMotion {
                 onRevealStart()
@@ -142,7 +154,7 @@ struct SplashView: View {
             } else {
                 // Finish on the animation's own (frame-clamped) clock, never on wall time,
                 // so a main-thread stall can't cut from the first frame straight to the end.
-                let deadline = Date().addingTimeInterval(10)  // safety: never block the app if frames stop
+                let deadline = Date().addingTimeInterval(30)  // safety (includes waiting for the next page to be built): never block the app if frames stop
                 var revealed = false
                 while clock.elapsed < Self.hold + Self.push - 0.18 && Date() < deadline {
                     // mount the next screen just before the gap opens (hole starts at t = 0.5), so building it
@@ -450,14 +462,31 @@ struct PickTile: View, Equatable {
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var splash = true
-    @State private var mounted = true       // built under the splash (cheap, empty); its data loading waits on LaunchGate
+    /// Not built at launch (measured: building it before the first F frame delayed that frame by seconds).
+    /// Mounted right after the first splash frame; LaunchGate still holds its network/data work until the splash ends.
+    @State private var mounted = false
     @State private var onboarded = Onboarding.isDone()
     var body: some View {
         ZStack {
             if mounted {
-                if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
+                Group {
+                    if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
+                }
+                .onAppear {
+                    SplashDiag.log.notice("NEXT page appear +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+                    // next runloop turn = after its first layout/draw commit
+                    DispatchQueue.main.async {
+                        SplashDiag.log.notice("NEXT page drawn +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+                        SplashClock.nextReady = true
+                    }
+                }
             }
             if splash { SplashView(onRevealStart: {}) { splash = false; LaunchGate.open = true }.transition(.opacity).zIndex(1) }
+        }
+        .task {   // mount the next page only once the first F frame has been produced
+            while !SplashClock.sawFirstFrame && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(16)) }
+            try? await Task.sleep(for: .milliseconds(50))   // let that frame reach the screen first
+            mounted = true
         }
     }
 }
