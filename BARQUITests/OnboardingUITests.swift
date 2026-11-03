@@ -17,8 +17,7 @@ final class OnboardingUITests: XCTestCase {
 
     func testFirstLaunchFlowSavesAndRelaunchSkipsOnboarding() {
         var app = launch(reset: true)
-        XCTAssertTrue(el(app, "splash").waitForExistence(timeout: 10), "splash on launch")
-        shot("00-splash")
+        // Splash lasts ~2 s and XCUI launch() waits for idle, so splash frames are captured in testSplashFrames.
         let title = el(app, "ob-title")
         XCTAssertTrue(title.waitForExistence(timeout: 20))
         XCTAssertEqual(title.label, "اختر أنديتك المفضلة")
@@ -27,7 +26,7 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertFalse(next.isEnabled, "club is mandatory")
         let club = first(app, "ob-club-")
         XCTAssertTrue(club.waitForExistence(timeout: Self.realData), "real clubs loaded")
-        sleep(3); shot("01-clubs")
+        sleep(6); shot("02-clubs-empty")
         pace(3)
         let clubName = club.label
         club.tap(); sleep(1)
@@ -38,7 +37,7 @@ final class OnboardingUITests: XCTestCase {
         }
         XCTAssertEqual(club.value as? String, "on")
         XCTAssertTrue(next.isEnabled)
-        shot("02-clubs-selected")
+        shot("03-clubs-selected")
         next.tap()
         XCTAssertTrue(el(app, "ob-progress").waitForExistence(timeout: 5))
         XCTAssertEqual(el(app, "ob-progress").label, "2 من 3")
@@ -46,28 +45,28 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(el(app, "ob-skip").exists)
         let league = first(app, "ob-comp-")
         XCTAssertTrue(league.waitForExistence(timeout: Self.realData))
-        league.tap(); pace(3); sleep(2); shot("03-leagues"); pace(2)
+        sleep(4); shot("05-leagues-empty")
+        league.tap(); pace(3); sleep(2); shot("06-leagues-selected"); pace(2)
         el(app, "ob-next").tap(); sleep(1)
         XCTAssertEqual(el(app, "ob-progress").label, "3 من 3")
         XCTAssertEqual(el(app, "ob-title").label, "اختر بطولاتك المفضلة")
         let cup = first(app, "ob-comp-")
         XCTAssertTrue(cup.waitForExistence(timeout: Self.realData))
-        cup.tap(); pace(3); sleep(2); shot("04-cups"); pace(2)
+        sleep(4); shot("07-cups-empty")
+        cup.tap(); pace(3); sleep(2); shot("08-cups-selected"); pace(2)
         XCTAssertTrue(el(app, "ob-skip").exists)
         el(app, "ob-start").tap()
         XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 30), "lands on home")
-        sleep(5); shot("05-home"); pace(8)
+        sleep(5); shot("09-home-after-onboarding"); pace(8)
 
         app.terminate()
         app = launch(reset: false)
-        XCTAssertTrue(el(app, "splash").waitForExistence(timeout: 10), "splash every launch")
-        shot("07-relaunch-splash")
         XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 30))
         XCTAssertFalse(el(app, "ob-title").exists, "onboarding only once")
-        sleep(3); shot("08-relaunch-home"); pace(5)
+        sleep(3); shot("11-relaunch-home"); pace(5)
         app.tabBars.buttons["المفضلة"].tap()
         XCTAssertTrue(app.staticTexts[clubName].waitForExistence(timeout: 15), "chosen club persisted in favorites: \(clubName)")
-        shot("06-favorites-after-relaunch"); pace(4)
+        shot("12-favorites-after-relaunch"); pace(4)
     }
 
     func testSkipPathsAndClubSearch() {
@@ -77,6 +76,7 @@ final class OnboardingUITests: XCTestCase {
         search.tap(); search.typeText("liverpool")
         let lfc = el(app, "ob-club-40")
         XCTAssertTrue(lfc.waitForExistence(timeout: Self.realData), "real API team search finds Liverpool (40)")
+        sleep(3); shot("04-clubs-search")
         lfc.tap(); XCTAssertEqual(lfc.value as? String, "on")
         el(app, "ob-next").tap()
         XCTAssertTrue(el(app, "ob-skip").waitForExistence(timeout: 5)); el(app, "ob-skip").tap(); sleep(1)
@@ -85,6 +85,19 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 30))
         app.tabBars.buttons["المفضلة"].tap()
         XCTAssertTrue(app.staticTexts["Liverpool"].waitForExistence(timeout: 15))
+    }
+
+    /// Real frames of the splash animation (held via -splashHold): small logo at start, then mid-zoom.
+    func testSplashFrames() {
+        for (hold, name) in [("start", "00-splash-start"), ("zoom", "01-splash-zoom")] {
+            let a = XCUIApplication(); a.launchArguments = ["-lang", "ar", "-splashHold", hold]; a.launch()
+            XCTAssertTrue(a.descendants(matching: .any)["splash"].firstMatch.waitForExistence(timeout: 15), "splash shown")
+            sleep(2); shot(name); a.terminate()
+        }
+        // relaunch splash (onboarding already done in this state or not, splash always on top)
+        let a = XCUIApplication.fotiq(); a.launchArguments = ["-lang", "ar", "-splashHold", "zoom"]; a.launch()
+        XCTAssertTrue(a.descendants(matching: .any)["splash"].firstMatch.waitForExistence(timeout: 15))
+        sleep(1); shot("10-relaunch-splash"); a.terminate()
     }
 
     func testFavoritesEditableFromSettings() {

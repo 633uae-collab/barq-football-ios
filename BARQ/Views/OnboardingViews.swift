@@ -47,6 +47,12 @@ struct SplashView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("splash")
         .task {
+            // QA screenshots only: `-splashHold start|zoom` freezes a real frame of this animation.
+            switch UserDefaults.standard.string(forKey: "splashHold") {
+            case "start": scale = 0.55; return
+            case "zoom": withAnimation(.easeIn(duration: 0.9)) { scale = 4 }; return
+            default: break
+            }
             withAnimation(.spring(response: 0.7, dampingFraction: 0.75)) { scale = 1.0 }
             try? await Task.sleep(for: .seconds(0.75))
             withAnimation(.easeIn(duration: 0.9)) { scale = 14 }
@@ -200,19 +206,12 @@ struct ClubPickStep: View {
 
     func loadPopular() async {
         while popular.isEmpty, !Task.isCancelled {
-            var out: [TeamRef] = []
-            await withTaskGroup(of: (Int, [TeamRef]).self) { g in
-                for (i, l) in Self.sources.enumerated() {
-                    g.addTask {
-                        let r: StandingsResponse? = try? await API.shared.get("/api/standings/\(l)", maxAge: 3600)
-                        return (i, (r?.groups.first ?? []).prefix(8).map(\.team))
-                    }
-                }
-                var parts: [(Int, [TeamRef])] = []
-                for await p in g { parts.append(p) }
-                for p in parts.sorted(by: { $0.0 < $1.0 }) { for t in p.1 where !out.contains(where: { $0.id == t.id }) { out.append(t) } }
+            for l in Self.sources {
+                guard let r: StandingsResponse = try? await API.shared.get("/api/standings/\(l)", maxAge: 3600) else { continue }
+                let add = (r.groups.first ?? []).prefix(8).map(\.team).filter { t in !popular.contains { $0.id == t.id } }
+                withAnimation(.easeOut(duration: 0.25)) { popular += add }
             }
-            if out.isEmpty { try? await Task.sleep(for: .seconds(5)) } else { popular = out }
+            if popular.isEmpty { try? await Task.sleep(for: .seconds(5)) }
         }
     }
     func search() async {
