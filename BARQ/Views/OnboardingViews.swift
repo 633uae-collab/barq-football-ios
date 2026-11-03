@@ -24,6 +24,14 @@ enum SplashDiag {
     }
 }
 
+/// Network/data work of the first screen waits until the splash is gone. Evidence (run 41687787714, splash-diag.log):
+/// mounting onboarding mid-push blocked the main thread 967 + 2187 + 1237 ms (data arrival -> grid of glass tiles +
+/// logo decoding), freezing the camera push. The screen is still built (empty) under the splash; only its loading waits.
+@MainActor enum LaunchGate {
+    static var open = false
+    static func wait() async { while !open && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(50)) } }
+}
+
 // MARK: - Persistence (pure, unit-tested)
 
 /// First-launch flag + applying choices to the EXISTING favorites system (AppStore.favTeams / favLeagues).
@@ -313,6 +321,7 @@ struct ClubPickStep: View {
     }
 
     func loadPopular() async {
+        await LaunchGate.wait()
         while popular.isEmpty, !Task.isCancelled {
             for l in Self.sources {
                 guard let r: StandingsResponse = try? await API.shared.get("/api/standings/\(l)", maxAge: 3600) else { continue }
@@ -371,6 +380,7 @@ struct CompetitionPickStep: View {
             .scrollDismissesKeyboard(.immediately)
         }
         .task(id: kind) {
+            await LaunchGate.wait()
             items = []
             while items.isEmpty, !Task.isCancelled {
                 if let c: CatalogResponse = try? await API.shared.get("/api/catalog", maxAge: 3600) {
@@ -416,14 +426,14 @@ struct PickTile: View {
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var splash = true
-    @State private var mounted = false      // next screen is built only when the splash starts revealing it
+    @State private var mounted = true       // built under the splash (cheap, empty); its data loading waits on LaunchGate
     @State private var onboarded = Onboarding.isDone()
     var body: some View {
         ZStack {
             if mounted {
                 if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
             }
-            if splash { SplashView(onRevealStart: { mounted = true }) { splash = false; mounted = true }.transition(.opacity).zIndex(1) }
+            if splash { SplashView(onRevealStart: {}) { splash = false; LaunchGate.open = true }.transition(.opacity).zIndex(1) }
         }
     }
 }

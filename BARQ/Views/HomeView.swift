@@ -59,6 +59,7 @@ struct HomeView: View {
         .onDisappear { visible = false }
         // Live refresh loop: one stable task (no restarts that cancel in-flight loads); refreshes only while Home is visible and the app is active.
         .task {
+            await LaunchGate.wait()
             await load()
             while !Task.isCancelled {
                 let hot = today.contains { $0.isLive || HomeFeed.heroEligible($0, now: Date()) }

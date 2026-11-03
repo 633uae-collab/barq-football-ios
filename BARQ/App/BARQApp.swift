@@ -48,6 +48,7 @@ struct RootView: View {
             NavigationStack { MatchCenterView(fixtureId: box.id) }
         }
         .task {
+            await LaunchGate.wait()
             poller.start(store: store)
             // Launch arguments used by CI screenshots: -startTab matches|ai|favorites|search, -openMatch <id>
             let d = UserDefaults.standard
