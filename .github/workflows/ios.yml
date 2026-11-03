@@ -28,6 +28,8 @@ jobs:
           sudo xcode-select -s "$X"; xcodebuild -version
           xcodebuild -showsdks | grep -q iphonesimulator26 || { echo "::error::iOS 26 simulator SDK missing"; exit 1; }
       - run: brew install xcodegen && xcodegen generate
+        timeout-minutes: 15
+        env: { HOMEBREW_NO_AUTO_UPDATE: "1" }
       - name: Pick simulator (Pro model = has Dynamic Island)
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "

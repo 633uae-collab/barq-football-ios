@@ -18,6 +18,8 @@ jobs:
         run: |
           X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"; xcodebuild -version
       - run: brew install xcodegen ffmpeg && xcodegen generate
+        timeout-minutes: 15
+        env: { HOMEBREW_NO_AUTO_UPDATE: "1", HOMEBREW_NO_INSTALL_CLEANUP: "1" }
       - name: Pick simulator, enable touch indicators, boot
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "
