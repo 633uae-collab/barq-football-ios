@@ -61,6 +61,8 @@ final class HomeV8UITests: XCTestCase {
         let add2 = el(app, "hero-add")
         if add2.waitForExistence(timeout: 30) {
             add2.tap()
+            // Real fixtures may still be loading after relaunch (slow runner / tunnel re-resolve): wait for the list first.
+            _ = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'pick-match-'")).firstMatch.waitForExistence(timeout: 180)
             XCTAssertTrue(el(app, id).waitForExistence(timeout: 10))
             XCTAssertEqual(el(app, id).value as? String, "on", "favorite persisted after relaunch")
             el(app, id).tap(); el(app, "pick-done").tap()
