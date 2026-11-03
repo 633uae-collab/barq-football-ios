@@ -49,6 +49,7 @@ final class SplashClock {
 }
 
 struct SplashView: View {
+    var onRevealStart: () -> Void = {}
     var onFinish: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var clock = SplashClock()
@@ -89,16 +90,24 @@ struct SplashView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("splash")
         .task {
-            if Self.held != nil { return }
+            if Self.held != nil { onRevealStart(); return }
             if reduceMotion {
+                onRevealStart()
                 try? await Task.sleep(for: .seconds(Self.hold + 0.2))
                 withAnimation(.easeInOut(duration: 0.45)) { fade = 0 }
                 try? await Task.sleep(for: .seconds(0.45))
             } else {
                 // Finish on the animation's own (frame-clamped) clock, never on wall time,
                 // so a main-thread stall can't cut from the first frame straight to the end.
-                let deadline = Date().addingTimeInterval(6)   // safety: never block the app if frames stop
-                while clock.elapsed < Self.hold + Self.push - 0.18 && Date() < deadline { try? await Task.sleep(for: .milliseconds(16)) }
+                let deadline = Date().addingTimeInterval(10)  // safety: never block the app if frames stop
+                var revealed = false
+                while clock.elapsed < Self.hold + Self.push - 0.18 && Date() < deadline {
+                    // mount the next screen just before the gap opens (hole starts at t = 0.5), so building it
+                    // can't stall the hold or the first half of the camera push
+                    if !revealed, clock.elapsed >= Self.hold + Self.push * 0.4 { revealed = true; onRevealStart() }
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+                if !revealed { onRevealStart() }
                 withAnimation(.easeOut(duration: 0.18)) { fade = 0 }
                 try? await Task.sleep(for: .seconds(0.18))
             }
@@ -382,11 +391,14 @@ struct PickTile: View {
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var splash = true
+    @State private var mounted = false      // next screen is built only when the splash starts revealing it
     @State private var onboarded = Onboarding.isDone()
     var body: some View {
         ZStack {
-            if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
-            if splash { SplashView { splash = false }.transition(.opacity).zIndex(1) }
+            if mounted {
+                if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
+            }
+            if splash { SplashView(onRevealStart: { mounted = true }) { splash = false; mounted = true }.transition(.opacity).zIndex(1) }
         }
     }
 }
