@@ -105,6 +105,10 @@ final class OnboardingUITests: XCTestCase {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["SPLASH_REC"] == "1", "recording workflow only")
         var a = launch(reset: true)
         XCTAssertTrue(el(a, "ob-title").waitForExistence(timeout: 30)); sleep(5)
+        // finish onboarding (1 real club, skip the optional steps) so the relaunch goes splash -> home
+        let club = first(a, "ob-club-"); XCTAssertTrue(club.waitForExistence(timeout: Self.realData)); club.tap(); sleep(1)
+        el(a, "ob-next").tap(); sleep(1); el(a, "ob-skip").tap(); sleep(1); el(a, "ob-skip").tap()
+        XCTAssertTrue(a.navigationBars["FOTIQ"].waitForExistence(timeout: 30)); sleep(2)
         a.terminate(); sleep(2)
         a = launch(reset: false)
         XCTAssertTrue(a.navigationBars["FOTIQ"].waitForExistence(timeout: 30)); sleep(5)
