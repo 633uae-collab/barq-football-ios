@@ -59,6 +59,7 @@ jobs:
         timeout-minutes: 15
         continue-on-error: true
         run: |
+          xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b   # run 41718653710: "Unable to lookup in current state: Shutdown"
           APP=$(find dd/Build/Products -name "BARQ.app" -path "*iphonesimulator*" | head -1); xcrun simctl install "$UDID" "$APP"
           mkdir -p diag/trace
           xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > diag/trace/launch-timing.log 2>&1 &
