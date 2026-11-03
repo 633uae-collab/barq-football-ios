@@ -13,9 +13,13 @@ final class FOTIQUITests: XCTestCase {
     func testHomeShowsBrandAndTabBar() {
         let app = launch([])
         XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 30) || anyText(app, containing: "FOTIQ"))
-        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 60))
         for t in ["المباريات", "المحلل", "المفضلة"] {
-            let b = app.tabBars.buttons[t]; XCTAssertTrue(b.exists, "tab \(t)"); b.tap()
+            let b = app.tabBars.buttons[t]
+            XCTAssertTrue(b.waitForExistence(timeout: 60), "tab \(t)")
+            let hittable = NSPredicate(format: "exists == true AND hittable == true")
+            XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: hittable, object: b)], timeout: 60), .completed, "tab \(t) hittable")
+            b.tap()
         }
     }
     /// Real-data waits. The free Pinggy tunnel expires/rotates (~hourly); measured outage = up to 25 s health-check

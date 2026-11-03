@@ -29,38 +29,95 @@ enum Onboarding {
     }
 }
 
-// MARK: - Splash
+// MARK: - Splash (v2: cinematic camera push through the gap between the F's arms)
 
-/// Shown on every launch: FOTIQ mark (same asset as the launch screen) grows until it fills the screen, then fades.
+/// Every launch: original FOTIQ mark (F + green dot, 1024 px original asset) holds 0.3 s, then a camera push
+/// (scaleEffect anchored on the gap between the F's top and middle arms + offset bringing that gap to screen centre,
+/// accelerating log-space zoom) flies through the gap; the next screen is revealed through the gap itself.
+/// Reduce Motion: hold, then a plain cross-fade.
 struct SplashView: View {
     var onFinish: () -> Void
-    @State private var scale: CGFloat = 0.55
-    @State private var opacity: Double = 1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var start = Date()
+    @State private var fade = 1.0
+    /// Logo-relative unit geometry measured from design/fotiq-icon-original.png (1024x1024):
+    /// white F spans x 0.28-0.67, y 0.25-0.75; top arm ends y 0.375, middle arm starts y 0.47.
+    static let gap = CGRect(x: 0.415, y: 0.378, width: 0.27, height: 0.09)
+    static let target = UnitPoint(x: 0.47, y: 0.423)       // camera focus: inside the gap, close to the stem
+    static let hold = 0.3, push = 1.25, maxScale: CGFloat = 70
+    static var held: Double? {                              // QA screenshots: -splashHold start|zoom|reveal
+        switch UserDefaults.standard.string(forKey: "splashHold") { case "start": 0; case "zoom": 0.55; case "reveal": 0.86; default: nil }
+    }
+
+    /// Camera curve: accelerating ease-in (cubic) applied in log-scale space so the approach feels like real forward motion.
+    static func scale(_ t: Double) -> CGFloat { exp(log(maxScale) * CGFloat(t * t * t)) }
+    static func travel(_ t: Double) -> CGFloat { CGFloat(1 - pow(1 - t, 2)) * 0.6 + CGFloat(t) * 0.4 }
+    /// Hole (reveal) opens during the second half, synced with the camera.
+    static func hole(_ t: Double) -> CGFloat { CGFloat(max(0, min(1, (t - 0.5) / 0.35))) }
+
     var body: some View {
-        ZStack {
-            Color("LaunchBackground").ignoresSafeArea()
-            Image("LaunchMark").resizable().scaledToFit().frame(width: 140, height: 140)
-                .scaleEffect(scale)
-                .accessibilityIdentifier("splash-logo")
+        GeometryReader { geo in
+            let W = geo.size.width, H = geo.size.height
+            let side = W * 0.38 / 0.44                      // F + dot ≈ 38 % of screen width
+            let origin = CGPoint(x: (W - side) / 2, y: (H - side) / 2)
+            if reduceMotion {
+                scene(t: 0, side: side, origin: origin, W: W, H: H)
+            } else {
+                TimelineView(.animation(minimumInterval: 1 / 60, paused: Self.held != nil)) { tl in
+                    let el = tl.date.timeIntervalSince(start)
+                    let t = Self.held ?? max(0, min(1, (el - Self.hold) / Self.push))
+                    scene(t: t, side: side, origin: origin, W: W, H: H)
+                }
+            }
         }
-        .opacity(opacity)
-        .accessibilityElement(children: .contain)
+        .ignoresSafeArea()
+        .opacity(fade)
+        .allowsHitTesting(fade > 0.5)
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("splash")
         .task {
-            // QA screenshots only: `-splashHold start|zoom` freezes a real frame of this animation.
-            switch UserDefaults.standard.string(forKey: "splashHold") {
-            case "start": scale = 0.55; return
-            case "zoom": withAnimation(.easeIn(duration: 0.9)) { scale = 4 }; return
-            default: break
+            start = Date()
+            if Self.held != nil { return }
+            if reduceMotion {
+                try? await Task.sleep(for: .seconds(Self.hold + 0.2))
+                withAnimation(.easeInOut(duration: 0.45)) { fade = 0 }
+                try? await Task.sleep(for: .seconds(0.45))
+            } else {
+                try? await Task.sleep(for: .seconds(Self.hold + Self.push - 0.18))
+                withAnimation(.easeOut(duration: 0.18)) { fade = 0 }   // last sliver only; the gap already covers the screen
+                try? await Task.sleep(for: .seconds(0.18))
             }
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75)) { scale = 1.0 }
-            try? await Task.sleep(for: .seconds(0.75))
-            withAnimation(.easeIn(duration: 0.9)) { scale = 14 }
-            try? await Task.sleep(for: .seconds(0.6))
-            withAnimation(.easeOut(duration: 0.4)) { opacity = 0 }
-            try? await Task.sleep(for: .seconds(0.4))
             onFinish()
         }
+    }
+
+    /// One frame of the camera move. Everything in logo space moves together (stem, arms, dot, navy, gap hole).
+    func scene(t: Double, side: CGFloat, origin: CGPoint, W: CGFloat, H: CGFloat) -> some View {
+        let s = Self.scale(t), k = Self.travel(t), h = Self.hole(t)
+        let tgt = CGPoint(x: origin.x + Self.target.x * side, y: origin.y + Self.target.y * side)
+        let dx = (W / 2 - tgt.x) * k, dy = (H / 2 - tgt.y) * k
+        // gap hole in logo-local coords, growing from the focus point to (slightly beyond) the full gap
+        let g = Self.gap, grow = 1 + max(0, h - 0.8) * 1.5
+        let hw = g.width * side * h * grow, hh = g.height * side * h * grow
+        let hc = CGPoint(x: Self.target.x * side, y: Self.target.y * side)
+        let holeRect = CGRect(x: hc.x - hw / 2, y: hc.y - hh / 2, width: hw, height: hh)
+        let pad = side * 3
+        return ZStack(alignment: .topLeading) {
+            Path { p in
+                p.addRect(CGRect(x: -pad, y: -pad, width: side + 2 * pad, height: side + 2 * pad))
+                if h > 0 { p.addRoundedRect(in: holeRect, cornerSize: CGSize(width: hh * 0.25, height: hh * 0.25)) }
+            }
+            .fill(Color("LaunchBackground"), style: FillStyle(eoFill: true))
+            Image("SplashMark").resizable().interpolation(.high).frame(width: side, height: side)
+                .accessibilityIdentifier("splash-logo")
+        }
+        .frame(width: side, height: side, alignment: .topLeading)
+        .scaleEffect(s, anchor: Self.target)
+        .offset(x: dx, y: dy)
+        .position(x: origin.x + side / 2, y: origin.y + side / 2)
+        .frame(width: W, height: H)
+        .background(alignment: .center) { if h == 0 { Color("LaunchBackground") } }
+        .drawingGroup()
     }
 }
 

@@ -89,7 +89,7 @@ final class OnboardingUITests: XCTestCase {
 
     /// Real frames of the splash animation (held via -splashHold): small logo at start, then mid-zoom.
     func testSplashFrames() {
-        for (hold, name) in [("start", "00-splash-start"), ("zoom", "01-splash-zoom")] {
+        for (hold, name) in [("start", "00-splash-start"), ("zoom", "01-splash-zoom"), ("reveal", "01b-splash-reveal")] {
             let a = XCUIApplication(); a.launchArguments = ["-lang", "ar", "-splashHold", hold]; a.launch()
             XCTAssertTrue(a.descendants(matching: .any)["splash"].firstMatch.waitForExistence(timeout: 15), "splash shown")
             sleep(2); shot(name); a.terminate()
