@@ -35,10 +35,23 @@ enum Onboarding {
 /// (scaleEffect anchored on the gap between the F's top and middle arms + offset bringing that gap to screen centre,
 /// accelerating log-space zoom) flies through the gap; the next screen is revealed through the gap itself.
 /// Reduce Motion: hold, then a plain cross-fade.
+/// Frame-clamped animation clock: each rendered frame advances at most 1/30 s, so if the main thread stalls
+/// (first launch builds onboarding + decodes network data underneath) the camera move resumes where it was
+/// instead of jumping to t = 1. On a smooth 60 fps device this equals wall time.
+final class SplashClock {
+    private var last: Date?
+    private(set) var elapsed: Double = 0
+    func tick(_ now: Date) -> Double {
+        if let l = last { elapsed += min(max(0, now.timeIntervalSince(l)), 1.0 / 30) }
+        last = now
+        return elapsed
+    }
+}
+
 struct SplashView: View {
     var onFinish: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var start = Date()
+    @State private var clock = SplashClock()
     @State private var fade = 1.0
     /// Logo-relative unit geometry measured from design/fotiq-icon-original.png (1024x1024):
     /// white F spans x 0.28-0.67, y 0.25-0.75; top arm ends y 0.375, middle arm starts y 0.47.
@@ -64,7 +77,7 @@ struct SplashView: View {
                 scene(t: 0, side: side, origin: origin, W: W, H: H)
             } else {
                 TimelineView(.animation(minimumInterval: 1 / 60, paused: Self.held != nil)) { tl in
-                    let el = tl.date.timeIntervalSince(start)
+                    let el = clock.tick(tl.date)
                     let t = Self.held ?? max(0, min(1, (el - Self.hold) / Self.push))
                     scene(t: t, side: side, origin: origin, W: W, H: H)
                 }
@@ -76,15 +89,17 @@ struct SplashView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("splash")
         .task {
-            start = Date()
             if Self.held != nil { return }
             if reduceMotion {
                 try? await Task.sleep(for: .seconds(Self.hold + 0.2))
                 withAnimation(.easeInOut(duration: 0.45)) { fade = 0 }
                 try? await Task.sleep(for: .seconds(0.45))
             } else {
-                try? await Task.sleep(for: .seconds(Self.hold + Self.push - 0.18))
-                withAnimation(.easeOut(duration: 0.18)) { fade = 0 }   // last sliver only; the gap already covers the screen
+                // Finish on the animation's own (frame-clamped) clock, never on wall time,
+                // so a main-thread stall can't cut from the first frame straight to the end.
+                let deadline = Date().addingTimeInterval(6)   // safety: never block the app if frames stop
+                while clock.elapsed < Self.hold + Self.push - 0.18 && Date() < deadline { try? await Task.sleep(for: .milliseconds(16)) }
+                withAnimation(.easeOut(duration: 0.18)) { fade = 0 }
                 try? await Task.sleep(for: .seconds(0.18))
             }
             onFinish()
