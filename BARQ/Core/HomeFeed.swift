@@ -18,6 +18,7 @@ enum HomeFeed {
 
     /// Live (incl. HT, ET, BT, penalties), or not started and kicking off within 60 minutes.
     /// A match still "NS" shortly after its scheduled time (late status update) stays for up to 2 h.
+    static let uiTest = ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] == "1"
     static func heroEligible(_ f: Fixture, now: Date) -> Bool {
         if f.isLive { return true }
         guard notStarted.contains(f.status.short) else { return false }

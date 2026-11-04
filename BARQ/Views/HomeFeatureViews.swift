@@ -150,7 +150,9 @@ struct FavoriteHeroCard: View {
             }
         } else {
             VStack(spacing: 4) {
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                // Per-second countdown for users. Under UI tests (FOTIQ_UI_TEST=1) it ticks every 30 s: a 1 s re-render of the glass hero
+                // kept the app from ever going idle for XCUITest when a favourite kicked off within the hero window (same issue as LivePill).
+                TimelineView(.periodic(from: .now, by: HomeFeed.uiTest ? 30 : 1)) { ctx in
                     Text(verbatim: HomeFeed.countdown(to: f.kickoff, now: ctx.date))
                         .font(.system(size: 28, weight: .heavy, design: .rounded)).monospacedDigit()
                         .environment(\.layoutDirection, .leftToRight)

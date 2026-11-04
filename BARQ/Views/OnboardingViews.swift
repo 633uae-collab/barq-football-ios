@@ -192,7 +192,10 @@ struct SplashView: View {
                 p.addRect(CGRect(x: 0, y: 0, width: W, height: H))
                 if h > 0, !holeS.isNull { p.addRoundedRect(in: holeS, cornerSize: CGSize(width: min(hh * s * 0.25, 40), height: min(hh * s * 0.25, 40))) }
             }
-            .fill(Color("LaunchBackground"), style: FillStyle(eoFill: true))
+            // 99.5% opaque (visually identical navy): a fully opaque cover lets Core Animation skip drawing the page beneath,
+            // so its native Liquid Glass was first drawn only when the gap opened (blocks 0.5-1 s mid-reveal, run 41726432232).
+            // Slightly translucent, the page and its glass get their first draw during the held logo, before the push.
+            .fill(Color("LaunchBackground").opacity(0.995), style: FillStyle(eoFill: true))
             Image("SplashMark").resizable().interpolation(.high).frame(width: side, height: side)
                 .scaleEffect(s, anchor: Self.target)
                 .offset(x: dx, y: dy)
