@@ -11,8 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: cd server && node --test test/
+        with: { node-version: 24 }
+      - run: npm ci --prefix server
+      - run: npm test --prefix server
 
   simulator:
     runs-on: ${{ inputs.runner || 'macos-26' }}
