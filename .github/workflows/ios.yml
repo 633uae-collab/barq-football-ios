@@ -96,9 +96,9 @@ jobs:
           mkdir -p shots/review; cp /tmp/review-home-*.png shots/review/ || true
       - name: Live timeline tests (live match now + replay of recorded real snapshots)
         run: |
-          API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
+          API=$(node ci/resolve-api-base.mjs) || exit 1
           H="X-Pinggy-No-Screen: 1"
-          get() { for i in 1 2 3 4; do API=$(curl -s -m 20 https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])" || true); curl -sf -m 90 -H "$H" "$API$1" -o "$2" && return 0; sleep 15; done; return 1; }
+          get() { for i in 1 2 3 4; do API=$(node ci/resolve-api-base.mjs) || return 1; curl -sf -m 90 -H "$H" "$API$1" -o "$2" && return 0; sleep 15; done; return 1; }
           get /api/fixtures fx.json || echo '{"fixtures":[]}' > fx.json
           get /api/replay rp.json || echo '[]' > rp.json
           LIVE=$(python3 -c "
@@ -120,7 +120,7 @@ jobs:
           mkdir -p shots
           xcrun simctl status_bar "$UDID" override --time 9:41 || true
           mkdir -p shots
-          API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
+          API=$(node ci/resolve-api-base.mjs) || exit 1
           H="X-Pinggy-No-Screen: 1"
           MID=$(curl -s -H "$H" "$API/api/fixtures" | python3 -c "import json,sys;f=json.load(sys.stdin)['fixtures'];L={'1H','2H','HT','ET'};f=sorted(f,key=lambda x:(x['status']['short'] not in L,-(x.get('imp') or 0)));print(f[0]['id'])")
           TEAM=$(curl -s -H "$H" "$API/api/match/$MID" | python3 -c "import json,sys;print(json.load(sys.stdin)['match']['home']['id'])")
@@ -203,6 +203,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     env:
+      FOTIQ_API_BASE: ${{ inputs.api_base || secrets.FOTIQ_API_BASE }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
@@ -227,6 +228,6 @@ jobs:
           AUTH="-allowProvisioningUpdates -authenticationKeyPath $KEY -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID"
           xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -configuration Release -destination generic/platform=iOS \
             -archivePath build/BARQ.xcarchive archive DEVELOPMENT_TEAM=$APPLE_TEAM_ID CODE_SIGN_STYLE=Automatic \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }} $AUTH | tail -30
+            FOTIQ_API_BASE="$FOTIQ_API_BASE" CURRENT_PROJECT_VERSION=${{ github.run_number }} $AUTH | tail -30
           xcodebuild -exportArchive -archivePath build/BARQ.xcarchive -exportOptionsPlist ci/ExportOptions.plist -exportPath build/export $AUTH | tail -30
           rm -f "$KEY"

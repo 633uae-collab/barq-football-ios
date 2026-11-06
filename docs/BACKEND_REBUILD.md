@@ -4,7 +4,7 @@ The original server entrypoint, catalog implementation, analyst engine and produ
 
 ## Implemented and locally exercised
 
-Node 24 + Express 5; API-Football requests are made only on the server. Responses normalize to `BARQ/Core/Models.swift`. Timeouts, HTTP-200 HTML rejection, provider error-envelope handling, bounded caching, coalescing and concurrency limits are included. Stale results are limited and flagged. Credentials and raw upstream errors are never returned to the app. A defensive request budget defaults to 1,000 provider requests per process per UTC day; this is not the account's actual quota and resets on process restart.
+Node 24 (pinned via `.node-version`) + Express 5; API-Football requests are made only on the server. Responses normalize to `BARQ/Core/Models.swift`. Timeouts, HTTP-200 HTML rejection, provider error-envelope handling, bounded caching, coalescing and concurrency limits are included. Stale results are limited and flagged. Credentials and raw upstream errors are never returned to the app. A defensive request budget defaults to 1,000 provider requests per process per UTC day; this is not the account's actual quota and resets on process restart.
 
 Preferences PUT commits to SQLite before acknowledging success. WAL and FULL synchronous mode are enabled. Existing iOS local persistence and durable retry outbox are unchanged. The client's revision is local-only and is not sent to this server; server-side ordering beyond the client's existing serial writer is not claimed. Invalid/incomplete snapshots cannot clear saved preferences.
 
@@ -35,7 +35,7 @@ npm test --prefix server
 npm start --prefix server
 ```
 
-Without `APISPORTS_KEY`, liveness works, but provider routes correctly fail with JSON `API_KEY_NOT_CONFIGURED`. Local tests use mocked provider responses and the existing real captured fixture; they do not verify the user's subscription, live data or production performance. No SwiftUI design, native Liquid Glass, bottom tabs, or launch behavior was modified.
+In local development without `APISPORTS_KEY`, liveness works, but provider routes correctly fail with JSON `API_KEY_NOT_CONFIGURED`. Local tests use mocked provider responses and the existing real captured fixture; they do not verify the user's subscription, live data or production performance. No SwiftUI design, native Liquid Glass, bottom tabs, or launch behavior was modified.
 
 ## Render — manual setup only after owner authorizes hosting charges
 
@@ -49,8 +49,10 @@ No service has been created and no purchase made. The user's screenshots show an
 6. Review the displayed compute, disk and other charges with the owner before selecting any paid resources or confirming deployment. A paid workspace alone is not proof of always-on compute. No Blueprint is included that could provision billable resources automatically.
 7. Once deployed, verify the public HTTPS URL and inspect logs without showing secrets. Run `node ci/check-backend.mjs https://ACTUAL-SERVICE.onrender.com` and exercise every route in the table. Expected missing-feature errors are blockers, not passes.
 8. Save preferences, restart/redeploy the service, and verify the durable snapshot survived using a controlled test device. Verify backups/restore and load/performance before wider release.
+Production startup now rejects a missing key and a relative/in-memory database path. This does not prove a disk is mounted; deployment must still verify actual persistence.
+
 9. Only after live checks, set GitHub Actions secret `FOTIQ_API_BASE` to that exact HTTPS base URL. The existing workflow passes it to the app's `FOTIQAPIBase` build setting. Do not embed the API-Football key. Do not replace the old public config with an untested URL.
-10. Run the complete iOS workflow on the chosen branch with that base URL; offline launch tests alone are insufficient. The existing live-timeline and screenshot steps still resolve the old remote config and must be aligned to the validated base before claiming full integration.
+10. Run the complete iOS workflow on the chosen branch with that base URL; offline launch tests alone are insufficient. Live-timeline and screenshot steps now use `ci/resolve-api-base.mjs`, honoring the explicit base before remote config. The TestFlight archive also receives that base. Invalid overrides fail explicitly instead of silently using the old tunnel.
 
 ## Production blockers / limitations
 
@@ -62,4 +64,6 @@ No service has been created and no purchase made. The user's screenshots show an
 - Cache memory is bounded by serialized bytes and entries, not a hard V8 heap limit. Benchmark under the selected host's memory and CPU limits.
 - App endpoint wiring, APNs, TestFlight signing and full online iOS validation are not complete.
 
-Validation at preparation: 22 Node tests pass (all 9 existing plus 13 added). No tests were removed or weakened. This is a draft reconstruction checkpoint, **not a claim that FOTIQ is ready for production or TestFlight**.
+Validation at preparation: 26 Node tests pass (all 9 existing plus 17 added), including real child-process startup, HTTP preferences write, SIGTERM shutdown, restart and SQLite recovery. API data remains mocked/captured; this restart test is local, not a Render disk verification. No tests were removed or weakened. This is a draft reconstruction checkpoint, **not a claim that FOTIQ is ready for production or TestFlight**.
+
+Render setup references: https://render.com/docs/node-version, https://render.com/docs/web-services, https://render.com/docs/health-checks, https://render.com/docs/disks. Persistent disks require a paid service and permit only one instance; deploys with a disk have brief downtime. No uninterrupted-availability guarantee is made.
