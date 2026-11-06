@@ -46,17 +46,37 @@ extension View {
 /// First-launch flag + applying choices to the EXISTING favorites system (AppStore.favTeams / favLeagues).
 enum Onboarding {
     static let doneKey = "onboardingDone"
+    static let cinematicKey = "onboardingCinematicSeen"
+    static let draftKey = "onboardingDraft.v1"
+    struct Draft: Codable {
+        var step = 0
+        var clubs: [TeamRef] = []
+        var leagues: Set<Int> = []
+        var cups: Set<Int> = []
+    }
+    static func needsCinema(_ d: UserDefaults = .standard) -> Bool {
+        !isDone(d) && !d.bool(forKey: cinematicKey)
+    }
+    static func loadDraft(_ d: UserDefaults = .standard) -> Draft {
+        guard let data = d.data(forKey: draftKey), var draft = try? JSONDecoder().decode(Draft.self, from: data) else { return Draft() }
+        draft.step = draft.clubs.isEmpty ? 0 : min(2, max(0, draft.step))
+        return draft
+    }
+    static func saveDraft(_ draft: Draft, _ d: UserDefaults = .standard) {
+        guard let data = try? JSONEncoder().encode(draft) else { return }
+        d.set(data, forKey: draftKey)
+    }
     static func isDone(_ d: UserDefaults = .standard) -> Bool {
         if ProcessInfo.processInfo.environment["FOTIQ_SKIP_ONBOARDING"] == "1" { return true }
         // CI screenshot harness (-screen / -qaFavTeam) opens screens directly; never block it with onboarding.
         if d.string(forKey: "screen") != nil || d.object(forKey: "qaFavTeam") != nil { return true }
         return d.bool(forKey: doneKey)
     }
-    static func markDone(_ d: UserDefaults = .standard) { d.set(true, forKey: doneKey) }
+    static func markDone(_ d: UserDefaults = .standard) { d.set(true, forKey: doneKey); d.removeObject(forKey: draftKey) }
     /// `-resetOnboarding YES` (UI tests / recording): fresh first-launch state.
     static func resetIfRequested(_ d: UserDefaults = .standard) {
         guard d.bool(forKey: "resetOnboarding") else { return }
-        for k in [doneKey, "favTeams", "favLeagues", "favTeams.backup", "favLeagues.backup", PreferencesOutbox.key] { d.removeObject(forKey: k) }
+        for k in [doneKey, cinematicKey, draftKey, "favTeams", "favLeagues", "favTeams.backup", "favLeagues.backup", PreferencesOutbox.key] { d.removeObject(forKey: k) }
     }
     /// Clubs are merged into favorites (keeps any existing ones, no duplicates).
     /// Leagues + cups replace the default league list only when the user picked at least one; skipping keeps defaults.
@@ -90,7 +110,7 @@ enum Onboarding {
 
 // MARK: - Splash (v2: cinematic camera push through the gap between the F's arms)
 
-/// Every launch: original FOTIQ mark (F + green dot, 1024 px original asset) holds 0.3 s, then a camera push
+/// First launch: original FOTIQ mark (F + green dot, 1024 px original asset) holds 0.3 s, then a camera push
 /// (scaleEffect anchored on the gap between the F's top and middle arms + offset bringing that gap to screen centre,
 /// accelerating log-space zoom) flies through the gap; the next screen is revealed through the gap itself.
 /// Reduce Motion: hold, then a plain cross-fade.
@@ -118,6 +138,7 @@ final class SplashClock {
 
 struct SplashView: View {
     nonisolated(unsafe) static var holeLogged = false
+    var cinematic = true
     var onRevealStart: () -> Void = {}
     var onFinish: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -143,7 +164,7 @@ struct SplashView: View {
             let W = geo.size.width, H = geo.size.height
             let side = W * 0.38 / 0.44                      // F + dot ≈ 38 % of screen width
             let origin = CGPoint(x: (W - side) / 2, y: (H - side) / 2)
-            if reduceMotion {
+            if reduceMotion || (!cinematic && Self.held == nil) {
                 scene(t: 0, side: side, origin: origin, W: W, H: H)
             } else {
                 TimelineView(.animation(minimumInterval: 1 / 60, paused: Self.held != nil)) { tl in
@@ -160,11 +181,19 @@ struct SplashView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("splash")
         .task {
-            if Self.held != nil || reduceMotion {   // no TimelineView tick here: mount the next page now
-                SplashClock.sawFirstFrame = true; SplashClock.nextReady = true
+            if Self.held != nil || reduceMotion || !cinematic {   // no TimelineView tick here: mount the next page now
+                SplashClock.sawFirstFrame = true
             }
             if Self.held != nil { onRevealStart(); return }
-            if reduceMotion {
+            if !cinematic {
+                // The root mounts beneath the static original mark; no network work can delay it.
+                do {
+                    try await Task.sleep(for: .seconds(0.2))
+                    while !SplashClock.nextReady { try Task.checkCancellation(); try await Task.sleep(for: .milliseconds(16)) }
+                    withAnimation(.easeOut(duration: 0.15)) { fade = 0 }
+                    try await Task.sleep(for: .seconds(0.15))
+                } catch { return }
+            } else if reduceMotion {
                 onRevealStart()
                 try? await Task.sleep(for: .seconds(Self.hold + 0.2))
                 withAnimation(.easeInOut(duration: 0.45)) { fade = 0 }
@@ -174,7 +203,7 @@ struct SplashView: View {
                 // so a main-thread stall can't cut from the first frame straight to the end.
                 let deadline = Date().addingTimeInterval(30)  // safety (includes waiting for the next page to be built): never block the app if frames stop
                 var revealed = false
-                while clock.elapsed < Self.hold + Self.push - 0.18 && Date() < deadline {
+                while clock.elapsed < Self.hold + Self.push - 0.18 && Date() < deadline && !Task.isCancelled {
                     // mount the next screen just before the gap opens (hole starts at t = 0.5), so building it
                     // can't stall the hold or the first half of the camera push
                     if !revealed, clock.elapsed >= Self.hold + Self.push * 0.4 { revealed = true; onRevealStart() }
@@ -184,6 +213,7 @@ struct SplashView: View {
                 withAnimation(.easeOut(duration: 0.18)) { fade = 0 }
                 try? await Task.sleep(for: .seconds(0.18))
             }
+            guard !Task.isCancelled else { return }
             onFinish()
         }
     }
@@ -238,6 +268,21 @@ struct OnboardingView: View {
     /// Copying every favorite into both sets made unchecking a league a no-op (the cup set still held it).
     @State private var compsReady = false
 
+    init(editing: Bool = false, onDone: @escaping () -> Void) {
+        self.editing = editing
+        self.onDone = onDone
+        let draft = editing ? Onboarding.Draft() : Onboarding.loadDraft()
+        _step = State(initialValue: draft.step)
+        _clubs = State(initialValue: draft.clubs)
+        _leagues = State(initialValue: draft.leagues)
+        _cups = State(initialValue: draft.cups)
+    }
+
+    private func persistDraft() {
+        guard !editing, !Onboarding.isDone() else { return }
+        Onboarding.saveDraft(.init(step: step, clubs: clubs, leagues: leagues, cups: cups))
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header.onAppear { SplashDiag.log.notice("ONB appear +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms") }
@@ -254,6 +299,10 @@ struct OnboardingView: View {
         }
         .background(Color("LaunchBackground").ignoresSafeArea())
         .background(LinearGradient(colors: [Color("BrandGreen").opacity(0.18), .clear], startPoint: .top, endPoint: .center).ignoresSafeArea())
+        .onChange(of: step) { persistDraft() }
+        .onChange(of: clubs) { persistDraft() }
+        .onChange(of: leagues) { persistDraft() }
+        .onChange(of: cups) { persistDraft() }
         .onAppear {
             guard editing else { return }
             clubs = store.favTeams
@@ -504,8 +553,10 @@ struct LaunchFlow<Content: View>: View {
     /// Mounted right after the first splash frame; LaunchGate still holds its network/data work until the splash ends.
     @State private var mounted = false
     @State private var onboarded = Onboarding.isDone()
+    @State private var cinematic = Onboarding.needsCinema()
     var body: some View {
         ZStack {
+            Color("LaunchBackground").ignoresSafeArea()
             if mounted {
                 Group {
                     if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
@@ -519,7 +570,17 @@ struct LaunchFlow<Content: View>: View {
                     }
                 }
             }
-            if splash { SplashView(onRevealStart: {}) { splash = false; LaunchGate.open = true }.transition(.opacity).zIndex(1) }
+            if splash {
+                SplashView(cinematic: cinematic, onRevealStart: {}) {
+                    UserDefaults.standard.set(true, forKey: Onboarding.cinematicKey)
+                    splash = false
+                    // Yield a frame so the uncovered interface appears before starting data work.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(50))
+                        LaunchGate.open = true
+                    }
+                }.transition(.opacity).zIndex(1)
+            }
         }
         .task {   // mount the next page only once the first F frame has been produced
             while !SplashClock.sawFirstFrame && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(16)) }
