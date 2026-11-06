@@ -266,8 +266,16 @@ struct SearchView: View {
     @State private var q = ""
     @State private var r: SearchResponse?
     @State private var loading = false
+    @State private var error: String?
+    @State private var retry = 0
     var body: some View {
         List {
+            if let error {
+                Section {
+                    Text(error).font(.footnote)
+                    Button("إعادة المحاولة") { retry += 1 }.buttonStyle(.glass).accessibilityIdentifier("search-retry")
+                }.listRowBackground(Color.clear)
+            }
             if let r {
                 if let t = r.translated { Label("بحثنا عن: \(t)", systemImage: "character.book.closed").font(.caption).foregroundStyle(.secondary) }
                 if !r.leagues.isEmpty { Section { ForEach(r.leagues) { l in link(.league(l.id), l.logo, "trophy", l.name, l.en) } } header: { Label("البطولات", systemImage: "trophy") } }
@@ -288,18 +296,26 @@ struct SearchView: View {
         .onAppear { if q.isEmpty && !initialQuery.isEmpty { q = initialQuery } }
         .overlay { if loading { ProgressView() } }
         .barqDestinations()
-        .task(id: q) {
+        .task(id: "\(q)|\(retry)") {
             let term = q.trimmingCharacters(in: .whitespaces)
-            guard term.count >= 2 else { r = nil; return }
-            try? await Task.sleep(for: .milliseconds(350)) // debounce, cancelled by next keystroke
+            r = nil; error = nil; loading = false
+            guard term.count >= 2 else { return }
+            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
             guard !Task.isCancelled else { return }
-            loading = true; defer { loading = false }
-            let enc = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? term
-            r = try? await API.shared.get("/api/search?q=\(enc)", maxAge: 300)
-            // Backend briefly unreachable (tunnel rotation): retry every 5 s while this query is still on screen.
-            while r == nil, !Task.isCancelled { try? await Task.sleep(for: .seconds(5)); r = try? await API.shared.get("/api/search?q=\(enc)", maxAge: 300) }
+            loading = true
+            let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+=?#"))
+            let enc = term.addingPercentEncoding(withAllowedCharacters: allowed) ?? term
+            do {
+                let response: SearchResponse = try await API.shared.get("/api/search?q=\(enc)", maxAge: 300)
+                guard !Task.isCancelled else { return }
+                r = response; loading = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.error = error.localizedDescription; loading = false
+            }
         }
     }
+
     func link(_ route: Route, _ img: String?, _ fb: String, _ title: String, _ sub: String?, circle: Bool = false) -> some View {
         NavigationLink(value: route) {
             HStack(spacing: 12) {

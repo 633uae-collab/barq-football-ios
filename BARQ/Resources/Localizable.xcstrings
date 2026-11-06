@@ -2430,6 +2430,46 @@
           }
         }
       }
+    },
+    "لم يؤكد الخادم حفظ التغييرات، سنحاول مرة أخرى": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server did not confirm saving your changes. We will retry."
+          }
+        }
+      }
+    },
+    "تعذر تحديث الأندية. تقدر تختار من القائمة المحفوظة أو تعيد المحاولة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not refresh clubs. Choose from the saved list or retry."
+          }
+        }
+      }
+    },
+    "تعذر البحث عبر الإنترنت. النتائج الظاهرة من القائمة المحفوظة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Online search is unavailable. Showing matches from the saved list."
+          }
+        }
+      }
+    },
+    "تعذر تحديث البيانات. المعروض آخر نسخة محمّلة": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not refresh. Showing the last loaded data."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

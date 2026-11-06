@@ -19,8 +19,11 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                if let e = error, !loaded {
+                if let e = error {
                     EmptyState(symbol: "wifi.exclamationmark", title: "تعذر التحميل", message: LocalizedStringKey(e))
+                    if loaded { Text("تعذر تحديث البيانات. المعروض آخر نسخة محمّلة").font(.footnote).foregroundStyle(.secondary) }
+                    Button("إعادة المحاولة") { Task { await load() } }.buttonStyle(.glass)
+                        .accessibilityIdentifier("home-retry")
                 }
                 ForEach(store.homeSections, id: \.self) { key in section(key).transition(.opacity) }
             }
