@@ -63,6 +63,21 @@ final class PushPayloadTests: XCTestCase {
         XCTAssertTrue(Notifier.allowed(ins("pressure", "high"), density: 1))
         XCTAssertFalse(Notifier.allowed(ins("possession", "medium"), density: 1))
         XCTAssertTrue(Notifier.allowed(ins("possession", "medium"), density: 2))
+        XCTAssertTrue(Notifier.allowed(ins("goal", "low"), density: 0))
+        XCTAssertTrue(Notifier.allowed(ins("kickoff", "low"), density: 0))
+        XCTAssertTrue(Notifier.allowed(ins("red", "low"), density: 0))
+        XCTAssertFalse(Notifier.allowed(ins("ht", "low"), density: 0))
+        XCTAssertTrue(Notifier.allowed(ins("ht", "low"), density: 1))
+        XCTAssertFalse(Notifier.allowed(ins("second", "low"), density: 0))
+        XCTAssertTrue(Notifier.allowed(ins("second", "low"), density: 1))
+    }
+    func testMutedFavoriteIsSilentUnlessTheMatchIsSaved() {
+        let match = InsightMatch(home: "Liverpool", away: "Arsenal", homeLogo: nil, awayLogo: nil, league: nil, score: nil)
+        let i = Insight(id: 1, fixture: 9, minute: 3, type: "goal", level: "high", team: "Liverpool", title: "t", body: "b", nums: nil, at: 0, match: match)
+        XCTAssertFalse(Notifier.allowed(i, density: 2, favoriteNames: ["Liverpool"], mutedNames: ["Liverpool"], fixtureSaved: false))
+        XCTAssertTrue(Notifier.allowed(i, density: 2, favoriteNames: ["Liverpool"], mutedNames: ["Liverpool"], fixtureSaved: true))
+        XCTAssertTrue(Notifier.allowed(i, density: 2, favoriteNames: ["Liverpool", "Arsenal"], mutedNames: ["Liverpool"], fixtureSaved: false))
+        XCTAssertTrue(Notifier.allowed(i, density: 0, favoriteNames: [], mutedNames: [], fixtureSaved: false))
     }
     func testStateFromRealEvents() throws {
         let j = #"{"match":{"id":1,"date":"","ts":0,"status":{"short":"2H","elapsed":70},"league":{"id":1,"name":"L"},"home":{"id":1,"name":"A"},"away":{"id":2,"name":"B"},"goals":{"home":1,"away":0}},"events":[{"time":{"elapsed":12},"team":{"id":1,"name":"A"},"player":{"id":5,"name":"Salah"},"type":"Goal","detail":"Normal Goal"},{"time":{"elapsed":40},"team":{"id":2,"name":"B"},"type":"subst"}],"lineups":[],"statistics":[]}"#

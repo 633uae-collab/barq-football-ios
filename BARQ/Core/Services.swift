@@ -54,12 +54,22 @@ enum Notifier {
         let req = UNNotificationRequest(identifier: "insight-\(i.id)", content: content(for: i), trigger: nil)
         UNUserNotificationCenter.current().add(req)
     }
-    /// Density filter: 0 = only red/ht/ft (low noise), 1 = + medium, 2 = all.
-    static func allowed(_ i: Insight, density: Int) -> Bool {
-        let critical: Set<String> = ["red", "ht", "ft"]
+    /// Same levels as settings copy and server `MIN_LEVEL` (server/notify.js):
+    /// 0 = kickoff, goals, red cards, full time; 1 = also half time, second half, and high-level analysis; 2 = everything.
+    /// A muted favourite is dropped unless that fixture was saved (server `interested`).
+    static func allowed(_ i: Insight, density: Int, favoriteNames: Set<String> = [], mutedNames: Set<String> = [], fixtureSaved: Bool = false) -> Bool {
+        guard passesDensity(i, density) else { return false }
+        if fixtureSaved || mutedNames.isEmpty { return true }
+        let sides = [i.team, i.match?.home, i.match?.away].compactMap { $0 }.filter { !$0.isEmpty }
+        let followed = sides.filter { favoriteNames.contains($0) }
+        if followed.isEmpty { return true }
+        return followed.contains { !mutedNames.contains($0) }
+    }
+    private static func passesDensity(_ i: Insight, _ density: Int) -> Bool {
+        let critical: Set<String> = ["goal", "red", "ft", "kickoff"]
         switch density {
         case 0: return critical.contains(i.type)
-        case 1: return critical.contains(i.type) || i.level == "high"
+        case 1: return critical.contains(i.type) || ["ht", "second"].contains(i.type) || i.level == "high"
         default: return true
         }
     }

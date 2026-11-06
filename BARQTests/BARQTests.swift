@@ -20,4 +20,22 @@ final class BARQTests: XCTestCase {
         let r = try JSONDecoder().decode(FeedResponse.self, from: Data(j.utf8))
         XCTAssertEqual(r.insights[0].nums?["x"]?.text, "3"); XCTAssertEqual(r.insights[0].symbol, "pause.circle")
     }
+    func testLanguageCodeDefaultsToArabic() {
+        XCTAssertEqual(AppLanguage.code("en"), "en")
+        XCTAssertEqual(AppLanguage.code("ar"), "ar")
+        XCTAssertEqual(AppLanguage.code(nil), "ar")
+        XCTAssertEqual(AppLanguage.code("fr"), "ar")
+    }
+    func testInAppEnglishUsesStringCatalog() throws {
+        try XCTSkipIf(Bundle.main.path(forResource: "en", ofType: "lproj") == nil, "string catalog is compiled into the app bundle")
+        let previous = UserDefaults.standard.string(forKey: "lang")
+        defer { AppLanguage.apply(previous ?? "ar") }
+        AppLanguage.apply("en")
+        XCTAssertEqual(Bundle.main.localizedString(forKey: "الرئيسية", value: "الرئيسية", table: nil), "Home")
+        AppLanguage.apply("ar")
+        // Source language is Arabic. An ar.lproj returns the key; if Xcode keeps Arabic only as the development language, don't fail the English check above.
+        if Bundle.main.path(forResource: "ar", ofType: "lproj") != nil {
+            XCTAssertEqual(Bundle.main.localizedString(forKey: "الرئيسية", value: "الرئيسية", table: nil), "الرئيسية")
+        }
+    }
 }

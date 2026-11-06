@@ -2380,6 +2380,16 @@
           }
         }
       }
+    },
+    "تعذر جلب هذا الموسم، الظاهر هو الموسم الحالي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This season is not available from the server. Showing the current season."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

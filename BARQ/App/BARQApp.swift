@@ -13,7 +13,7 @@ struct BARQApp: App {
 
     var body: some Scene {
         WindowGroup {
-            LaunchFlow { ScreenRouter() }
+            LaunchFlow { ScreenRouter().id(store.lang) }
                 .environment(store)
                 .environment(\.layoutDirection, store.lang == "en" ? .leftToRight : .rightToLeft)
                 .environment(\.locale, Locale(identifier: store.lang == "en" ? "en" : "ar"))
@@ -75,9 +75,14 @@ struct IdBox: Identifiable { var id: Int }
             while !Task.isCancelled {
                 if let feed: FeedResponse = try? await API.shared.get("/api/feed") {
                     store.notifications = feed.insights
+                    let favNames = Set(store.favTeams.map(\.name))
+                    let mutedNames = Set(store.favTeams.filter { store.mutedTeams.contains($0.id) }.map(\.name))
+                    let saved = Set(store.savedMatches)
                     for i in feed.insights where !seen.contains(i.id) {
                         seen.insert(i.id)
-                        if !first && Notifier.allowed(i, density: store.alertDensity) { Notifier.post(i); store.unread += 1 }
+                        if !first && Notifier.allowed(i, density: store.alertDensity, favoriteNames: favNames, mutedNames: mutedNames, fixtureSaved: saved.contains(i.fixture)) {
+                            Notifier.post(i); store.unread += 1
+                        }
                     }
                     first = false
                 }

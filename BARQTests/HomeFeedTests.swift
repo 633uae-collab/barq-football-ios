@@ -76,6 +76,20 @@ final class HomeFeedTests: XCTestCase {
         store.toggleSaved(424242)
         XCTAssertFalse(AppStore().savedMatches.contains(424242))
     }
+    func testFavoriteDayDotsOnlyOnDaysThatIncludeAFavourite() {
+        let mine = fx(1, inMin: 30)
+        let other = fx(2, inMin: 80)
+        let days = FavoriteDays.offsets(in: [0: [mine], 1: [other], 3: [mine, other]], teams: [mine.home.id])
+        XCTAssertEqual(days, Set([0, 3]))
+        XCTAssertTrue(FavoriteDays.offsets(in: [0: [mine]], teams: []).isEmpty)
+        XCTAssertEqual(FavoriteDays.window, 0...14)
+    }
+    func testSeasonMismatchNote() {
+        XCTAssertNil(SeasonNote.text(requested: nil, returned: 2026))
+        XCTAssertNil(SeasonNote.text(requested: 2024, returned: 2024))
+        XCTAssertNil(SeasonNote.text(requested: 2024, returned: nil))
+        XCTAssertEqual(SeasonNote.text(requested: 2024, returned: 2026), SeasonNote.mismatch)
+    }
     // (9) stars rotation order and decoding of real-shaped payload
     func test09_StarsRotationAndDecode() throws {
         XCTAssertEqual(HomeFeed.nextStar(1, in: [1, 2, 3]), 2)

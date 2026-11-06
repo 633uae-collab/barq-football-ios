@@ -33,13 +33,21 @@ struct FavoritesView: View {
             } else {
                 Section {
                     ForEach(store.favTeams) { t in
-                        NavigationLink(value: Route.team(t.id)) {
-                            HStack(spacing: 12) {
-                                RemoteImage(url: t.logo, size: 34).padding(8).glassEffect(.regular, in: .circle)
-                                Text(t.name).font(.headline)
-                                Spacer()
-                                Image(systemName: store.mutedTeams.contains(t.id) ? "bell.slash" : "bell.fill").foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            NavigationLink(value: Route.team(t.id)) {
+                                HStack(spacing: 12) {
+                                    RemoteImage(url: t.logo, size: 34).padding(8).glassEffect(.regular, in: .circle)
+                                    Text(t.name).font(.headline)
+                                    Spacer()
+                                }
                             }
+                            Button { store.toggleMuted(t.id) } label: {
+                                Image(systemName: store.mutedTeams.contains(t.id) ? "bell.slash" : "bell.fill")
+                                    .foregroundStyle(.secondary).frame(width: 44, height: 44)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel(Text(store.mutedTeams.contains(t.id) ? "الإشعارات مكتومة" : "الإشعارات مفعلة"))
+                            .accessibilityIdentifier("fav-mute-\(t.id)")
                         }.listRowBackground(Color.clear)
                     }
                     .onMove { store.favTeams.move(fromOffsets: $0, toOffset: $1) }

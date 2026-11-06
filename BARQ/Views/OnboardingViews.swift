@@ -68,6 +68,24 @@ enum Onboarding {
         for id in leagues + cups where !picked.contains(id) { picked.append(id) }
         if !picked.isEmpty { store.favLeagues = picked }
     }
+
+    /// Splits saved competitions the way the picker does: missing catalog type counts as a league.
+    /// Unknown ids stay with leagues so a failed catalog load cannot drop them.
+    static func partition(_ ids: [Int], catalog: [LeagueMeta]) -> (leagues: Set<Int>, cups: Set<Int>) {
+        let types = Dictionary(catalog.map { ($0.id, $0.type ?? "League") }, uniquingKeysWith: { a, _ in a })
+        var leagues = Set<Int>(), cups = Set<Int>()
+        for id in ids {
+            if types[id] == "Cup" { cups.insert(id) } else { leagues.insert(id) }
+        }
+        return (leagues, cups)
+    }
+
+    /// Editor result: previous order kept, removals dropped, new ids appended in sorted order.
+    /// An empty selection clears competitions (unlike first-launch skip, which keeps defaults).
+    static func orderedEdit(previous: [Int], leagues: Set<Int>, cups: Set<Int>) -> [Int] {
+        let chosen = leagues.union(cups)
+        return previous.filter { chosen.contains($0) } + chosen.subtracting(previous).sorted()
+    }
 }
 
 // MARK: - Splash (v2: cinematic camera push through the gap between the F's arms)
@@ -216,6 +234,9 @@ struct OnboardingView: View {
     @State private var clubs: [TeamRef] = []          // selection order preserved
     @State private var leagues: Set<Int> = []
     @State private var cups: Set<Int> = []
+    /// Editing must not show league/cup ticks until ids are split by catalog type.
+    /// Copying every favorite into both sets made unchecking a league a no-op (the cup set still held it).
+    @State private var compsReady = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -236,7 +257,14 @@ struct OnboardingView: View {
         .onAppear {
             guard editing else { return }
             clubs = store.favTeams
-            leagues = Set(store.favLeagues); cups = Set(store.favLeagues)
+        }
+        .task {
+            guard editing, !compsReady else { return }
+            let catalog = (try? await API.shared.get("/api/catalog", maxAge: 3600) as CatalogResponse)?.leagues ?? []
+            let parts = Onboarding.partition(store.favLeagues, catalog: catalog)
+            leagues = parts.leagues
+            cups = parts.cups
+            compsReady = true
         }
     }
 
@@ -270,14 +298,14 @@ struct OnboardingView: View {
         HStack(spacing: 12) {
             if step > 0 {
                 Button { advance() } label: { Text("تخطي").frame(maxWidth: .infinity) }
-                    .buttonStyle(.glass).controlSize(.large).accessibilityIdentifier("ob-skip")
+                    .buttonStyle(.glass).controlSize(.large).disabled(editing && !compsReady).accessibilityIdentifier("ob-skip")
             }
             Button { advance() } label: {
                 Label(step == 2 ? "ابدأ الآن" : "التالي", systemImage: step == 2 ? "checkmark" : "chevron.forward")
                     .labelStyle(.titleAndIcon).frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent).tint(Color("BrandGreen")).controlSize(.large)
-            .disabled(step == 0 && clubs.isEmpty)
+            .disabled((editing && !compsReady) || (step == 0 && clubs.isEmpty))
             .accessibilityIdentifier(step == 2 ? "ob-start" : "ob-next")
         }
         .padding()
@@ -291,8 +319,7 @@ struct OnboardingView: View {
         // Skip on a step = no choices from it; selections made then skipped are still honored only if made before skip.
         if editing {
             store.favTeams = clubs.map { TeamRef(id: $0.id, name: $0.name, logo: $0.logo) }
-            let all = Array(leagues.union(cups))
-            if !all.isEmpty { store.favLeagues = store.favLeagues.filter { all.contains($0) } + all.filter { !store.favLeagues.contains($0) } }
+            store.favLeagues = Onboarding.orderedEdit(previous: store.favLeagues, leagues: leagues, cups: cups)
         } else {
             Onboarding.apply(clubs: clubs, leagues: Array(leagues), cups: Array(cups), to: store)
         }

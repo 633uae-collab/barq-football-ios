@@ -15,7 +15,7 @@ final class AppStore {
     var mutedTeams: [Int] { didSet { save() } }
     var theme: ThemeMode { didSet { save() } }
     var accentKey: String { didSet { save() } }
-    var lang: String { didSet { save(); UserDefaults.standard.set(lang, forKey: "lang") } }
+    var lang: String { didSet { UserDefaults.standard.set(lang, forKey: "lang"); AppLanguage.apply(lang); save() } }
     var tz: String { didSet { save(); UserDefaults.standard.set(tz, forKey: "tz") } }
     var alertDensity: Int { didSet { save() } }   // 0 = critical only, 1 = balanced, 2 = all
     var notifications: [Insight] = []
@@ -46,6 +46,7 @@ final class AppStore {
         lang = d.string(forKey: "lang") ?? "ar"
         tz = d.string(forKey: "tz") ?? "Asia/Dubai"
         alertDensity = d.object(forKey: "alertDensity") as? Int ?? 1
+        AppLanguage.apply(lang)
     }
 
     var accent: Color { Self.accents.first { $0.0 == accentKey }?.1 ?? Color("BrandGreen") }
@@ -61,6 +62,9 @@ final class AppStore {
     }
     func toggleSaved(_ id: Int) {
         if let i = savedMatches.firstIndex(of: id) { savedMatches.remove(at: i) } else { savedMatches.append(id); Haptics.favoriteAdded() }
+    }
+    func toggleMuted(_ id: Int) {
+        if let i = mutedTeams.firstIndex(of: id) { mutedTeams.remove(at: i) } else { mutedTeams.append(id) }
     }
 
     private func save() {

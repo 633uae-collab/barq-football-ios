@@ -35,6 +35,23 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(relaunched.favLeagues, [39, 2])
         XCTAssertTrue(relaunched.isFav(team: 40))
     }
+    func meta(_ id: Int, _ type: String?) -> LeagueMeta {
+        LeagueMeta(id: id, name: "n", ar: nil, logo: nil, country: nil, countryAr: nil, continent: nil, group: nil, season: nil, type: type, active: nil)
+    }
+    func testPartitionSplitsCupsFromLeagues() {
+        let catalog = [meta(39, "League"), meta(2, "Cup"), meta(301, nil)]
+        let p = Onboarding.partition([39, 2, 301, 999], catalog: catalog)
+        XCTAssertEqual(p.leagues, Set([39, 301, 999]))
+        XCTAssertEqual(p.cups, Set([2]))
+    }
+    /// Regression: the editor used to copy every id into both the league set and the cup set, so unchecking a league kept it.
+    func testOrderedEditDropsUncheckedLeague() {
+        XCTAssertEqual(Onboarding.orderedEdit(previous: [39, 2, 140], leagues: [140], cups: [2]), [2, 140])
+    }
+    func testOrderedEditAppendsNewIdsAndCanClear() {
+        XCTAssertEqual(Onboarding.orderedEdit(previous: [39], leagues: [39, 140], cups: [2]), [39, 2, 140])
+        XCTAssertEqual(Onboarding.orderedEdit(previous: [39, 2], leagues: [], cups: []), [])
+    }
     func testSkippingCompetitionsKeepsDefaultLeagues() {
         let s = AppStore(); let before = s.favLeagues
         Onboarding.apply(clubs: [TeamRef(id: 50, name: "Manchester City", logo: nil)], leagues: [], cups: [], to: s)
