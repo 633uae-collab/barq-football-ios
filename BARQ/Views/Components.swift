@@ -120,7 +120,16 @@ struct LoadState<T, C: View>: View {
     var retry: (() async -> Void)? = nil
     @ViewBuilder var content: (T) -> C
     var body: some View {
-        if let v = value { content(v) }
+        if let v = value {
+            VStack(spacing: 12) {
+                if let error {
+                    Text("تعذر تحديث البيانات. المعروض آخر نسخة محمّلة").font(.footnote).foregroundStyle(.secondary)
+                    Text(error).font(.caption)
+                    if let retry { Button("إعادة المحاولة") { Task { await retry() } }.buttonStyle(.glass) }
+                }
+                content(v)
+            }
+        }
         else if let e = error {
             ContentUnavailableView {
                 Label("تعذر التحميل", systemImage: "wifi.exclamationmark")

@@ -15,31 +15,42 @@ final class AppStore {
     var mutedTeams: [Int] { didSet { save() } }
     var theme: ThemeMode { didSet { save() } }
     var accentKey: String { didSet { save() } }
-    var lang: String { didSet { UserDefaults.standard.set(lang, forKey: "lang"); AppLanguage.apply(lang); save() } }
-    var tz: String { didSet { save(); UserDefaults.standard.set(tz, forKey: "tz") } }
+    var lang: String { didSet { AppLanguage.apply(lang); save() } }
+    var tz: String { didSet { save() } }
     var alertDensity: Int { didSet { save() } }   // 0 = critical only, 1 = balanced, 2 = all
     var notifications: [Insight] = []
     var unread = 0
 
     let deviceId: String
+    private let defaults: UserDefaults
+    private let syncEnabled: Bool
+    private let outbox: PreferencesOutbox
 
     static let defaultSections = ["carousel", "stars", "upcoming"]
     /// Pre-v8 Home sections (kept for reference; their views still exist in HomeView).
     static let legacySections = ["carousel", "ticker", "ai", "favorites", "today"]
 
-    init() {
-        let d = UserDefaults.standard
+    init(defaults d: UserDefaults = .standard, syncEnabled: Bool = true) {
+        defaults = d
+        self.syncEnabled = syncEnabled && d === UserDefaults.standard
+        outbox = d === UserDefaults.standard ? .shared : PreferencesOutbox(defaults: d)
         if let id = d.string(forKey: "deviceId") { deviceId = id } else { let id = UUID().uuidString; d.set(id, forKey: "deviceId"); deviceId = id }
         func load<T: Decodable>(_ k: String, _ def: T) -> T {
-            guard let data = d.data(forKey: k), let v = try? JSONDecoder().decode(T.self, from: data) else { return def }
-            return v
+            guard let data = d.data(forKey: k) else { return def }
+            if let v = try? JSONDecoder().decode(T.self, from: data) { return v }
+            if let backup = d.data(forKey: k + ".backup"), let v = try? JSONDecoder().decode(T.self, from: backup) { return v }
+            return def
         }
         favTeams = load("favTeams", [])
         favLeagues = load("favLeagues", [301, 307, 39, 140, 2])
         savedMatches = load("savedMatches", [])
         // v8 Home layout (favorites hero / FOTIQ STARS / upcoming): migrate once from the old section list.
         if d.bool(forKey: "homeLayoutV8") { homeSections = load("homeSections", Self.defaultSections) }
-        else { homeSections = Self.defaultSections; d.set(try? JSONEncoder().encode(Self.defaultSections), forKey: "homeSections"); d.set(true, forKey: "homeLayoutV8") }
+        else {
+            let existing: [String] = load("homeSections", Self.defaultSections)
+            homeSections = existing == Self.legacySections ? Self.defaultSections : existing
+            d.set(try? JSONEncoder().encode(homeSections), forKey: "homeSections"); d.set(true, forKey: "homeLayoutV8")
+        }
         mutedTeams = load("mutedTeams", [])
         theme = ThemeMode(rawValue: d.string(forKey: "theme") ?? "") ?? .dark
         accentKey = d.string(forKey: "accent") ?? "fotiq"
@@ -68,18 +79,25 @@ final class AppStore {
     }
 
     private func save() {
-        let d = UserDefaults.standard, e = JSONEncoder()
-        d.set(try? e.encode(favTeams), forKey: "favTeams")
-        d.set(try? e.encode(favLeagues), forKey: "favLeagues")
-        d.set(try? e.encode(savedMatches), forKey: "savedMatches")
-        d.set(try? e.encode(homeSections), forKey: "homeSections")
-        d.set(try? e.encode(mutedTeams), forKey: "mutedTeams")
+        let d = defaults, e = JSONEncoder()
+        func persist<T: Encodable>(_ value: T, _ key: String) {
+            guard let data = try? e.encode(value) else { return }
+            d.set(data, forKey: key + ".backup")
+            d.set(data, forKey: key)
+        }
+        persist(favTeams, "favTeams")
+        persist(favLeagues, "favLeagues")
+        persist(savedMatches, "savedMatches")
+        persist(homeSections, "homeSections")
+        persist(mutedTeams, "mutedTeams")
         d.set(theme.rawValue, forKey: "theme")
         d.set(accentKey, forKey: "accent")
         d.set(alertDensity, forKey: "alertDensity")
+        d.set(lang, forKey: "lang")
+        d.set(tz, forKey: "tz")
         let snapshot = PrefsPayload(favTeams: favTeams.map(\.id), favLeagues: favLeagues, saved: savedMatches, muted: mutedTeams, level: alertDensity)
-        let id = deviceId
-        Task.detached { try? await API.shared.send("PUT", "/api/prefs/\(id)", body: snapshot) }
+        outbox.enqueue(device: deviceId, payload: snapshot)
+        if syncEnabled { Task { await PreferencesSync.shared.flush() } }
     }
 }
 

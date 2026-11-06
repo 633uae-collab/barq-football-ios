@@ -56,7 +56,7 @@ enum Onboarding {
     /// `-resetOnboarding YES` (UI tests / recording): fresh first-launch state.
     static func resetIfRequested(_ d: UserDefaults = .standard) {
         guard d.bool(forKey: "resetOnboarding") else { return }
-        for k in [doneKey, "favTeams", "favLeagues"] { d.removeObject(forKey: k) }
+        for k in [doneKey, "favTeams", "favLeagues", "favTeams.backup", "favLeagues.backup", PreferencesOutbox.key] { d.removeObject(forKey: k) }
     }
     /// Clubs are merged into favorites (keeps any existing ones, no duplicates).
     /// Leagues + cups replace the default league list only when the user picked at least one; skipping keeps defaults.
@@ -260,7 +260,7 @@ struct OnboardingView: View {
         }
         .task {
             guard editing, !compsReady else { return }
-            let catalog = (try? await API.shared.get("/api/catalog", maxAge: 3600) as CatalogResponse)?.leagues ?? []
+            let catalog = (try? await API.shared.get("/api/catalog", maxAge: 3600, attempts: 1) as CatalogResponse)?.leagues ?? []
             let parts = Onboarding.partition(store.favLeagues, catalog: catalog)
             leagues = parts.leagues
             cups = parts.cups
@@ -331,15 +331,16 @@ struct OnboardingView: View {
 /// Real clubs: standings of the top leagues (API-Football IDs + logos via backend) + live API team search.
 struct ClubPickStep: View {
     @Binding var selected: [TeamRef]
-    @State private var popular: [TeamRef] = []
-    @State private var results: [TeamRef] = []
+    @State private var model = ClubPickerModel()
+    @State private var directoryReady = false
     @State private var q = ""
-    @State private var loading = true
-    static let sources = [39, 140, 135, 78, 61, 307, 301]
+    @State private var popularRetry = 0
+    @State private var searchRetry = 0
     let cols = [GridItem(.adaptive(minimum: 100), spacing: 12)]
 
     var shown: [TeamRef] {
-        let base = q.trimmingCharacters(in: .whitespaces).count >= 2 ? results : popular
+        guard directoryReady else { return [] }
+        let base = q.trimmingCharacters(in: .whitespaces).count >= 2 ? model.results : model.popular
         // keep chosen clubs visible at the top when not searching
         if q.isEmpty { return selected + base.filter { b in !selected.contains { $0.id == b.id } } }
         return base
@@ -355,8 +356,20 @@ struct ClubPickStep: View {
             }
             .padding(12).diagGlass(.regular, in: .capsule).padding(.horizontal)
             ScrollView {
+                if let message = q.trimmingCharacters(in: .whitespaces).count >= 2 ? model.searchError : model.error {
+                    VStack(spacing: 8) {
+                        Text(message).font(.footnote).multilineTextAlignment(.center)
+                        Button("إعادة المحاولة") {
+                            if q.trimmingCharacters(in: .whitespaces).count >= 2 { searchRetry += 1 } else { popularRetry += 1 }
+                        }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
+                    }.padding()
+                }
                 if shown.isEmpty {
-                    ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading")
+                    if model.searching || !directoryReady {
+                        ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading")
+                    } else if model.searchError == nil {
+                        Text("ما لقينا نتائج").foregroundStyle(.secondary).padding(.top, 40)
+                    }
                 }
                 // One GlassEffectContainer for the grid: Apple's API to let many glass shapes share rendering passes.
                 GlassEffectContainer(spacing: 12) {
@@ -373,39 +386,18 @@ struct ClubPickStep: View {
             }
             .scrollDismissesKeyboard(.immediately)
         }
-        .task { await loadPopular() }
-        .task(id: q) { await search() }
-    }
-
-    func loadPopular() async {
-        await LaunchGate.wait()
-        while popular.isEmpty, !Task.isCancelled {
-            // all leagues in parallel, committed to state ONCE (was 7 sequential animated appends = 7 grid re-layouts)
-            let lists = await withTaskGroup(of: (Int, [TeamRef]).self) { g in
-                for (i, l) in Self.sources.enumerated() {
-                    g.addTask {
-                        let r: StandingsResponse? = try? await API.shared.get("/api/standings/\(l)", maxAge: 3600)
-                        return (i, (r?.groups.first ?? []).prefix(8).map(\.team))
-                    }
-                }
-                var out: [(Int, [TeamRef])] = []; for await x in g { out.append(x) }; return out
-            }
-            var all: [TeamRef] = []
-            for (_, ts) in lists.sorted(by: { $0.0 < $1.0 }) { for t in ts where !all.contains(where: { $0.id == t.id }) { all.append(t) } }
-            if !all.isEmpty { withAnimation(.easeOut(duration: 0.25)) { popular = all } }
-            if popular.isEmpty { try? await Task.sleep(for: .seconds(5)) }
+        .task(id: popularRetry) {
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
+            directoryReady = true
+            await model.loadPopular()
+        }
+        .task(id: "\(q)|\(searchRetry)") {
+            do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
+            await model.search(q)
         }
     }
-    func search() async {
-        let s = q.trimmingCharacters(in: .whitespaces)
-        guard s.count >= 2 else { results = []; return }
-        try? await Task.sleep(for: .milliseconds(450))
-        guard !Task.isCancelled, let enc = s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return }
-        var r: SearchResponse? = try? await API.shared.get("/api/search?q=\(enc)", maxAge: 300)
-        var tries = 0
-        while r == nil, !Task.isCancelled, tries < 6 { tries += 1; try? await Task.sleep(for: .seconds(5)); r = try? await API.shared.get("/api/search?q=\(enc)", maxAge: 300) }
-        results = (r?.teams ?? []).map { TeamRef(id: $0.id, name: $0.name, logo: $0.logo) }
-    }
+
 }
 
 /// Real leagues ("League") or cups/international competitions ("Cup") from the backend catalog.
@@ -414,6 +406,9 @@ struct CompetitionPickStep: View {
     @Binding var selected: Set<Int>
     @State private var items: [LeagueMeta] = []
     @State private var q = ""
+    @State private var loading = true
+    @State private var error: String?
+    @State private var retry = 0
     let cols = [GridItem(.adaptive(minimum: 100), spacing: 12)]
 
     var shown: [LeagueMeta] {
@@ -431,7 +426,15 @@ struct CompetitionPickStep: View {
             }
             .padding(12).diagGlass(.regular, in: .capsule).padding(.horizontal)
             ScrollView {
-                if items.isEmpty { ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading") }
+                if loading && items.isEmpty { ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading") }
+                if let error {
+                    VStack(spacing: 8) {
+                        Text(error).font(.footnote).multilineTextAlignment(.center)
+                        Button("إعادة المحاولة") { retry += 1 }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
+                    }.padding()
+                } else if !loading && shown.isEmpty {
+                    Text("ما لقينا نتائج").foregroundStyle(.secondary).padding()
+                }
                 LazyVGrid(columns: cols, spacing: 12) {
                     ForEach(shown) { l in
                         let ar = (UserDefaults.standard.string(forKey: "lang") ?? "ar") != "en"
@@ -444,21 +447,26 @@ struct CompetitionPickStep: View {
             }
             .scrollDismissesKeyboard(.immediately)
         }
-        .task(id: kind) {
+        .task(id: "\(kind)|\(retry)") {
             await LaunchGate.wait()
-            items = []
-            while items.isEmpty, !Task.isCancelled {
-                if let c: CatalogResponse = try? await API.shared.get("/api/catalog", maxAge: 3600) {
-                    let order = c.order ?? []
-                    let all = c.leagues.filter { ($0.type ?? "League") == kind }
-                    let ranked = all.filter { order.contains($0.id) }.sorted { (order.firstIndex(of: $0.id) ?? 0) < (order.firstIndex(of: $1.id) ?? 0) }
-                    let rest = all.filter { !order.contains($0.id) && $0.active != false }.prefix(kind == "Cup" ? 40 : 30)
-                    items = ranked + rest
-                }
-                if items.isEmpty { try? await Task.sleep(for: .seconds(5)) }
+            guard !Task.isCancelled else { return }
+            loading = true; error = nil
+            defer { loading = false }
+            do {
+                let c: CatalogResponse = try await API.shared.get("/api/catalog", maxAge: 3600, attempts: 1)
+                guard !Task.isCancelled else { return }
+                let order = c.order ?? []
+                let all = c.leagues.filter { ($0.type ?? "League") == kind }
+                let ranked = all.filter { order.contains($0.id) }.sorted { (order.firstIndex(of: $0.id) ?? 0) < (order.firstIndex(of: $1.id) ?? 0) }
+                let rest = all.filter { !order.contains($0.id) && $0.active != false }.prefix(kind == "Cup" ? 40 : 30)
+                items = ranked + rest
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.error = error.localizedDescription
             }
         }
     }
+
 }
 
 struct PickTile: View, Equatable {

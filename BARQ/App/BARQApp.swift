@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct BARQApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var store: AppStore
     init() {
@@ -20,6 +21,14 @@ struct BARQApp: App {
                 .preferredColorScheme(store.colorScheme)
                 .tint(store.accent)
                 .onAppear { LiveActivities.observePushToStart() }
+                .task(id: scenePhase) {
+                    guard scenePhase == .active else { return }
+                    await LaunchGate.wait()
+                    while !Task.isCancelled {
+                        await PreferencesSync.shared.flush()
+                        do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                    }
+                }
         }
     }
 }

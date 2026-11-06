@@ -7,14 +7,17 @@ actor API {
     private var base: String?
     private var fixed: String?
     private let session: URLSession
+    private let retryDelay: Double
     /// `protocolClasses` lets unit tests inject a URLProtocol stub (offline / server error / missing data).
-    init(protocolClasses: [AnyClass]? = nil, fixedBase: String? = nil) {
+    init(protocolClasses: [AnyClass]? = nil, fixedBase: String? = nil, retryDelay: Double = 1) {
         let c = URLSessionConfiguration.default
         c.urlCache = URLCache(memoryCapacity: 32 << 20, diskCapacity: 256 << 20)
-        c.timeoutIntervalForRequest = 20
+        c.timeoutIntervalForRequest = 10
+        c.timeoutIntervalForResource = 15
         if let p = protocolClasses { c.protocolClasses = p; c.urlCache = nil }
         session = URLSession(configuration: c)
         base = fixedBase; fixed = fixedBase
+        self.retryDelay = retryDelay
     }
     private var mem: [String: (Date, Data)] = [:]
 
@@ -24,36 +27,46 @@ actor API {
             ?? "https://koora-ae.surge.sh/config.json"
     }
 
-    func resetBase() { base = nil }
+    func resetBase() { base = fixed; mem.removeAll() }
+
+    private func checkedBase(_ value: String) throws -> String {
+        guard let url = URL(string: value), url.scheme == "https", url.host != nil,
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else { throw APIError.bad }
+        return value.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
 
     func resolveBase() async throws -> String {
         if let b = base { return b }
-        if let o = UserDefaults.standard.string(forKey: "apiOverride"), !o.isEmpty { return o.trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
+        if let o = UserDefaults.standard.string(forKey: "apiOverride"), !o.isEmpty { return try checkedBase(o) }
         // Optional build-time base (xcodebuild FOTIQ_API_BASE=... from a CI secret); empty in the repo, never committed.
-        if let o = Bundle.main.object(forInfoDictionaryKey: "FOTIQAPIBase") as? String, o.hasPrefix("http") { return o.trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
+        if let o = Bundle.main.object(forInfoDictionaryKey: "FOTIQAPIBase") as? String, o.hasPrefix("http") { return try checkedBase(o) }
         guard let url = URL(string: Self.configURL + "?t=\(Int(Date().timeIntervalSince1970))") else { throw APIError.offline }
-        let (d, _) = try await session.data(from: url)
+        let (d, response) = try await session.data(from: url)
+        try Self.validate(d, response)
         struct C: Decodable { var api: String }
         let c = try JSONDecoder().decode(C.self, from: d)
-        let b = c.api.hasSuffix("/") ? String(c.api.dropLast()) : c.api
+        let b = try checkedBase(c.api)
         base = b
         return b
     }
 
     /// Retries transient failures. The free Pinggy tunnel rotates its URL (the new one is published to config.json),
     /// so a dead/old tunnel (network error, 5xx, or a non-JSON interstitial page) drops the cached base and re-resolves.
-    func get<T: Decodable>(_ path: String, maxAge: TimeInterval = 0, as: T.Type = T.self) async throws -> T {
+    func get<T: Decodable>(_ path: String, maxAge: TimeInterval = 0, attempts: Int = 3, as: T.Type = T.self) async throws -> T {
         if maxAge > 0, let hit = mem[path], Date().timeIntervalSince(hit.0) < maxAge {
             return try JSONDecoder().decode(T.self, from: hit.1)
         }
         var last: Error = APIError.offline
-        for attempt in 0..<4 {
-            if attempt > 0 { try? await Task.sleep(for: .seconds(Double(attempt) * 2)) }
-            if Task.isCancelled { throw CancellationError() }
+        for attempt in 0..<max(1, attempts) {
+            if attempt > 0 { try await Task.sleep(for: .seconds(Double(attempt) * retryDelay)) }
+            try Task.checkCancellation()
             do { return try await fetchOnce(path) }
             catch let e as APIError {
                 last = e
-                if case .server(let m) = e, m != "HTTP 5xx" { throw e }   // real backend error: don't hammer
+                switch e {
+                case .offline, .temporary: base = fixed
+                default: throw e
+                }
             } catch let e as DecodingError { last = e; base = fixed }
         }
         throw last
@@ -61,35 +74,68 @@ actor API {
 
     private func fetchOnce<T: Decodable>(_ path: String) async throws -> T {
         let b: String
-        do { b = try await resolveBase() } catch { throw APIError.offline }
+        do { b = try await resolveBase() } catch {
+            try Task.checkCancellation()
+            if let e = error as? APIError { throw e }
+            throw APIError.offline
+        }
         guard let url = URL(string: b + path) else { throw APIError.bad }
         var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("1", forHTTPHeaderField: "X-Pinggy-No-Screen")
         let data: Data, resp: URLResponse
-        do { (data, resp) = try await session.data(for: req) } catch { base = fixed; throw APIError.offline }
-        if let h = resp as? HTTPURLResponse {
-            let html = (h.value(forHTTPHeaderField: "Content-Type") ?? "").contains("html")
-            if h.statusCode >= 400 || html {
-                // A JSON {"error": ...} is the backend speaking: pass it through. Anything else (tunnel gateway page) = stale tunnel.
-                if !html, let m = (try? JSONDecoder().decode(ServerError.self, from: data))?.error { throw APIError.server(m) }
-                if h.statusCode >= 500 || html { base = fixed; throw APIError.server("HTTP 5xx") }
-                throw APIError.server("HTTP \(h.statusCode)")
-            }
+        do { (data, resp) = try await session.data(for: req) } catch {
+            try Task.checkCancellation()
+            base = fixed; throw APIError.offline
         }
+        try Self.validate(data, resp)
         let v = try JSONDecoder().decode(T.self, from: data)
+        if mem.count >= 128, let oldest = mem.min(by: { $0.value.0 < $1.value.0 })?.key { mem.removeValue(forKey: oldest) }
         mem[path] = (Date(), data)
         return v
     }
 
     func send(_ method: String, _ path: String, body: Encodable) async throws {
-        let b = try await resolveBase()
+        let b: String
+        do { b = try await resolveBase() }
+        catch {
+            try Task.checkCancellation()
+            if let error = error as? APIError { throw error }
+            throw APIError.offline
+        }
         guard let url = URL(string: b + path) else { throw APIError.bad }
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("1", forHTTPHeaderField: "X-Pinggy-No-Screen")
         req.httpBody = try JSONEncoder().encode(AnyEncodable(body))
-        _ = try await session.data(for: req)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        let data: Data, response: URLResponse
+        do { (data, response) = try await session.data(for: req) }
+        catch { try Task.checkCancellation(); base = fixed; throw APIError.offline }
+        do { try Self.validate(data, response, acknowledgement: true) }
+        catch { base = fixed; throw error }
+    }
+
+    /// A tunnel can return HTTP 200 with HTML. Never acknowledge that as a saved preference/token.
+    /// 204 is the only accepted empty write response; JSON writes must explicitly return {"ok":true}.
+    static func validate(_ data: Data, _ response: URLResponse, acknowledgement: Bool = false) throws {
+        guard let http = response as? HTTPURLResponse else { throw APIError.offline }
+        let status = http.statusCode
+        let html = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("html")
+            || String(data: data.prefix(256), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") == true
+        let message = html ? nil : (try? JSONDecoder().decode(ServerError.self, from: data))?.error
+        // Preserve actionable provider/account errors (covered by the existing PLAN_LIMIT regression).
+        if message == "PLAN_LIMIT" { throw APIError.server("PLAN_LIMIT") }
+        if status == 429 || status >= 500 || html { throw APIError.temporary(message ?? L.s("الخادم غير متاح مؤقتاً، جرّب بعد شوي")) }
+        guard (200..<300).contains(status) else { throw APIError.server(message ?? "HTTP \(status)") }
+        if let message, !message.isEmpty { throw APIError.server(message) }
+        if acknowledgement {
+            if status == 204 { return }
+            struct Ack: Decodable { var ok: Bool }
+            guard let ack = try? JSONDecoder().decode(Ack.self, from: data), ack.ok else { throw APIError.badResponse }
+        }
     }
 }
 
@@ -100,12 +146,13 @@ struct AnyEncodable: Encodable {
 }
 
 enum APIError: LocalizedError {
-    case offline, bad, server(String)
+    case offline, bad, badResponse, server(String), temporary(String)
     var errorDescription: String? {
         switch self {
         case .offline: return L.s("الخادم غير متاح مؤقتاً، جرّب بعد شوي")
         case .bad: return L.s("طلب غير صالح")
-        case .server(let m): return m
+        case .badResponse: return L.s("لم يؤكد الخادم حفظ التغييرات، سنحاول مرة أخرى")
+        case .server(let m), .temporary(let m): return m
         }
     }
 }
