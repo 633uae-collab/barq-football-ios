@@ -85,6 +85,21 @@ final class PushPayloadTests: XCTestCase {
         let s = MatchActivityAttributes.ContentState.from(d)
         XCTAssertEqual(s.minute, 70); XCTAssertEqual(s.homeGoals, 1); XCTAssertEqual(s.lastEvent, "هدف - Salah 12'")
     }
+    func testLiveUpdateKeepsLastEventWhenTheNewPayloadHasNone() throws {
+        let earlier = #"{"match":{"id":1,"date":"","ts":0,"status":{"short":"2H","elapsed":70},"league":{"id":1,"name":"L"},"home":{"id":1,"name":"A"},"away":{"id":2,"name":"B"},"goals":{"home":1,"away":0}},"events":[{"time":{"elapsed":70},"team":{"id":2,"name":"B"},"type":"Card","detail":"Yellow Card"},{"time":{"elapsed":12},"team":{"id":1,"name":"A"},"player":{"id":5,"name":"Salah"},"type":"Goal","detail":"Normal Goal"}],"lineups":[],"statistics":[]}"#
+        let withGoal = try JSONDecoder().decode(MatchDetail.self, from: Data(earlier.utf8))
+        XCTAssertEqual(MatchActivityAttributes.ContentState.from(withGoal).lastEvent, "Yellow Card - B 70'")
+        let empty = #"{"match":{"id":1,"date":"","ts":0,"status":{"short":"2H","elapsed":71},"league":{"id":1,"name":"L"},"home":{"id":1,"name":"A"},"away":{"id":2,"name":"B"},"goals":{"home":1,"away":0}},"events":[],"lineups":[],"statistics":[]}"#
+        let blank = try JSONDecoder().decode(MatchDetail.self, from: Data(empty.utf8))
+        let existing = MatchActivityAttributes.ContentState(homeGoals: 1, awayGoals: 0, minute: 70, status: "2H", lastEvent: "هدف - Salah 12'", insight: "ضغط")
+        let next = LiveActivities.nextState(existing: existing, detail: blank)
+        XCTAssertEqual(next.minute, 71)
+        XCTAssertEqual(next.lastEvent, "هدف - Salah 12'")
+        XCTAssertEqual(next.insight, "ضغط")
+        let replaced = LiveActivities.nextState(existing: existing, detail: withGoal, insight: "جديد")
+        XCTAssertEqual(replaced.lastEvent, "Yellow Card - B 70'")
+        XCTAssertEqual(replaced.insight, "جديد")
+    }
 
     // Real backend responses (API-SPORTS via BARQ server) captured 2026-11-01; regression for null ids in transfers / league.
     func raw(_ n: String) throws -> Data {

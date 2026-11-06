@@ -155,11 +155,12 @@ struct MatchRow: View {
             Button { store.toggleSaved(f.id) } label: { Label(store.savedMatches.contains(f.id) ? "إزالة من المحفوظة" : "حفظ المباراة", systemImage: "bookmark") }
             Button { store.toggleFav(f.home) } label: { Label("مفضلة: \(f.home.name)", systemImage: store.isFav(team: f.home.id) ? "star.fill" : "star") }
             Button { store.toggleFav(f.away) } label: { Label("مفضلة: \(f.away.name)", systemImage: store.isFav(team: f.away.id) ? "star.fill" : "star") }
-            if f.isUpcoming { Button { Task { try? await CalendarService.add(f) } } label: { Label("أضف لتقويم الآيفون", systemImage: "calendar.badge.plus") } }
-            if f.isLive || f.isUpcoming { Button { _ = try? LiveActivities.start(for: f) } label: { Label("تابع على شاشة القفل", systemImage: "platter.filled.bottom.iphone") } }
+            if f.isUpcoming { Button { Task { do { try await CalendarService.add(f); toast = "تمت الإضافة للتقويم" } catch { toast = error.localizedDescription } } } label: { Label("أضف لتقويم الآيفون", systemImage: "calendar.badge.plus") } }
+            if f.isLive || f.isUpcoming { Button { Task { do { _ = try await LiveActivities.startReal(fixtureId: f.id); toast = "بدأت المتابعة المباشرة" } catch { toast = error.localizedDescription } } } label: { Label("تابع على شاشة القفل", systemImage: "platter.filled.bottom.iphone") } }
         } preview: {
             MatchPreview(f: f).environment(store)
         }
+        .alert(toast ?? "", isPresented: Binding(get: { toast != nil }, set: { if !$0 { toast = nil } })) { Button("تم") {} }
     }
     func teamCol(_ t: TeamRef) -> some View {
         VStack(spacing: 6) {

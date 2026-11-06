@@ -74,7 +74,7 @@ struct MatchCenterView: View {
                     Button { store.toggleSaved(f.id) } label: { Image(systemName: store.savedMatches.contains(f.id) ? "bookmark.fill" : "bookmark") }
                     Menu {
                         if f.isUpcoming { Button("أضف لتقويم الآيفون", systemImage: "calendar.badge.plus") { Task { do { try await CalendarService.add(f); msg = "تمت الإضافة للتقويم" } catch { msg = error.localizedDescription } } } }
-                        if !f.isDone { Button("تابع على شاشة القفل", systemImage: "platter.filled.bottom.iphone") { do { try LiveActivities.start(for: f); msg = "بدأت المتابعة المباشرة" } catch { msg = error.localizedDescription } } }
+                        if !f.isDone { Button("تابع على شاشة القفل", systemImage: "platter.filled.bottom.iphone") { do { if let detail = d { try LiveActivities.start(detail) } else { try LiveActivities.start(for: f) }; msg = "بدأت المتابعة المباشرة" } catch { msg = error.localizedDescription } } }
                         Button("تفعيل تنبيهات المحلل", systemImage: "bell.badge") { Task { _ = await Notifier.requestPermission() } }
                     } label: { Image(systemName: "ellipsis") }
                 }
@@ -86,7 +86,7 @@ struct MatchCenterView: View {
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(refreshSeconds))
-                if d?.match.isLive == true || replay { await load(); if let f = d?.match, !replay { await LiveActivities.update(f) } }
+                if d?.match.isLive == true || replay { await load(); if let detail = d, !replay { await LiveActivities.update(detail) } }
             }
         }
     }
