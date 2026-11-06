@@ -1,18 +1,193 @@
 import SwiftUI
 import UserNotifications
 
+/// One transfer row for the News screen. Built only from `/api/team` payloads (API-SPORTS), never from an article feed.
+struct NewsItem: Identifiable, Hashable {
+    var sourceTeam: Int
+    var sourceName: String
+    var sourceLogo: String?
+    var playerId: Int?
+    var player: String
+    var date: String
+    var type: String
+    var fromName: String
+    var toName: String
+    var fromLogo: String?
+    var toLogo: String?
+    var moveKey: String
+    var id: String
+}
+
+struct NewsClub: Hashable {
+    var id: Int
+    var name: String
+    var logo: String?
+    var transfers: [Transfer]
+}
+
+enum NewsFeed {
+    static let maxTeams = 8
+    static let limit = 40
+
+    static func items(_ clubs: [NewsClub]) -> [NewsItem] {
+        clubs.flatMap { c in
+            c.transfers.map { t in
+                let who = t.player.id.map(String.init) ?? (t.player.name ?? "")
+                let move = "\(who)|\(t.date ?? "")|\(t.type ?? "")|\(t.out.id ?? 0)|\(t.in.id ?? 0)"
+                let kind = t.type.flatMap { $0.isEmpty || $0 == "-" ? nil : $0 } ?? ""
+                return NewsItem(sourceTeam: c.id, sourceName: c.name, sourceLogo: c.logo, playerId: t.player.id, player: t.player.name ?? "",
+                                date: t.date ?? "", type: kind, fromName: t.out.name ?? "", toName: t.in.name ?? "",
+                                fromLogo: t.out.logo, toLogo: t.in.logo, moveKey: move, id: "\(c.id)|\(move)")
+            }
+        }
+    }
+
+    /// All clubs: one row per move (a deal listed by two favourites is not repeated). One club: that club's own list.
+    static func visible(_ items: [NewsItem], team: Int?, limit: Int = NewsFeed.limit) -> [NewsItem] {
+        let base: [NewsItem]
+        if let team {
+            base = items.filter { $0.sourceTeam == team }
+        } else {
+            var seen = Set<String>()
+            base = items.filter { seen.insert($0.moveKey).inserted }
+        }
+        let sorted = base.sorted { a, b in
+            if a.date != b.date { return a.date > b.date }
+            if a.player != b.player { return a.player < b.player }
+            return a.id < b.id
+        }
+        return Array(sorted.prefix(limit))
+    }
+
+    static func teams(_ items: [NewsItem]) -> [NewsClub] {
+        var seen = Set<Int>(), out: [NewsClub] = []
+        for i in items where seen.insert(i.sourceTeam).inserted {
+            out.append(NewsClub(id: i.sourceTeam, name: i.sourceName, logo: i.sourceLogo, transfers: []))
+        }
+        return out
+    }
+}
+
 struct NewsView: View {
+    @Environment(AppStore.self) private var store
+    @State private var items: [NewsItem]?
+    @State private var error: String?
+    @State private var team: Int?
     var body: some View {
+        let clubs = NewsFeed.teams(items ?? [])
+        let selected = clubs.contains(where: { $0.id == team }) ? team : nil
         ScrollView {
-            VStack(spacing: 16) {
-                EmptyState(symbol: "newspaper", title: "الأخبار قريباً", message: "ننتظر ربط مصدر أخبار مرخّص. لن نعرض أخباراً أو صوراً غير موثقة.")
-                // Planned layout (enabled once a licensed feed is wired): hero cards, compact list, team filter, AI summary, transfers.
-                Label("انتقالات فرقك المفضلة متاحة من صفحة كل نادي", systemImage: "arrow.left.arrow.right")
-                    .font(.footnote).padding().glassEffect(.regular, in: .rect(cornerRadius: 16))
+            VStack(alignment: .leading, spacing: 14) {
+                Label("لا نعرض أخباراً أو صوراً غير موثقة. الانتقالات أدناه من بيانات API-SPORTS.", systemImage: "checkmark.seal")
+                    .font(.footnote).padding().frame(maxWidth: .infinity, alignment: .leading)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                if store.favTeams.isEmpty {
+                    EmptyState(symbol: "star", title: "أضف أندية مفضلة لعرض انتقالاتها")
+                } else {
+                    LoadState(value: items, error: error, retry: load) { items in
+                        VStack(alignment: .leading, spacing: 12) {
+                            if clubs.count > 1 { filters(clubs, selected: selected) }
+                            SectionHeader(title: "الانتقالات", symbol: "arrow.left.arrow.right")
+                            let list = NewsFeed.visible(items, team: selected)
+                            if list.isEmpty { EmptyState(symbol: "arrow.left.arrow.right", title: "لا توجد انتقالات لهذه الأندية") }
+                            ForEach(list) { item in row(item, showClub: selected == nil && clubs.count > 1) }
+                        }
+                    }
+                }
             }.padding()
         }
         .screenBackground()
         .navigationTitle("الأخبار")
+        .task(id: store.favTeams.map(\.id)) { team = nil; items = nil; await load() }
+        .refreshable { await load() }
+    }
+
+    func filters(_ clubs: [NewsClub], selected: Int?) -> some View {
+        ScrollView(.horizontal) {
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    chip("كل الفرق", on: selected == nil, id: "news-filter-all") { team = nil }
+                    ForEach(clubs, id: \.id) { c in
+                        chip(verbatim: c.name, on: selected == c.id, id: "news-filter-\(c.id)") { team = c.id }
+                    }
+                }.padding(.vertical, 2)
+            }
+        }.scrollIndicators(.hidden)
+    }
+
+    func chip(_ title: LocalizedStringKey, on: Bool, id: String, action: @escaping () -> Void) -> some View {
+        chipLabel(Text(title), on: on, id: id, action: action)
+    }
+    func chip(verbatim title: String, on: Bool, id: String, action: @escaping () -> Void) -> some View {
+        chipLabel(Text(verbatim: title), on: on, id: id, action: action)
+    }
+    func chipLabel(_ title: Text, on: Bool, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            title.font(.subheadline.weight(.semibold)).fixedSize()
+                .padding(.horizontal, 14).frame(minHeight: 40)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(on ? Color.black : Color.primary)
+        .glassEffect(on ? .regular.tint(Color("BrandGreen")).interactive() : .regular.interactive(), in: .capsule)
+        .accessibilityIdentifier(id)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    @ViewBuilder func row(_ item: NewsItem, showClub: Bool) -> some View {
+        let card = HStack(spacing: 8) {
+            RemoteImage(url: item.fromLogo, size: 28)
+            Image(systemName: "arrow.forward").font(.caption).foregroundStyle(.secondary)
+            RemoteImage(url: item.toLogo, size: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: item.player).font(.subheadline.bold()).lineLimit(1)
+                HStack(spacing: 6) {
+                    if showClub { Text(verbatim: item.sourceName).lineLimit(1) }
+                    if !item.type.isEmpty { Text(verbatim: item.type) }
+                    Text(verbatim: item.date).monospacedDigit()
+                }.font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("news-row-\(item.id)")
+        if let id = item.playerId {
+            NavigationLink(value: Route.player(id)) { card }.buttonStyle(.plain)
+        } else {
+            card
+        }
+    }
+
+    func load() async {
+        let teams = Array(store.favTeams.prefix(NewsFeed.maxTeams))
+        guard !teams.isEmpty else { items = []; error = nil; return }
+        struct Page { var index: Int; var response: TeamResponse? }
+        let loaded: [Page] = await withTaskGroup(of: Page.self) { group in
+            for (i, t) in teams.enumerated() {
+                group.addTask {
+                    let r: TeamResponse? = try? await API.shared.get("/api/team/\(t.id)", maxAge: 600)
+                    return Page(index: i, response: r)
+                }
+            }
+            var bag: [Page] = []
+            for await x in group { bag.append(x) }
+            return bag
+        }
+        var clubs: [NewsClub] = []
+        var any = false
+        for page in loaded.sorted(by: { $0.index < $1.index }) {
+            let i = page.index, r = page.response
+            if r != nil { any = true }
+            let t = teams[i]
+            clubs.append(NewsClub(id: t.id, name: r?.team?.name ?? t.name, logo: r?.team?.logo ?? t.logo, transfers: r?.transfers ?? []))
+        }
+        if !any {
+            if items == nil { error = L.s("الخادم غير متاح مؤقتاً، جرّب بعد شوي") }
+            return
+        }
+        items = NewsFeed.items(clubs)
+        error = nil
     }
 }
 
