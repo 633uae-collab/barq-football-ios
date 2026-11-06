@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/launch-journey.yml
       - BARQ/Views/OnboardingViews.swift
+      - BARQ/Core/Store.swift
       - BARQTests/LaunchJourneyTests.swift
       - BARQUITests/LaunchJourneyUITests.swift
 permissions:

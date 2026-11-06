@@ -48,8 +48,9 @@ final class AppStore {
         if d.bool(forKey: "homeLayoutV8") { homeSections = load("homeSections", Self.defaultSections) }
         else {
             let existing: [String] = load("homeSections", Self.defaultSections)
-            homeSections = existing == Self.legacySections ? Self.defaultSections : existing
-            d.set(try? JSONEncoder().encode(homeSections), forKey: "homeSections"); d.set(true, forKey: "homeLayoutV8")
+            let migrated = existing == Self.legacySections ? Self.defaultSections : existing
+            homeSections = migrated
+            d.set(try? JSONEncoder().encode(migrated), forKey: "homeSections"); d.set(true, forKey: "homeLayoutV8")
         }
         mutedTeams = load("mutedTeams", [])
         theme = ThemeMode(rawValue: d.string(forKey: "theme") ?? "") ?? .dark
