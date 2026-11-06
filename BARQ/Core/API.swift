@@ -153,3 +153,38 @@ enum L {
 }
 
 struct ServerError: Decodable { var error: String? }
+
+/// In-app language. SwiftUI `Text` follows the device language; the settings picker must override `Bundle.main`
+/// so the string catalog (Arabic source, English translations) follows `lang` on this launch, not only after a reboot.
+enum AppLanguage {
+    static func code(_ raw: String?) -> String { raw == "en" ? "en" : "ar" }
+
+    fileprivate static var strings: Bundle?
+    private static var catalogs: [String: Bundle] = [:]
+    private static var installed = false
+
+    static func apply(_ raw: String?) {
+        let lang = code(raw)
+        UserDefaults.standard.set([lang], forKey: "AppleLanguages")
+        if !installed {
+            // Snapshot lproj bundles before swapping the class. path(forResource:) after the swap can re-enter localizedString.
+            for c in ["ar", "en"] {
+                if let path = Bundle.main.path(forResource: c, ofType: "lproj"), let b = Bundle(path: path) { catalogs[c] = b }
+            }
+            object_setClass(Bundle.main, LocalizedMainBundle.self)
+            installed = true
+        }
+        strings = catalogs[lang]
+    }
+}
+
+@objc(FOTIQLocalizedMainBundle)
+final class LocalizedMainBundle: Bundle {
+    override func localizedString(forKey key: String, value: String?, table tableName: String?) -> String {
+        let table = tableName ?? "Localizable"
+        if table == "Localizable", let b = AppLanguage.strings {
+            return b.localizedString(forKey: key, value: value ?? key, table: tableName)
+        }
+        return super.localizedString(forKey: key, value: value, table: tableName)
+    }
+}

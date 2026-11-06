@@ -11,12 +11,12 @@ struct MatchesView: View {
     @State private var filter: MatchFilter = .all
     @State private var data: FixturesResponse?
     @State private var error: String?
-    @State private var showAllLeagues = false
+    @State private var favDays = Set<Int>()
 
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                DayStrip(offset: $day, highlight: Set<Int>())
+                DayStrip(offset: $day, highlight: favDays)
                 Picker("الحالة", selection: $filter) {
                     ForEach(MatchFilter.allCases, id: \.self) { Label($0.title, systemImage: $0.symbol).tag($0) }
                 }.pickerStyle(.segmented)
@@ -42,6 +42,7 @@ struct MatchesView: View {
         }
         .barqDestinations()
         .task(id: day) { data = nil; await load() }
+        .task(id: store.favTeams.map(\.id)) { favDays = await FavoriteDays.load(teams: Set(store.favTeams.map(\.id))) }
         .refreshable { await load() }
         .task(id: day) {
             // live refresh every 15s while viewing today
@@ -67,6 +68,33 @@ struct MatchesView: View {
                 let ia = a.1.first?.importance ?? 0, ib = b.1.first?.importance ?? 0
                 return ia != ib ? ia > ib : a.0.id < b.0.id
             }
+    }
+}
+
+/// Days-from-today whose fixtures include a favourite team. The strip draws a dot on each one.
+enum FavoriteDays {
+    /// Today through the next 14 days (the window CalendarView documents).
+    static let window: ClosedRange<Int> = 0...14
+    static func offsets(in fixturesByOffset: [Int: [Fixture]], teams: Set<Int>) -> Set<Int> {
+        guard !teams.isEmpty else { return [] }
+        return Set(fixturesByOffset.compactMap { offset, list in
+            list.contains { teams.contains($0.home.id) || teams.contains($0.away.id) } ? offset : nil
+        })
+    }
+    private struct Page { var offset: Int; var fixtures: [Fixture] }
+    static func load(teams: Set<Int>) async -> Set<Int> {
+        guard !teams.isEmpty else { return [] }
+        var bag: [Int: [Fixture]] = [:]
+        await withTaskGroup(of: Page?.self) { group in
+            for offset in window {
+                group.addTask {
+                    guard let r: FixturesResponse = try? await API.shared.get("/api/fixtures?date=\(Fmt.day(offset))", maxAge: 900) else { return nil }
+                    return Page(offset: offset, fixtures: r.fixtures)
+                }
+            }
+            for await item in group { if let item { bag[item.offset] = item.fixtures } }
+        }
+        return offsets(in: bag, teams: teams)
     }
 }
 
@@ -153,13 +181,6 @@ struct CalendarView: View {
             do { list = try await (API.shared.get("/api/fixtures?date=\(Fmt.day(offset))", maxAge: 60) as FixturesResponse).fixtures }
             catch { self.error = error.localizedDescription }
         }
-        .task { await scanFavs() }
-    }
-    func scanFavs() async {
-        let ids = Set(store.favTeams.map(\.id)); guard !ids.isEmpty else { return }
-        for o in 0...7 {
-            if let r: FixturesResponse = try? await API.shared.get("/api/fixtures?date=\(Fmt.day(o))", maxAge: 900),
-               r.fixtures.contains(where: { ids.contains($0.home.id) || ids.contains($0.away.id) }) { favDays.insert(o) }
-        }
+        .task(id: store.favTeams.map(\.id)) { favDays = await FavoriteDays.load(teams: Set(store.favTeams.map(\.id))) }
     }
 }

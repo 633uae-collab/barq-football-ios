@@ -25,7 +25,7 @@ struct ClubView: View {
                                         store.toggleFav(TeamRef(id: team.id, name: team.name, logo: team.logo))
                                     }.buttonStyle(.glassProminent)
                                     Button(store.mutedTeams.contains(team.id) ? "الإشعارات مكتومة" : "الإشعارات مفعلة", systemImage: store.mutedTeams.contains(team.id) ? "bell.slash" : "bell") {
-                                        if let i = store.mutedTeams.firstIndex(of: team.id) { store.mutedTeams.remove(at: i) } else { store.mutedTeams.append(team.id) }
+                                        store.toggleMuted(team.id)
                                     }.buttonStyle(.glass)
                                 }
                             }

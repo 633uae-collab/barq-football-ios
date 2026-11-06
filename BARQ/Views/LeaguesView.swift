@@ -62,6 +62,15 @@ struct LeaguesView: View {
     }
 }
 
+/// Shown when the host backend ignores `?season=` and returns a different year than the one the picker asked for.
+enum SeasonNote {
+    static let mismatch = "تعذر جلب هذا الموسم، الظاهر هو الموسم الحالي"
+    static func text(requested: Int?, returned: Int?) -> String? {
+        guard let requested, let returned, requested != returned else { return nil }
+        return mismatch
+    }
+}
+
 enum LCTab: String, CaseIterable { case table, scorers, assists, fixtures
     var title: LocalizedStringKey { switch self { case .table: "الترتيب"; case .scorers: "الهدافون"; case .assists: "صناع الأهداف"; case .fixtures: "المباريات" } }
     var symbol: String { switch self { case .table: "list.number"; case .scorers: "soccerball.inverse"; case .assists: "figure.soccer"; case .fixtures: "calendar" } }
@@ -76,6 +85,7 @@ struct LeagueCenterView: View {
     @State private var assists: TopPlayersResponse?
     @State private var fixtures: LeagueFixtures?
     @State private var error: String?
+    @State private var seasonNote: String?
     @State private var season: Int?
 
     var meta: LeagueMeta? { standings?.league ?? fixtures?.league }
@@ -95,6 +105,7 @@ struct LeagueCenterView: View {
                 }.padding().glassEffect(.regular, in: .rect(cornerRadius: 26))
 
                 Picker("القسم", selection: $tab) { ForEach(LCTab.allCases, id: \.self) { Label($0.title, systemImage: $0.symbol).tag($0) } }.pickerStyle(.segmented)
+                if let seasonNote { Text(LocalizedStringKey(seasonNote)).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
                 if let e = error { Text(e).font(.caption).foregroundStyle(.red) }
                 switch tab {
                 case .table: table
@@ -113,7 +124,7 @@ struct LeagueCenterView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                // Season picker. Backend needs backend-addons/season.patch to honour ?season=.
+                // ?season= is built by backend-addons/season.js. Until that helper is mounted on the host, a mismatched response is labeled instead of shown as the picked year.
                 Menu {
                     let cur = meta?.season ?? Calendar.current.component(.year, from: Date())
                     ForEach((cur - 4)...cur, id: \.self) { y in Button("\(String(y))/\(String(y + 1))") { season = y } }
@@ -121,6 +132,7 @@ struct LeagueCenterView: View {
             }
         }
         .task(id: season) {
+            if season != nil { standings = nil; scorers = nil; assists = nil; fixtures = nil; error = nil; seasonNote = nil }
             await load()
             while standings == nil, error != nil, !Task.isCancelled { try? await Task.sleep(for: .seconds(5)); await load() }
         }
@@ -181,6 +193,7 @@ struct LeagueCenterView: View {
             async let d: LeagueFixtures? = try? API.shared.get("/api/league/\(leagueId)\(seasonQuery)", maxAge: 300)
             let (s, sc, asx, fx) = try await (a, b, c, d)
             standings = s; scorers = sc; assists = asx; fixtures = fx; error = nil
+            seasonNote = SeasonNote.text(requested: season, returned: s.league?.season)
         } catch { self.error = error.localizedDescription }
     }
 }

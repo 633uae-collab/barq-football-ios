@@ -2380,6 +2380,56 @@
           }
         }
       }
+    },
+    "لا نعرض أخباراً أو صوراً غير موثقة. الانتقالات أدناه من بيانات API-SPORTS.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We don't show unverified news or photos. The transfers below come from API-SPORTS."
+          }
+        }
+      }
+    },
+    "أضف أندية مفضلة لعرض انتقالاتها": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add favorite clubs to see their transfers"
+          }
+        }
+      }
+    },
+    "لا توجد انتقالات لهذه الأندية": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No transfers for these clubs"
+          }
+        }
+      }
+    },
+    "كل الفرق": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All clubs"
+          }
+        }
+      }
+    },
+    "تعذر جلب هذا الموسم، الظاهر هو الموسم الحالي": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This season is not available from the server. Showing the current season."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

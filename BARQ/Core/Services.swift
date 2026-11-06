@@ -54,12 +54,22 @@ enum Notifier {
         let req = UNNotificationRequest(identifier: "insight-\(i.id)", content: content(for: i), trigger: nil)
         UNUserNotificationCenter.current().add(req)
     }
-    /// Density filter: 0 = only red/ht/ft (low noise), 1 = + medium, 2 = all.
-    static func allowed(_ i: Insight, density: Int) -> Bool {
-        let critical: Set<String> = ["red", "ht", "ft"]
+    /// Same levels as settings copy and server `MIN_LEVEL` (server/notify.js):
+    /// 0 = kickoff, goals, red cards, full time; 1 = also half time, second half, and high-level analysis; 2 = everything.
+    /// A muted favourite is dropped unless that fixture was saved (server `interested`).
+    static func allowed(_ i: Insight, density: Int, favoriteNames: Set<String> = [], mutedNames: Set<String> = [], fixtureSaved: Bool = false) -> Bool {
+        guard passesDensity(i, density) else { return false }
+        if fixtureSaved || mutedNames.isEmpty { return true }
+        let sides = [i.team, i.match?.home, i.match?.away].compactMap { $0 }.filter { !$0.isEmpty }
+        let followed = sides.filter { favoriteNames.contains($0) }
+        if followed.isEmpty { return true }
+        return followed.contains { !mutedNames.contains($0) }
+    }
+    private static func passesDensity(_ i: Insight, _ density: Int) -> Bool {
+        let critical: Set<String> = ["goal", "red", "ft", "kickoff"]
         switch density {
         case 0: return critical.contains(i.type)
-        case 1: return critical.contains(i.type) || i.level == "high"
+        case 1: return critical.contains(i.type) || ["ht", "second"].contains(i.type) || i.level == "high"
         default: return true
         }
     }
@@ -104,13 +114,41 @@ enum LiveActivities {
     }
 
     /// Local (in-app) update path used while the app is foreground; background updates come via APNs.
+    /// A fixture-only refresh has no events, so the previous goal/card line is kept.
     static func update(_ f: Fixture, insight: String? = nil) async {
         for a in Activity<MatchActivityAttributes>.activities where a.attributes.fixtureId == f.id {
             let s = MatchActivityAttributes.ContentState(homeGoals: f.goals.home ?? 0, awayGoals: f.goals.away ?? 0, minute: f.status.elapsed ?? 0,
-                                                         status: f.status.short, lastEvent: nil, insight: insight ?? a.content.state.insight)
+                                                         status: f.status.short, lastEvent: a.content.state.lastEvent, insight: insight ?? a.content.state.insight)
             if f.isDone { await a.end(.init(state: s, staleDate: nil), dismissalPolicy: .after(Date().addingTimeInterval(900))) }
             else { await a.update(.init(state: s, staleDate: Date().addingTimeInterval(600))) }
         }
+    }
+
+    /// Same path with the real event list, so the lock screen shows the latest goal or card.
+    static func update(_ d: MatchDetail, insight: String? = nil) async {
+        let f = d.match
+        for a in Activity<MatchActivityAttributes>.activities where a.attributes.fixtureId == f.id {
+            let s = nextState(existing: a.content.state, detail: d, insight: insight)
+            if f.isDone { await a.end(.init(state: s, staleDate: nil), dismissalPolicy: .after(Date().addingTimeInterval(900))) }
+            else { await a.update(.init(state: s, staleDate: Date().addingTimeInterval(600))) }
+        }
+    }
+
+    /// Latest goal/card from the payload wins. A shorter response must not blank a line the user already saw.
+    static func nextState(existing: MatchActivityAttributes.ContentState, detail: MatchDetail, insight: String? = nil) -> MatchActivityAttributes.ContentState {
+        var s = MatchActivityAttributes.ContentState.from(detail, insight: insight)
+        if insight == nil { s.insight = existing.insight }
+        if s.lastEvent == nil { s.lastEvent = existing.lastEvent }
+        return s
+    }
+
+    @discardableResult
+    static func start(_ d: MatchDetail) throws -> String {
+        let f = d.match
+        if let existing = Activity<MatchActivityAttributes>.activities.first(where: { $0.attributes.fixtureId == f.id }) { return existing.id }
+        let attrs = MatchActivityAttributes(fixtureId: f.id, league: f.league.name, homeName: f.home.name, awayName: f.away.name,
+                                            homeShort: short(f.home.name), awayShort: short(f.away.name))
+        return try start(attrs: attrs, state: .from(d))
     }
 
     /// Push-to-start token (iOS 17.2+): lets the backend start a Live Activity when a favourite team kicks off.
@@ -146,7 +184,11 @@ extension MatchActivityAttributes.ContentState {
     /// Builds the state from the real /api/match payload; lastEvent = latest goal or card from API-SPORTS events.
     static func from(_ d: MatchDetail, insight: String? = nil) -> Self {
         let f = d.match
-        let ev = d.events.last { $0.type == "Goal" || $0.type == "Card" }
+        let ev = d.events.filter { $0.type == "Goal" || $0.type == "Card" }.max { a, b in
+            let ae = a.time.elapsed ?? 0, be = b.time.elapsed ?? 0
+            if ae != be { return ae < be }
+            return (a.time.extra ?? 0) < (b.time.extra ?? 0)
+        }
         let last = ev.map { e -> String in
             let kind = e.type == "Goal" ? "هدف" : (e.detail ?? "بطاقة")
             return "\(kind) - \(e.player?.name ?? e.team.name) \(e.time.elapsed ?? 0)'"
