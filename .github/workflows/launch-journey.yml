@@ -13,7 +13,10 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    runs-on: macos-26-intel
+    # The same journey passed on Apple Silicon in run 42289806720. The Intel
+    # recording run exceeded the first-launch UI deadline.
+    # Keep the assertions/timeouts intact and record on the validated architecture.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -46,9 +49,11 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p out
+          xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > out/launch-timing.log 2>&1 &
+          LOG=$!
           xcrun simctl io "$UDID" recordVideo --codec=h264 --force out/launch-journey.mp4 > out/recording.log 2>&1 &
           REC=$!
-          trap 'kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true' EXIT
+          trap 'kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true' EXIT
           sleep 2
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
       - name: Collect new simulator screenshots
