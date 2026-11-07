@@ -13,6 +13,7 @@ on:
       - BARQ/Core/Store.swift
       - BARQTests/LaunchJourneyTests.swift
       - BARQUITests/LaunchJourneyUITests.swift
+      - ci/verify-launch-timing.py
 permissions:
   contents: read
 jobs:
@@ -60,6 +61,8 @@ jobs:
           trap 'kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true' EXIT
           sleep 2
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
+      - name: Enforce measured cinematic and quick-launch budgets
+        run: python3 ci/verify-launch-timing.py out/launch-timing.log
       - name: Collect new simulator screenshots
         if: always()
         run: |
