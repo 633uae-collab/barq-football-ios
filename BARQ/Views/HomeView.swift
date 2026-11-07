@@ -131,13 +131,16 @@ struct HomeView: View {
             async let a: FixturesResponse = API.shared.get("/api/fixtures?date=\(Fmt.day(0))", maxAge: 15)
             async let b: FixturesResponse? = try? API.shared.get("/api/fixtures?date=\(Fmt.day(1))", maxAge: 600)
             async let c: FeedResponse? = try? API.shared.get("/api/feed", maxAge: 30)
-            let (t, tm, feed) = try await (a, b, c)
+            // Show today's fixtures as soon as they arrive; optional services must not gate Home.
+            let t = try await a
             today = t.fixtures
-            tomorrow = tm?.fixtures ?? []
-            top = MatchSort.topN(today: t.fixtures, tomorrow: tm?.fixtures ?? [])
-            latestAI = feed?.insights.first
             now = Date()
             loaded = true; error = nil
+            let tm = await b
+            if let tm { tomorrow = tm.fixtures }
+            top = MatchSort.topN(today: t.fixtures, tomorrow: tm?.fixtures ?? [])
+            let feed = await c
+            latestAI = feed?.insights.first
             if let s: StarsResponse = try? await API.shared.get("/api/stars", maxAge: 60) { stars = s.players } else if stars == nil { stars = [] }
             // Official lineups for pre-match hero cards only (few requests, cached server-side).
             var ready = lineupsReady
