@@ -9,6 +9,9 @@ on:
       - BARQ/Views/BrandViews.swift
       - BARQ/Views/AnalystChatView.swift
       - BARQ/Core/AnalystConversations.swift
+      - BARQ/Core/AnalystChat.swift
+      - BARQ/Core/API.swift
+      - BARQUITests/AnalystConversationUITests.swift
       - BARQ/Core/CompetitionOrder.swift
       - BARQTests/PremiumExperienceTests.swift
       - BARQUITests/PremiumExperienceUITests.swift
