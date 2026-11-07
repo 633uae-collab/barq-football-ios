@@ -43,7 +43,7 @@ async function run({ env = process.env, now = Date.now, provider, analyst, log =
       const answer = await analyst.answer(question, evidence);
       emit({ phase: 'answer', language, ...answer });
     } catch (e) {
-      const safe = ['AI_FREE_QUOTA_REACHED','AI_AUTH_FAILED','AI_UPSTREAM_UNAVAILABLE','AI_INCOMPLETE_RESPONSE','AI_EVIDENCE_TOO_LARGE'];
+      const safe = ['AI_FACT_CHECK_FAILED','AI_FREE_QUOTA_REACHED','AI_AUTH_FAILED','AI_UPSTREAM_UNAVAILABLE','AI_INCOMPLETE_RESPONSE','AI_EVIDENCE_TOO_LARGE'];
       emit({ phase: 'error', language, error: safe.includes(e.code) ? e.code : 'EVALUATION_FAILED' });
       break; // No automatic retry, model fallback, or paid upgrade.
     }

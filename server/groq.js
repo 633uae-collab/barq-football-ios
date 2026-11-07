@@ -2,6 +2,7 @@
 const { timingSafeEqual } = require('node:crypto');
 const { ServiceError } = require('./provider');
 const { prepareEvidence } = require('./analyst-evidence');
+const { validateEventTimes } = require('./analyst-validation');
 const MODEL = 'openai/gpt-oss-120b';
 // Private evaluation only. Enabling this does not verify or change Groq billing.
 class GroqAnalyst {
@@ -44,6 +45,7 @@ class GroqAnalyst {
       const body = await r.json();
       const choice = body.choices?.[0], answer = choice?.message?.content;
       if (choice?.finish_reason !== 'stop' || typeof answer !== 'string' || !answer.trim()) throw new ServiceError('AI_INCOMPLETE_RESPONSE', 502);
+      validateEventTimes(answer, evidence);
       return { answer, model: MODEL, fetchedAt: evidence.fetchedAt, generatedAt: this.now(),
         source: 'API-Football', evaluationOnly: true, usage: body.usage || null,
         quota: { remainingRequests: r.headers.get('x-ratelimit-remaining-requests'),
