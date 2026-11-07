@@ -18,6 +18,9 @@ final class AnalystChatUITests: XCTestCase {
                 let app = XCUIApplication.fotiq()
                 app.launchArguments = ["-lang", language, "-startTab", "ai"]
                 app.launch()
+                let newChat = app.buttons["analyst-new-chat"]
+                XCTAssertTrue(newChat.waitForExistence(timeout: 30))
+                newChat.tap()
                 let field = app.descendants(matching: .any).matching(identifier: "analyst-question").firstMatch
                 XCTAssertTrue(field.waitForExistence(timeout: 40))
                 if index == 4 {

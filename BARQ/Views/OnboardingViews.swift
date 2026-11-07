@@ -187,8 +187,9 @@ struct SplashView: View {
         TimelineView(.animation(paused: Self.held != nil)) { _ in
             let elapsed = clock.tick(active: SplashClock.nextReady)
             let t = Self.held ?? (cinematic && !reduceMotion ? min(1, max(0, (elapsed - Self.hold) / Self.push)) : 0)
-            Canvas { context, size in
+            Canvas(rendersAsynchronously: true) { context, size in
                 let bounds = CGRect(origin: .zero, size: size)
+                if t > 0 && Self.aperture(t: t, size: size).contains(bounds) { return }
                 var cover = Path(bounds)
                 if t > 0 { cover.addRect(Self.aperture(t: t, size: size)) }
                 // Clip BOTH the navy and original bitmap. The old bitmap's opaque navy

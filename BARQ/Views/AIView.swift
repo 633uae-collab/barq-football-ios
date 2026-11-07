@@ -1,7 +1,7 @@
 import SwiftUI
 import AVFoundation
 
-struct AIView: View {
+struct AnalystInsightsView: View {
     @Environment(AppStore.self) private var store
     @State private var feed: FeedResponse?
     @State private var error: String?
@@ -14,7 +14,6 @@ struct AIView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                AnalystChatView()
                 hero
                 SectionHeader(title: "التحليل المباشر", symbol: "waveform.path.ecg")
                 LoadState(value: feed, error: error, retry: load) { f in
@@ -101,5 +100,16 @@ struct PlayerCompare: View {
     }
     func row(_ t: LocalizedStringKey, _ x: Int, _ y: Int) -> some View {
         HStack { Text("\(x)").bold(x > y); Spacer(); Text(t).foregroundStyle(.secondary); Spacer(); Text("\(y)").bold(y > x) }.font(.subheadline.monospacedDigit())
+    }
+}
+
+struct AIView: View {
+    var body: some View {
+        AnalystChatView()
+            .screenBackground()
+            .navigationTitle("FOTIQ AI")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .principal) { BrandHeading(symbol: "sparkles", title: "AI") } }
+            .barqDestinations()
     }
 }

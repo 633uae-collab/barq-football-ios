@@ -51,7 +51,7 @@ function relevantVenueSeason(stats, role) {
     failedToScore: stats.failed_to_score?.[role] ?? null
   };
 }
-async function collectEvidence(provider, question, context = {}) {
+async function collectEvidence(provider, question, context = {}, history = []) {
   const sources = [], missing = [];
   const load = async (path, params) => {
     const r = await provider.load(path + '?' + new URLSearchParams(params));
@@ -61,12 +61,17 @@ async function collectEvidence(provider, question, context = {}) {
   const evidence = { schema: 'fotiq-chat-evidence-v1', sources, missing, events: [],
     limitations: ['Starting lineups are not current tactical shape.', 'No causal claim or probability is established by match totals.', 'Retrieval time is not the provider update time.',
       'Player passing.keyPasses are chances created, not assists. passing.accuracyProviderValue has no verified unit and must not be printed as a percentage.'] };
-  const teamIds = context.teamIds || aliases.filter(([, re]) => re.test(question)).map(([id]) => id);
+  const namedTeams = aliases.filter(([, re]) => re.test(question)).map(([id]) => id);
+  const changesTopic = namedTeams.length > 0 || /\blive\b|مباشر|premier league|الدوري الإنجليزي|الدوري الانجليزي/i.test(question);
+  const previousQuestion = [...history].reverse().find(m => m.role === 'user')?.content || '';
+  const routingQuestion = changesTopic ? question : question + ' ' + previousQuestion;
+  const teamIds = namedTeams.length ? namedTeams : context.teamIds || [];
+
   const playerIds = context.playerIds || [];
-  const upcoming = /upcoming|next match|قادمة|القادمة|قادمه/i.test(question);
-  const live = /\blive\b|مباشر/i.test(question);
-  const lastFive = /last five|last 5|آخر خمس|اخر خمس|آخر 5/i.test(question);
-  let fixtureId = context.fixtureId;
+  const upcoming = /upcoming|next match|قادمة|القادمة|قادمه/i.test(routingQuestion);
+  const live = /\blive\b|مباشر/i.test(routingQuestion);
+  const lastFive = /last five|last 5|آخر خمس|اخر خمس|آخر 5/i.test(routingQuestion);
+  let fixtureId = changesTopic ? undefined : context.fixtureId;
   if (!fixtureId && live) {
     const matches = await load('/fixtures', { live: 'all' });
     fixtureId = matches[0]?.fixture?.id;
@@ -181,6 +186,11 @@ async function collectEvidence(provider, question, context = {}) {
   if (Buffer.byteLength(JSON.stringify(evidence)) > 17500 && evidence.players) {
     delete evidence.players; missing.push('Individual match-player statistics omitted to fit the evidence budget; do not infer individual ratings.');
   }
+  evidence.followUpContext = {
+    ...(fixtureId ? { fixtureId } : {}),
+    ...(teamIds.length ? { teamIds } : {}),
+    ...(playerIds.length ? { playerIds } : {})
+  };
   evidence.fetchedAt = sources.length ? Math.min(...sources.map(s => s.fetchedAt)) : Date.now();
   evidence.retrievedAtUTC = new Date(evidence.fetchedAt).toISOString();
   return evidence;

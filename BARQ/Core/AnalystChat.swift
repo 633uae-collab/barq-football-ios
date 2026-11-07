@@ -1,15 +1,16 @@
 import Foundation
 
-struct AnalystContext: Encodable {
+struct AnalystContext: Codable {
     var fixtureId: Int?
     var teamIds: [Int]?
     var playerIds: [Int]?
 }
-struct AnalystReply: Decodable {
+struct AnalystReply: Codable {
     var answer: String
     var model: String
     var fetchedAt: Double
     var generatedAt: Double
+    var context: AnalystContext?
 }
 struct AnalystChatError: LocalizedError {
     let code: String
@@ -29,3 +30,5 @@ struct AnalystChatError: LocalizedError {
         }
     }
 }
+
+struct AnalystHistoryMessage: Codable { let role: String; let content: String }
