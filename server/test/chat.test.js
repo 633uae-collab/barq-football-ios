@@ -30,10 +30,11 @@ test('club comparison uses fresh season facts, last match is not silently replac
   const paths = [];
   const evidence = await collectEvidence({ load: async path => {
     paths.push(path);
+    if (path.startsWith('/leagues')) return { fetchedAt: 5, data: [{ league: { id: 140, name: 'La Liga', type: 'League' }, seasons: [{ year: 2026, current: true }] }] };
     if (path.startsWith('/teams/statistics')) return { fetchedAt: 5, data: { fixtures: { wins: { total: 4 } } } };
     return { fetchedAt: 4, data: [{ fixture: { id: 8 }, league: { id: 140, season: 2026 }, goals: { home: 3, away: 0 } }] };
   } }, 'Compare Real Madrid and Barcelona');
-  assert.equal(evidence.clubs.length, 2); assert.equal(paths.length, 4);
+  assert.equal(evidence.clubs.length, 2); assert.equal(paths.length, 6);
   assert.ok(paths.includes('/fixtures?team=529&last=5'));
   assert.match(evidence.clubs[0].recentScope, /across competitions/);
   assert.match(evidence.clubs[0].season.scope, /only/);
@@ -228,4 +229,20 @@ test('HTTP quota errors preserve unknown provider reset even during local spacin
   now += 10000; response = await send();
   assert.equal(response.headers.get('retry-after'), '110');
   assert.equal(calls, 2);
+});
+
+
+test('general club comparison selects domestic seasons even after a cup fixture', async () => {
+  const paths = [];
+  const evidence = await collectEvidence({ load: async path => {
+    paths.push(path);
+    if (path.startsWith('/leagues')) return { fetchedAt: 1000, data: [{ league: { id: 140, name: 'La Liga', type: 'League' }, seasons: [{ year: 2026, current: true }] }] };
+    if (path.startsWith('/teams/statistics')) return { fetchedAt: 1000, data: { fixtures: {} } };
+    return { fetchedAt: 1000, data: [{ fixture: { id: 8 }, league: { id: 2, season: 2026, name: 'UCL' } }] };
+  } }, 'Compare Real Madrid and Barcelona');
+  assert.deepEqual(evidence.clubs.map(c => c.season.league), ['La Liga', 'La Liga']);
+  assert.ok(paths.includes('/teams/statistics?team=529&league=140&season=2026'));
+  assert.ok(paths.includes('/teams/statistics?team=541&league=140&season=2026'));
+  assert.ok(!paths.some(p => p.startsWith('/teams/statistics') && p.includes('league=2&')));
+  assert.equal(evidence.clubs[0].matches[0].league.id, 2);
 });

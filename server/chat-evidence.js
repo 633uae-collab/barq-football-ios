@@ -94,11 +94,11 @@ async function collectEvidence(provider, question, context = {}, history = []) {
         recentScope: 'Latest fixtures across competitions as returned by API-Football; inspect each match league before making competition-specific claims.',
         matches: fixtures.map(summary), recentResultsNewestFirst: upcoming ? [] : clubResults(fixtures, team) };
       let league = fixtures[0]?.league;
-      if (seasonComparison) {
+      if (teamIds.length === 2) {
         const leagues = await load('/leagues', { team, current: 'true', type: 'league' });
         const domestic = leagues.find(l => l.league?.type === 'League' && l.seasons?.some(s => s.current));
         league = domestic ? { ...domestic.league, season: domestic.seasons.find(s => s.current).year } : undefined;
-        delete club.matches; delete club.recentResultsNewestFirst; delete club.recentScope;
+        if (seasonComparison) { delete club.matches; delete club.recentResultsNewestFirst; delete club.recentScope; }
         if (!league) missing.push(`Current domestic league season unavailable for club ${team}; no alternative competition inferred.`);
       }
       if (league?.id && league?.season) {
