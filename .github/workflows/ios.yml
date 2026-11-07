@@ -93,7 +93,6 @@ jobs:
           mkdir -p shots; cp /tmp/v7-*.png shots/ || true; cp /tmp/fotiq-springboard.png shots/v4-00-home-screen-icon.png || echo "no springboard capture"
       - name: Home design review captures (screenshots only)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        continue-on-error: true
         run: |
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -only-testing:BARQUITests/HomeReviewUITests 2>&1 | tee review.log | grep -E "Test Case|HOME_REVIEW|HOME_FULL|error:" || true
           mkdir -p shots/review; cp /tmp/review-home-*.png shots/review/ || true

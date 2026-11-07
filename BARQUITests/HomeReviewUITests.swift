@@ -44,21 +44,27 @@ final class HomeReviewUITests: XCTestCase {
         }
         // toolbar buttons
         let bar = app.navigationBars["FOTIQ"]
-        let count = bar.buttons.count
-        for i in 0..<count {
-            let b = bar.buttons.element(boundBy: i)
-            guard b.exists, b.isHittable else { continue }
-            let label = b.label.replacingOccurrences(of: " ", with: "_")
-            b.tap(); sleep(6)
-            shot("toolbar\(i)-\(label)")
-            back(app)
-            if !bar.exists { app.swipeDown(velocity: .fast); sleep(2) }
+        let toolbarIDs = ["home-notifications", "home-news", "home-reorder", "home-settings"]
+        for identifier in toolbarIDs {
+            let button = app.buttons[identifier]
+            XCTAssertTrue(button.waitForExistence(timeout: 10))
+            XCTAssertTrue(button.isHittable, "Toolbar action must be reachable: \(identifier)")
+            button.tap(); sleep(6)
+            shot(identifier)
+            if identifier == "home-reorder" {
+                let done = app.buttons["تم"].firstMatch
+                XCTAssertTrue(done.waitForExistence(timeout: 10)); done.tap()
+            } else { back(app) }
+            XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 10))
         }
         // long-press a match row (context menu + quick preview)
         for _ in 0..<3 { app.swipeUp(velocity: .slow) }
         sleep(2)
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS ' - ' OR label CONTAINS ':'")).element(boundBy: 2)
         if row.exists, row.isHittable { row.press(forDuration: 1.5); sleep(3); shot("longpress-preview"); app.tap(); sleep(2) }
+        // Start the independent navigation check from Home, not from a context-menu preview.
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["home-news"].waitForExistence(timeout: 30))
         // "all leagues" link at the bottom
         for _ in 0..<12 { app.swipeUp(velocity: .fast) }
         // Both Upcoming and Today contain this link. Select the visible instance after scrolling.
@@ -74,7 +80,7 @@ final class HomeReviewUITests: XCTestCase {
         for _ in 0..<14 { app.swipeDown(velocity: .fast) }
         sleep(2)
         hero.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap(); sleep(8); shot("hero-open-match"); back(app)
-        print("HOME_REVIEW toolbar buttons=\(count) labels=\((0..<count).map { bar.buttons.element(boundBy: $0).label })")
+        print("HOME_REVIEW toolbar actions=\(toolbarIDs)")
     }
 
     // Separate tests keep a failed tab from preventing capture of other requested pages.
@@ -118,9 +124,14 @@ final class HomeReviewUITests: XCTestCase {
             try data.write(to: URL(fileURLWithPath: file))
             // Visible text positions remain unchanged after scrolling at the bottom.
             // Two stable passes reduce false stops during delayed lazy layout.
-            let signature = app.staticTexts.allElementsBoundByIndex.compactMap { element -> String? in
+            // Capture one immutable tree: a refresh must not invalidate index-bound elements mid-read.
+            let snapshot = try app.snapshot()
+            func texts(_ node: XCUIElementSnapshot) -> [XCUIElementSnapshot] {
+                (node.elementType == .staticText ? [node] : []) + node.children.flatMap { texts($0) }
+            }
+            let signature = texts(snapshot).compactMap { element -> String? in
                 let f = element.frame
-                guard f.intersects(win.frame), !f.isEmpty else { return nil }
+                guard f.intersects(snapshot.frame), !f.isEmpty else { return nil }
                 return "\(element.label):\(Int(f.minY.rounded()))"
             }.joined(separator: "|")
             stable = !signature.isEmpty && signature == previous ? stable + 1 : 0
