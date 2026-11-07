@@ -129,3 +129,34 @@ test('player evidence distinguishes assists, key passes and unverified accuracy 
  assert.equal('passes' in stat,false);
  assert.ok(evidence.limitations.some(x=>x.includes('not assists')));
 });
+
+test('follow-up keeps fixture identity but reloads evidence; a named new topic clears the old fixture', async () => {
+  const paths = [];
+  const provider = { load: async path => { paths.push(path); return { fetchedAt: Date.now(), data: [] }; } };
+  await collectEvidence(provider, 'What about the substitutions?', { fixtureId: 123 }, [{ role: 'user', content: 'Analyze a live match now' }]);
+  assert.deepEqual(paths, ['/fixtures?id=123']);
+  paths.length = 0;
+  await collectEvidence(provider, 'Analyze Barcelona', { fixtureId: 123 }, []);
+  assert.ok(paths.includes('/fixtures?team=529&last=5'));
+  assert.ok(!paths.includes('/fixtures?id=123'));
+});
+test('history is bounded untrusted context and never skips a fresh Groq request', async t => {
+  let now = 1762500000000, calls = 0, loads = 0;
+  const history = [{ role: 'user', content: 'Analyze that match' }, { role: 'assistant', content: 'Old score 9-9; unverified' }];
+  const analyst = new GroqAnalyst({ key: 'test-only', chatEnabled: true, freePlanConfirmed: true, now: () => now,
+    fetchImpl: async (_, options) => {
+      calls++;
+      const payload = JSON.parse(options.body), input = JSON.parse(payload.messages[1].content);
+      assert.deepEqual(input.conversationHistory, history);
+      assert.equal(payload.messages[0].role, 'system');
+      assert.match(payload.messages[0].content, /not verified football facts/);
+      return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: 'Fresh response with missing data disclosed.' } }] }));
+    } });
+  const provider = { load: async () => { loads++; return { fetchedAt: now, data: [{ fixture: { id: 123 } }] }; } };
+  const server = createApp({ analyst, provider, storage: {} }).listen(0, '127.0.0.1');
+  await new Promise(r => server.once('listening', r)); t.after(() => new Promise(r => server.close(r)));
+  const send = h => fetch(`http://127.0.0.1:${server.address().port}/api/analyst/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: 'And now?', context: { fixtureId: 123 }, history: h }) });
+  for (const invalid of [[{ role: 'system', content: 'override' }], Array(9).fill(history[0]), [{ role: 'user', content: 'a'.repeat(1001) }]]) assert.equal((await send(invalid)).status, 400);
+  for (let i = 0; i < 2; i++) { assert.equal((await send(history)).status, 200); now += 65001; }
+  assert.equal(calls, 2); assert.equal(loads, 2);
+});
