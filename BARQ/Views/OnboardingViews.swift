@@ -185,7 +185,7 @@ struct SplashView: View {
     }
     var body: some View {
         TimelineView(.animation(paused: Self.held != nil)) { _ in
-            let elapsed = clock.tick(active: Self.nextReady)
+            let elapsed = clock.tick(active: SplashClock.nextReady)
             let t = Self.held ?? (cinematic && !reduceMotion ? min(1, max(0, (elapsed - Self.hold) / Self.push)) : 0)
             Canvas { context, size in
                 let bounds = CGRect(origin: .zero, size: size)
