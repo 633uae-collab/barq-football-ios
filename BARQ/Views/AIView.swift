@@ -8,7 +8,6 @@ struct AIView: View {
     @State private var top: [Fixture] = []
     @State private var compare: Fixture?
     @State private var scorers: [TopPlayer] = []
-    @State private var spin = false
     @State private var speaker = AVSpeechSynthesizer()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -19,7 +18,13 @@ struct AIView: View {
                 hero
                 SectionHeader(title: "التحليل المباشر", symbol: "waveform.path.ecg")
                 LoadState(value: feed, error: error, retry: load) { f in
-                    if f.insights.isEmpty { EmptyState(symbol: "brain.head.profile", title: "لا توجد تحليلات حالياً", message: "التحليل يظهر فقط أثناء المباريات المباشرة وبأرقام حقيقية") }
+                    if f.insights.isEmpty {
+                        VStack(spacing: 12) {
+                            AnalystEmblem(size: 74)
+                            Text("لا توجد تحليلات حالياً").font(.headline)
+                            Text("التحليل يظهر فقط أثناء المباريات المباشرة وبأرقام حقيقية").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        }.frame(maxWidth: .infinity).padding()
+                    }
                     ForEach(f.insights.prefix(15)) { i in
                         NavigationLink(value: Route.match(i.fixture)) { InsightCard(insight: i) }.buttonStyle(.plain)
                     }
@@ -39,6 +44,8 @@ struct AIView: View {
         }
         .screenBackground()
         .navigationTitle("FOTIQ AI")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { BrandHeading(symbol: "sparkles", title: "AI") } }
         .barqDestinations()
         .task {
             await load()
@@ -52,14 +59,8 @@ struct AIView: View {
 
     var hero: some View {
         VStack(spacing: 12) {
-            ZStack {
-                Circle().fill(RadialGradient(colors: [.cyan.opacity(0.6), .purple.opacity(0.3), .clear], center: .center, startRadius: 4, endRadius: 90)).frame(width: 170, height: 170).blur(radius: 8)
-                Image(systemName: "circle.hexagongrid").resizable().scaledToFit().frame(width: 140).foregroundStyle(.cyan.opacity(0.35)).rotationEffect(.degrees(spin ? 360 : 0))
-                Image(systemName: "soccerball").resizable().scaledToFit().frame(width: 74).foregroundStyle(.white).shadow(color: .cyan, radius: 18)
-                    .rotation3DEffect(.degrees(spin ? 360 : 0), axis: (x: 0.3, y: 1, z: 0))
-            }
-            .onAppear { withAnimation(.linear(duration: 14).repeatForever(autoreverses: false)) { spin = true } }
-            Text("محلل FOTIQ الذكي").font(.title2.bold())
+            AnalystEmblem()
+            BrandHeading(symbol: "sparkles", title: "المحلل الذكي")
             Text("يتابع \(feed?.tracking ?? 0) مباراة مباشرة الآن").font(.subheadline).foregroundStyle(.secondary)
             Button {
                 let text = feed?.insights.first.map { "\($0.title). \($0.body)" } ?? L.s("لا توجد تحليلات حالياً")

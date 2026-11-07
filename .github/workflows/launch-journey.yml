@@ -2,10 +2,14 @@ name: Launch journey validation and video
 on:
   workflow_dispatch:
   push:
-    branches: [codex/fotiq-development, codex/backend-rebuild]
+    branches: [codex/fotiq-development, codex/backend-rebuild, codex/premium-cinematic]
     paths:
       - .github/workflows/launch-journey.yml
       - BARQ/Views/OnboardingViews.swift
+      - BARQ/Views/BrandViews.swift
+      - BARQ/Core/CompetitionOrder.swift
+      - BARQTests/PremiumExperienceTests.swift
+      - BARQUITests/PremiumExperienceUITests.swift
       - BARQ/Core/Store.swift
       - BARQTests/LaunchJourneyTests.swift
       - BARQUITests/LaunchJourneyUITests.swift
@@ -55,7 +59,7 @@ jobs:
           REC=$!
           trap 'kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true' EXIT
           sleep 2
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
       - name: Collect new simulator screenshots
         if: always()
         run: |

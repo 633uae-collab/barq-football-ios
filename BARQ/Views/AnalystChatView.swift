@@ -19,7 +19,7 @@ struct AnalystChatView: View {
     private var en: Bool { L.lang == "en" }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label(en ? "Ask FOTIQ" : "اسأل FOTIQ", systemImage: "bubble.left.and.bubble.right").font(.headline)
+            BrandHeading(symbol: "bubble.left.and.bubble.right", title: en ? "Ask" : "اسأل")
             DisclosureGroup {
                 TextField(en ? "Search by name" : "ابحث بالاسم", text: $search)
                     .accessibilityIdentifier("analyst-entity-search").textFieldStyle(.roundedBorder).onSubmit { Task { await find() } }
