@@ -227,8 +227,8 @@ struct HeroCard: View {
             HStack {
                 VStack(spacing: 6) { RemoteImage(url: f.home.logo, size: 52); TeamName(name: f.home.name) }.frame(maxWidth: .infinity)
                 VStack(spacing: 6) {
-                    Text(f.isUpcoming ? Fmt.time(f.kickoff) : f.scoreText).font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
-                        .environment(\.layoutDirection, .leftToRight)
+                    FixtureScore(f: f).font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
+
                     StatusBadge(f: f)
                     if !Calendar.current.isDateInToday(f.kickoff) { Text(Fmt.dateLabel(f.kickoff)).font(.caption2).foregroundStyle(.secondary) }
                 }
@@ -261,7 +261,7 @@ struct LiveTicker: View {
                             NavigationLink(value: Route.match(f.id)) {
                                 HStack(spacing: 8) {
                                     RemoteImage(url: f.home.logo, size: 26)
-                                    Text(f.scoreText).font(.headline).monospacedDigit().environment(\.layoutDirection, .leftToRight)
+                                    FixtureScore(f: f).font(.headline).monospacedDigit()
                                     RemoteImage(url: f.away.logo, size: 26)
                                     LivePill(minute: f.status.elapsed, extra: f.status.extra, status: f.status.short)
                                 }
@@ -269,7 +269,7 @@ struct LiveTicker: View {
                                 .frame(minHeight: 48)
                                 .contentShape(.capsule)
                                 .accessibilityElement(children: .combine)
-                                .accessibilityLabel(Text(verbatim: "\(f.home.name) \(f.scoreText) \(f.away.name)"))
+                                .accessibilityLabel(Text(verbatim: "\(f.home.name): \(f.goals.home.map(String.init) ?? "–")؛ \(f.away.name): \(f.goals.away.map(String.init) ?? "–")"))
                                 .glassEffect(.regular.interactive(), in: .capsule)
                             }.buttonStyle(.plain)
                         }

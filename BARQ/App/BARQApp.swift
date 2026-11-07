@@ -148,7 +148,7 @@ struct ScreenRouter: View {
             ScrollView {
                 if let m = timelineMatch {
                     VStack(spacing: 8) {
-                        Text("\(m.match.home.name) \(m.match.scoreText) \(m.match.away.name)").font(.headline)
+                        HStack { Text(m.match.home.name); FixtureScore(f: m.match); Text(m.match.away.name) }.font(.headline)
                         TimelineSection(d: m)
                     }.padding(.horizontal)
                 } else { ProgressView() }

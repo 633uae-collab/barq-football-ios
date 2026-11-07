@@ -16,6 +16,9 @@ on:
       - BARQUITests/LaunchJourneyUITests.swift
       - ci/verify-launch-timing.py
       - ci/record-launch.sh
+      - BARQUITests/ScoreAssociationUITests.swift
+      - BARQ/Views/Components.swift
+      - BARQ/Resources/LaunchScreen.storyboard
 permissions:
   contents: read
 jobs:
@@ -67,6 +70,10 @@ jobs:
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
       - name: Record unedited close and quick reopen separately
         run: bash ci/record-launch.sh quick
+      - name: Verify real score association in Arabic and English
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
       - name: Enforce measured cinematic and quick-launch budgets
         run: python3 ci/verify-launch-timing.py out/launch-timing.log
       - name: Collect new simulator screenshots
@@ -74,6 +81,7 @@ jobs:
         run: |
           mkdir -p out/screenshots
           cp /tmp/fotiq-launch-shots/*.png out/screenshots/ 2>/dev/null || true
+          cp /tmp/fotiq-launch-shots/score-source-*.json out/screenshots/ 2>/dev/null || true
       - name: Upload actual recordings and test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -85,4 +93,5 @@ jobs:
             build-ui.log
             unit.xcresult
             journey.xcresult
+            scores.xcresult
           retention-days: 14

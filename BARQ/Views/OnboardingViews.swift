@@ -159,22 +159,23 @@ struct SplashView: View {
     // The aperture stays INSIDE that space, never erasing part of the white F.
     static let gap = CGRect(x: 0.410, y: 0.372, width: 0.190, height: 0.084)
     static let target = UnitPoint(x: gap.midX, y: gap.midY)
-    static let hold = 0.30, push = 1.45, maxScale: CGFloat = 90
+    static let visibleWidth: CGFloat = 0.24
+    static let hold = 0.30, push = 1.45, maxScale: CGFloat = 60
     static var held: Double? {
         switch UserDefaults.standard.string(forKey: "splashHold") {
         case "start": 0; case "zoom": 0.55; case "reveal": 0.86; default: nil
         }
     }
-    static func ease(_ t: Double) -> Double { let x = min(1, max(0, t)); return x * x * (3 - 2 * x) }
+    static func ease(_ t: Double) -> Double { let x = min(1, max(0, t)); return x * x * x * (x * (x * 6 - 15) + 10) }
     /// Pinhole projection: moving the camera toward the logo plane changes its apparent size.
     static func scale(_ t: Double) -> CGFloat {
         let distance = exp(-log(Double(maxScale)) * ease(t))
         return CGFloat(1 / distance)
     }
     static func travel(_ t: Double) -> CGFloat { CGFloat(ease(min(1, t / 0.8))) }
-    static func hole(_ t: Double) -> CGFloat { CGFloat(ease((t - 0.16) / 0.32)) }
+    static func hole(_ t: Double) -> CGFloat { CGFloat(ease(t / 0.28)) }
     static func aperture(t: Double, size: CGSize) -> CGRect {
-        let side = size.width * 0.45 / 0.442
+        let side = size.width * Self.visibleWidth / 0.442
         let focus = CGPoint(x: (size.width - side) / 2 + target.x * side,
                             y: (size.height - side) / 2 + target.y * side)
         let k = travel(t), scale = scale(t), open = hole(t)
@@ -196,7 +197,7 @@ struct SplashView: View {
                 // otherwise hid the destination even when the backdrop had a hole.
                 context.clip(to: cover, style: FillStyle(eoFill: true))
                 context.fill(Path(bounds), with: .color(Color("LaunchBackground").opacity(0.995)))
-                let side = size.width * 0.45 / 0.442
+                let side = size.width * Self.visibleWidth / 0.442
                 let s = Self.scale(t), k = Self.travel(t)
                 let focus = CGPoint(x: (size.width - side) / 2 + Self.target.x * side,
                                     y: (size.height - side) / 2 + Self.target.y * side)

@@ -148,8 +148,7 @@ struct FavoriteHeroCard: View {
     @ViewBuilder var center: some View {
         if f.isLive {
             VStack(spacing: 6) {
-                Text(f.scoreText).font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
-                    .environment(\.layoutDirection, .leftToRight)
+                FixtureScore(f: f).font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
                     .accessibilityIdentifier("hero-score")
                 LivePill(minute: f.status.elapsed, extra: f.status.extra, status: f.status.short)
             }

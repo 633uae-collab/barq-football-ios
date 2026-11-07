@@ -1,3 +1,5 @@
+// Score children follow the SAME semantic direction as the surrounding team row.
+// Only each number is LTR; never force the home/away pair to LTR inside an RTL row.
 import SwiftUI
 
 /// Remote image with in-memory cache, shared disk URLCache and retry (AsyncImage gives up on the first
@@ -151,7 +153,7 @@ struct MatchRow: View {
                 teamCol(f.home)
                 VStack(spacing: 4) {
                     if f.isUpcoming { Text(Fmt.time(f.kickoff)).font(.headline).monospacedDigit() }
-                    else { Text(f.scoreText).font(.title3.bold()).monospacedDigit().environment(\.layoutDirection, .leftToRight) }
+                    else { FixtureScore(f: f).font(.title3.bold()).monospacedDigit() }
                     StatusBadge(f: f)
                 }.frame(width: 92)
                 teamCol(f.away)
@@ -186,7 +188,7 @@ struct MatchPreview: View {
             HStack { RemoteImage(url: f.league.logo, fallback: "trophy", size: 20); Text(f.league.name).font(.caption); Spacer(); StatusBadge(f: f) }
             HStack {
                 VStack { RemoteImage(url: f.home.logo, size: 56); Text(f.home.name).font(.subheadline.bold()) }.frame(maxWidth: .infinity)
-                Text(f.isUpcoming ? Fmt.time(f.kickoff) : f.scoreText).font(.largeTitle.bold()).monospacedDigit()
+                FixtureScore(f: f).font(.largeTitle.bold()).monospacedDigit()
                 VStack { RemoteImage(url: f.away.logo, size: 56); Text(f.away.name).font(.subheadline.bold()) }.frame(maxWidth: .infinity)
             }
             if let v = f.venue { Label(v, systemImage: "sportscourt").font(.caption).foregroundStyle(.secondary) }
@@ -221,3 +223,25 @@ extension View {
     }
 }
 
+
+
+struct FixtureScore: View {
+    let f: Fixture
+    var body: some View {
+        Group {
+            if f.isUpcoming {
+                Text(Fmt.time(f.kickoff)).environment(\.layoutDirection, .leftToRight)
+            } else {
+                HStack(spacing: 5) {
+                    Text(f.goals.home.map(String.init) ?? "–")
+                        .environment(\.layoutDirection, .leftToRight)
+                        .accessibilityIdentifier("score-home-\(f.id)")
+                    Text("-").accessibilityHidden(true)
+                    Text(f.goals.away.map(String.init) ?? "–")
+                        .environment(\.layoutDirection, .leftToRight)
+                        .accessibilityIdentifier("score-away-\(f.id)")
+                }
+            }
+        }.monospacedDigit()
+    }
+}

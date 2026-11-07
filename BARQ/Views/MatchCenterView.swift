@@ -129,8 +129,8 @@ struct Scoreboard: View {
             HStack(alignment: .top) {
                 team(f.home)
                 VStack(spacing: 8) {
-                    Text(f.isUpcoming ? Fmt.time(f.kickoff) : f.scoreText).font(.system(size: 44, weight: .heavy, design: .rounded)).monospacedDigit()
-                        .environment(\.layoutDirection, .leftToRight).contentTransition(.numericText())
+                    FixtureScore(f: f).font(.system(size: 44, weight: .heavy, design: .rounded)).monospacedDigit()
+                        .contentTransition(.numericText())
                     StatusBadge(f: f)
                     Text(Fmt.dateLabel(f.kickoff)).font(.caption2).foregroundStyle(.secondary)
                 }
@@ -146,7 +146,7 @@ struct Scoreboard: View {
     }
     func team(_ t: TeamRef) -> some View {
         NavigationLink(value: Route.team(t.id)) {
-            VStack(spacing: 8) { RemoteImage(url: t.logo, size: 70); Text(t.name).font(.subheadline.bold()).multilineTextAlignment(.center) }.frame(maxWidth: .infinity)
+            VStack(spacing: 8) { RemoteImage(url: t.logo, size: 70); Text(t.name).accessibilityIdentifier("score-team-\(f.id)-\(t.id)").font(.subheadline.bold()).multilineTextAlignment(.center) }.frame(maxWidth: .infinity)
         }.buttonStyle(.plain)
     }
 }

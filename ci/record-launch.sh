@@ -10,6 +10,11 @@ if [[ "$MODE" == first ]]; then
 fi
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > "out/$MODE-timing.log" 2>&1 &
 LOG=$!
+xcrun simctl io "$UDID" recordVideo --codec=h264 --force "out/$MODE-launch-uncut.mp4" > "out/$MODE-recording.log" 2>&1 &
+REC=$!
+cleanup() { kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true; }
+trap cleanup EXIT
+sleep 2
 if [[ "$MODE" == quick ]]; then
   # XCTest can terminate its app on completion. Bring the completed user's home
   # onscreen before recording the subsequent close/reopen, without changing prefs.
@@ -22,12 +27,8 @@ if [[ "$MODE" == quick ]]; then
   sleep 2
   : > "out/$MODE-timing.log"
 fi
-xcrun simctl io "$UDID" recordVideo --codec=h264 --force "out/$MODE-launch-uncut.mp4" > "out/$MODE-recording.log" 2>&1 &
-REC=$!
-cleanup() { kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true; }
-trap cleanup EXIT
-sleep 2
-# Quick capture includes the existing home screen, actual termination and relaunch.
+# Recorder starts before warm launch so it receives changed frames before the
+# subsequent termination. simctl otherwise omits the unchanged leading home frame.
 if [[ "$MODE" == quick ]]; then
   xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
   sleep 1
