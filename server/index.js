@@ -9,6 +9,7 @@ const storage = openStorage(dbPath);
 const provider = new Provider({ key, dailyLimit });
 const { GroqAnalyst } = require('./groq');
 const analyst = new GroqAnalyst({ key: process.env.GROQ_API_KEY, token: process.env.FOTIQ_AI_EVAL_TOKEN,
+  chatEnabled: process.env.FOTIQ_AI_CHAT_ENABLED === 'true',
   enabled: process.env.FOTIQ_AI_EVAL_ENABLED === 'true',
   freePlanConfirmed: process.env.GROQ_FREE_PLAN_CONFIRMED === 'true' });
 const observations = new Observations(storage);

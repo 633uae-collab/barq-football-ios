@@ -15,6 +15,7 @@ struct AIView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
+                AnalystChatView()
                 hero
                 SectionHeader(title: "التحليل المباشر", symbol: "waveform.path.ecg")
                 LoadState(value: feed, error: error, retry: load) { f in

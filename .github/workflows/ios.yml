@@ -88,6 +88,8 @@ jobs:
           LGP=$!
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -resultBundlePath ui.xcresult -skip-testing:BARQUITests/LiveTimelineUITests -skip-testing:BARQUITests/HomeReviewUITests 2>&1 | tee uitest.log | grep -E "Test Case|HOMEV8|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
           mkdir -p shots/onboarding; cp /tmp/onb-*.png shots/onboarding/ || true
+          cp /tmp/fotiq-chat-results.txt shots/ || true
+          cp /tmp/v7-chat-*.png shots/ || true
           kill $LGP || true; mkdir -p diag; cp ui-app-timing.log diag/ || true
           grep -q "TEST SUCCEEDED" uitest.log
           mkdir -p shots; cp /tmp/v7-*.png shots/ || true; cp /tmp/fotiq-springboard.png shots/v4-00-home-screen-icon.png || echo "no springboard capture"

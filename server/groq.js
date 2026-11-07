@@ -6,8 +6,8 @@ const { validateEventTimes } = require('./analyst-validation');
 const MODEL = 'openai/gpt-oss-120b';
 // Private evaluation only. Enabling this does not verify or change Groq billing.
 class GroqAnalyst {
-  constructor({ key, token, enabled = false, freePlanConfirmed = false, fetchImpl = fetch, now = Date.now } = {}) {
-    Object.assign(this, { key, token, enabled, freePlanConfirmed, fetch: fetchImpl, now });
+  constructor({ key, token, enabled = false, freePlanConfirmed = false, chatEnabled = false, fetchImpl = fetch, now = Date.now } = {}) {
+    Object.assign(this, { key, token, enabled, freePlanConfirmed, chatEnabled, fetch: fetchImpl, now });
     this.active = false; this.blockedUntil = 0;
   }
   authorize(header) {
@@ -59,6 +59,7 @@ class GroqAnalyst {
   }
 }
 function mountGroq(app, { analyst, provider }) {
+  require('./chat').mountChat(app, { analyst, provider });
   app.post('/api/analyst/evaluate', async (req, res) => {
     analyst.authorize(req.get('authorization'));
     const { question, fixtureId } = req.body || {};
