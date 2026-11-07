@@ -145,4 +145,20 @@ final class HomeReviewUITests: XCTestCase {
     func testCaptureFullSettings() throws { try captureSupplement("settings", screen: "settings") }
     func testCaptureCurrentAnalyst() throws { try captureSupplement("analyst", screen: "ai") }
 
+
+    func testCaptureNativeTabBarOnEveryRootPage() throws {
+        for tab in ["home", "matches", "ai", "favorites", "search"] {
+            let app = XCUIApplication.fotiq()
+            // No -screen argument: exercise the real RootView and native TabView.
+            app.launchArguments = ["-lang", "ar", "-startTab", tab]
+            app.launch()
+            XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 30),
+                          "Native tab bar must exist on root page: \(tab)")
+            sleep(8)
+            try XCUIScreen.main.screenshot().pngRepresentation.write(
+                to: URL(fileURLWithPath: "/tmp/review-home-native-tabs-\(tab).png"))
+            app.terminate()
+        }
+    }
+
 }
