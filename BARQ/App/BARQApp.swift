@@ -48,15 +48,16 @@ struct RootView: View {
         TabView(selection: $tab) {
             Tab("الرئيسية", systemImage: "house", value: AppTab.home) { NavigationStack { HomeView() } }
             Tab("المباريات", systemImage: "soccerball", value: AppTab.matches) { NavigationStack { MatchesView() } }
-            Tab(value: AppTab.ai) {
-                NavigationStack { AIView() }
-            } label: {
-                AnalystTabLabel()
-            }
+            // Keep a native, named tab item so iOS owns the Liquid Glass bar,
+            // hit target, selection and accessibility. A tiny UIKit bridge below
+            // replaces only this item's static symbol with the live SwiftUI emblem;
+            // SwiftUI otherwise snapshots animated custom Tab labels on iOS 26.
+            Tab("المحلل", systemImage: "circle", value: AppTab.ai) { NavigationStack { AIView() } }
             Tab("المفضلة", systemImage: "star", value: AppTab.favorites) { NavigationStack { FavoritesView() } }
             Tab(value: AppTab.search, role: .search) { NavigationStack { SearchView() } }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .background(AnalystTabBarEmblemInstaller().frame(width: 0, height: 0))
         .sheet(item: Binding(get: { deepLink.fixtureId.map { IdBox(id: $0) } }, set: { deepLink.fixtureId = $0?.id })) { box in
             NavigationStack { MatchCenterView(fixtureId: box.id) }
         }

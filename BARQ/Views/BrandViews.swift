@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Uses the existing original bitmap, cropped only to its transparent/ navy margins.
 struct BrandMark: View {
@@ -55,16 +56,130 @@ struct AnalystEmblem: View {
     }
 }
 
-/// Compact form of the exact same analyst emblem used by the AI hero.
-/// It intentionally keeps the native Tab label and Liquid Glass container.
-struct AnalystTabLabel: View {
-    var body: some View {
-        Label {
-            Text("المحلل")
-        } icon: {
-            AnalystEmblem(size: 24, alwaysAnimate: true)
-                .accessibilityHidden(true)
-                .accessibilityIdentifier("analyst-tab-emblem")
+/// Installs a live copy of the exact hero emblem inside the native analyst tab
+/// button. iOS 26 snapshots custom `Tab` labels, so putting TimelineView directly
+/// in the label produces a static icon. This bridge leaves UITabBar, its Liquid
+/// Glass material, dimensions, ordering, text, hit testing and accessibility fully
+/// system-owned; it hides only the analyst button's placeholder UIImageView.
+struct AnalystTabBarEmblemInstaller: UIViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.isUserInteractionEnabled = false
+        view.onWindowChange = { [weak coordinator = context.coordinator, weak view] in
+            guard let view else { return }
+            coordinator?.scheduleInstall(from: view)
         }
+        return view
+    }
+
+    func updateUIView(_ uiView: ProbeView, context: Context) {
+        context.coordinator.scheduleInstall(from: uiView)
+    }
+
+    static func dismantleUIView(_ uiView: ProbeView, coordinator: Coordinator) {
+        coordinator.removeInstalledEmblem()
+    }
+
+    final class ProbeView: UIView {
+        var onWindowChange: (() -> Void)?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            onWindowChange?()
+        }
+    }
+
+    @MainActor final class Coordinator {
+        private weak var analystButton: UIControl?
+        private weak var placeholderImage: UIImageView?
+        private weak var parentController: UIViewController?
+        private var host: UIHostingController<AnyView>?
+        private var installTask: Task<Void, Never>?
+
+        func scheduleInstall(from probe: UIView) {
+            guard host == nil else { return }
+            installTask?.cancel()
+            installTask = Task { @MainActor [weak self, weak probe] in
+                // The system creates UITabBar after the TabView hierarchy appears.
+                // This bounded wait runs only at installation, never per animation frame.
+                for _ in 0..<30 where !Task.isCancelled {
+                    guard let self, let probe, let root = probe.window else { return }
+                    if self.install(in: root) { return }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+        }
+
+        private func install(in root: UIView) -> Bool {
+            guard let tabBar = root.firstDescendant(of: UITabBar.self) else { return false }
+            let buttons = tabBar.allDescendants(of: UIControl.self)
+            guard let button = buttons.first(where: {
+                ($0.accessibilityLabel == "المحلل") || ($0.accessibilityIdentifier == "المحلل")
+            }) else { return false }
+            guard let imageView = button.allDescendants(of: UIImageView.self).first(where: { !$0.isHidden }) else {
+                return false
+            }
+
+            imageView.isHidden = true
+            let emblem = AnalystEmblem(size: 24, alwaysAnimate: true)
+                .accessibilityHidden(true)
+            let controller = UIHostingController(rootView: AnyView(emblem))
+            controller.view.backgroundColor = .clear
+            controller.view.isUserInteractionEnabled = false
+            controller.view.translatesAutoresizingMaskIntoConstraints = false
+            let parent = button.nearestViewController
+            parent?.addChild(controller)
+            button.addSubview(controller.view)
+            NSLayoutConstraint.activate([
+                controller.view.widthAnchor.constraint(equalToConstant: 24),
+                controller.view.heightAnchor.constraint(equalToConstant: 24),
+                controller.view.centerXAnchor.constraint(equalTo: imageView.centerXAnchor),
+                controller.view.centerYAnchor.constraint(equalTo: imageView.centerYAnchor)
+            ])
+            controller.didMove(toParent: parent)
+
+            analystButton = button
+            placeholderImage = imageView
+            parentController = parent
+            host = controller
+            return true
+        }
+
+        func removeInstalledEmblem() {
+            installTask?.cancel()
+            host?.willMove(toParent: nil)
+            host?.view.removeFromSuperview()
+            host?.removeFromParent()
+            placeholderImage?.isHidden = false
+            host = nil
+            analystButton = nil
+            parentController = nil
+        }
+    }
+}
+
+private extension UIView {
+    var nearestViewController: UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let controller = current as? UIViewController { return controller }
+            responder = current.next
+        }
+        return nil
+    }
+
+    func firstDescendant<T: UIView>(of type: T.Type) -> T? {
+        if let match = self as? T { return match }
+        for child in subviews {
+            if let match = child.firstDescendant(of: type) { return match }
+        }
+        return nil
+    }
+
+    func allDescendants<T: UIView>(of type: T.Type) -> [T] {
+        var result = self is T ? [self as! T] : []
+        for child in subviews { result.append(contentsOf: child.allDescendants(of: type)) }
+        return result
     }
 }
