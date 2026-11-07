@@ -62,12 +62,15 @@ async function collectEvidence(provider, question, context = {}, history = []) {
     limitations: ['Starting lineups are not current tactical shape.', 'No causal claim or probability is established by match totals.', 'Retrieval time is not the provider update time.',
       'Player passing.keyPasses are chances created, not assists. passing.accuracyProviderValue has no verified unit and must not be printed as a percentage.'] };
   const namedTeams = aliases.filter(([, re]) => re.test(question)).map(([id]) => id);
-  const changesTopic = namedTeams.length > 0 || /\blive\b|مباشر|premier league|الدوري الإنجليزي|الدوري الانجليزي/i.test(question);
+  const namesPlayer = /\bhaaland\b|هالاند/i.test(question);
+  const changesTopic = namesPlayer || namedTeams.length > 0 || /\blive\b|مباشر|premier league|الدوري الإنجليزي|الدوري الانجليزي/i.test(question);
   const previousQuestion = [...history].reverse().find(m => m.role === 'user')?.content || '';
   const routingQuestion = changesTopic ? question : question + ' ' + previousQuestion;
-  const teamIds = namedTeams.length ? namedTeams : context.teamIds || [];
+  const teamIds = namesPlayer ? [] : namedTeams.length ? namedTeams : context.teamIds || [];
 
-  const playerIds = context.playerIds || [];
+  // Identity alias only; profile and every statistic are still retrieved fresh.
+  const namedPlayerIds = namesPlayer ? [1100] : [];
+  const playerIds = namedPlayerIds.length ? namedPlayerIds : context.playerIds || [];
   const seasonComparison = teamIds.length === 2 && /season|الموسم/i.test(question);
   if (seasonComparison) {
     evidence.seasonOnlyComparison = true;
@@ -202,7 +205,7 @@ async function collectEvidence(provider, question, context = {}, history = []) {
       evidence.playerProfiles.push(item);
     }
   } else if (/player|لاعب/i.test(question) && !evidence.scoringLeaders && !fixtureId) {
-    missing.push('Ask the user to select a player identifier; do not guess which player they mean.');
+    missing.push('Ask the user to name the player in the conversation; do not guess which player they mean.');
   }
   if (!sources.length) missing.push('Ask the user to specify a match, supported club, or player. No facts have been retrieved for this question.');
   if (Buffer.byteLength(JSON.stringify(evidence)) > 17500 && evidence.players) {

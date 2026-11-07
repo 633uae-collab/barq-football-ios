@@ -44,7 +44,7 @@ test('missing live fixtures and unspecified player produce explicit limitations,
   const live = await collectEvidence(provider, 'حلل مباراة مباشرة الآن');
   assert.ok(live.missing.some(s => s.includes('No live'))); assert.equal(live.fixtureId, undefined);
   const player = await collectEvidence(provider, 'Analyze a player over the last five matches');
-  assert.ok(player.missing.some(s => s.includes('select a player'))); assert.equal(player.sources.length, 0);
+  assert.ok(player.missing.some(s => s.includes('name the player'))); assert.equal(player.sources.length, 0);
 });
 test('player recent fixtures explicitly retain missing appearances', async () => {
   const evidence = await collectEvidence({ load: async path => {
@@ -190,5 +190,17 @@ test('unavailable domestic season and inconsistent season totals remain unavaila
       path.startsWith('/teams/statistics?') ? {fixtures:{played:{total:4},wins:{total:3},draws:{total:1},loses:{total:2}}} : []})},'Compare Barcelona and Real Madrid this season');
     assert.ok(e.missing.length > 0);
     assert.ok(e.clubs.every(c => inconsistent ? c.season.totals === null : !c.season));
+  }
+});
+
+
+test('typed Haaland questions resolve identity without a picker and retrieve fresh profiles', async () => {
+  for (const question of ['Analyze Haaland over the last five matches', 'حلل أداء هالاند خلال آخر خمس مباريات']) {
+    const paths=[];
+    const evidence=await collectEvidence({load:async path=>{paths.push(path);return {fetchedAt:1000,data:[]};}},question);
+    assert.ok(paths.includes('/players/profiles?player=1100'));
+    assert.ok(paths.includes('/players/teams?player=1100'));
+    assert.deepEqual(evidence.followUpContext.playerIds,[1100]);
+    assert.ok(evidence.missing.some(x=>x.includes('No season available')));
   }
 });
