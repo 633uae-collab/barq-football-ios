@@ -42,3 +42,12 @@ test('welcome uses GPT OSS 120B, sends phase only and honours upstream quota',as
  await assert.rejects(()=>analyst.welcome({phase:'live'},'en'));
  assert.equal(count,1);assert.equal(analyst.blockedUntil,epoch+30000);
 });
+
+test('freshness uses response time after network latency and expiry never outlives source freshness',async()=>{
+ let now=epoch;
+ const service=new WelcomeService({now:()=>now,provider:{load:async()=>{now+=5000;return{data:[fixture()],fetchedAt:now};}},analyst:{chatEnabled:true,freePlanConfirmed:true,key:'test',blockedUntil:0,welcome:async()=> 'وش تبا تعرف عن مجريات المباراة؟'}});
+ assert.equal((await service.get('ar')).dynamic,true);
+ const old=new WelcomeService({now:()=>now,provider:{load:async()=>({data:[fixture()],fetchedAt:now-119000})},analyst:service.analyst});
+ assert.equal((await old.get('ar')).expiresAt,now+1000);
+ now+=1001;assert.equal((await old.get('ar')).dynamic,false);
+});

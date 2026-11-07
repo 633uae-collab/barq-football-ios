@@ -22,7 +22,7 @@ function validInvitation(text, lang) {
 }
 class WelcomeService {
   constructor({ provider, analyst, now=()=>Date.now() }) {
-    Object.assign(this,{provider,analyst,now}); this.checkedAt=0; this.event=undefined; this.texts=new Map(); this.generating=null; this.refreshing=null;
+    Object.assign(this,{provider,analyst,now}); this.checkedAt=-Infinity; this.sourceExpiresAt=0; this.event=undefined; this.texts=new Map(); this.generating=null; this.refreshing=null;
     this.day=''; this.count=0; this.nextGeneration=0;
   }
   fallback(lang) { return {text:FALLBACK[lang],dynamic:false,expiresAt:this.now()+60000}; }
@@ -34,7 +34,11 @@ class WelcomeService {
       try {
         const now=this.now(), date=new Date(now).toISOString().slice(0,10);
         const r=await this.provider.load('/fixtures?'+new URLSearchParams({date,timezone:'UTC'}));
-        if (!r.stale && Number.isFinite(r.fetchedAt) && now-r.fetchedAt>=0 && now-r.fetchedAt<=120000) this.event=selectEvent(r.data,now);
+        const receivedAt=this.now();
+        if (!r.stale && Number.isFinite(r.fetchedAt) && receivedAt-r.fetchedAt>=0 && receivedAt-r.fetchedAt<=120000) {
+          this.event=selectEvent(r.data,receivedAt);
+          this.sourceExpiresAt=r.fetchedAt+120000;
+        }
       } catch { /* A stale or unavailable source must withdraw the event. */ }
       this.checkedAt=this.now();
     })().finally(()=>{this.refreshing=null;});
@@ -44,7 +48,7 @@ class WelcomeService {
     const lang=rawLang==='en'?'en':'ar';
     await this.refresh();
     const event=this.event, now=this.now();
-    if (!event || now-this.checkedAt>=60000) return this.fallback(lang);
+    if (!event || now>=this.sourceExpiresAt || now-this.checkedAt>=60000) return this.fallback(lang);
     if (event.phase==='before' && now>=event.kickoff) return this.fallback(lang);
     const key=event.id+':'+event.phase+':'+lang;
     if (!this.texts.has(key)) {
@@ -64,11 +68,11 @@ class WelcomeService {
       await this.generating;
     }
     const invitation=this.texts.get(key), current=this.now();
-    if (!invitation || current-this.checkedAt>=60000 || (event.phase==='before' && current>=event.kickoff)) return this.fallback(lang);
+    if (!invitation || current>=this.sourceExpiresAt || current-this.checkedAt>=60000 || (event.phase==='before' && current>=event.kickoff)) return this.fallback(lang);
     const phase=lang==='ar'?{before:'قريباً',live:'مباشر الآن',after:'انتهت المباراة'}:{before:'Coming up',live:'Live now',after:'Match finished'};
     // Event identity and timing are provider-owned; Groq writes only the invitation.
     return {text:`${event.home} × ${event.away} — ${phase[event.phase]}. ${invitation}`,dynamic:true,
-      expiresAt:Math.min(this.checkedAt+60000,event.phase==='before'?event.kickoff:Infinity),fixtureId:event.id,phase:event.phase};
+      expiresAt:Math.min(this.sourceExpiresAt,this.checkedAt+60000,event.phase==='before'?event.kickoff:Infinity),fixtureId:event.id,phase:event.phase};
   }
 }
 function mountWelcome(app, dependencies) {
