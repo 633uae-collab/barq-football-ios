@@ -10,10 +10,12 @@ struct AIView: View {
     @State private var scorers: [TopPlayer] = []
     @State private var spin = false
     @State private var speaker = AVSpeechSynthesizer()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
+                AnalystChatView()
                 hero
                 SectionHeader(title: "التحليل المباشر", symbol: "waveform.path.ecg")
                 LoadState(value: feed, error: error, retry: load) { f in
@@ -38,7 +40,13 @@ struct AIView: View {
         .screenBackground()
         .navigationTitle("FOTIQ AI")
         .barqDestinations()
-        .task { await load() }
+        .task {
+            await load()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(30)) } catch { break }
+                if scenePhase == .active { await load() }
+            }
+        }
         .refreshable { await load() }
     }
 

@@ -44,29 +44,132 @@ final class HomeReviewUITests: XCTestCase {
         }
         // toolbar buttons
         let bar = app.navigationBars["FOTIQ"]
-        let count = bar.buttons.count
-        for i in 0..<count {
-            let b = bar.buttons.element(boundBy: i)
-            guard b.exists, b.isHittable else { continue }
-            let label = b.label.replacingOccurrences(of: " ", with: "_")
-            b.tap(); sleep(6)
-            shot("toolbar\(i)-\(label)")
-            back(app)
-            if !bar.exists { app.swipeDown(velocity: .fast); sleep(2) }
+        let toolbarIDs = ["home-notifications", "home-news", "home-reorder", "home-settings"]
+        for identifier in toolbarIDs {
+            let button = app.buttons[identifier]
+            XCTAssertTrue(button.waitForExistence(timeout: 10))
+            XCTAssertTrue(button.isHittable, "Toolbar action must be reachable: \(identifier)")
+            button.tap(); sleep(6)
+            shot(identifier)
+            if identifier == "home-reorder" {
+                let done = app.buttons["تم"].firstMatch
+                XCTAssertTrue(done.waitForExistence(timeout: 10)); done.tap()
+            } else { back(app) }
+            XCTAssertTrue(app.navigationBars["FOTIQ"].waitForExistence(timeout: 10))
         }
         // long-press a match row (context menu + quick preview)
         for _ in 0..<3 { app.swipeUp(velocity: .slow) }
         sleep(2)
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS ' - ' OR label CONTAINS ':'")).element(boundBy: 2)
         if row.exists, row.isHittable { row.press(forDuration: 1.5); sleep(3); shot("longpress-preview"); app.tap(); sleep(2) }
+        // Start the independent navigation check from Home, not from a context-menu preview.
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["home-news"].waitForExistence(timeout: 30))
         // "all leagues" link at the bottom
         for _ in 0..<12 { app.swipeUp(velocity: .fast) }
-        let all = app.buttons["كل الدوريات"]
-        if all.waitForExistence(timeout: 5) { all.tap(); sleep(6); shot("all-leagues"); back(app) }
+        // Both Upcoming and Today contain this link. Select the visible instance after scrolling.
+        let links = app.buttons.matching(identifier: "كل الدوريات")
+        let ready = NSPredicate { _, _ in links.allElementsBoundByIndex.contains { $0.isHittable } }
+        let visible = XCTNSPredicateExpectation(predicate: ready, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 10), .completed,
+                       "All leagues link must be reachable from Home")
+        if let all = links.allElementsBoundByIndex.first(where: { $0.isHittable }) {
+            all.tap(); sleep(6); shot("all-leagues"); back(app)
+        }
         // open first hero card -> match center
         for _ in 0..<14 { app.swipeDown(velocity: .fast) }
         sleep(2)
         hero.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap(); sleep(8); shot("hero-open-match"); back(app)
-        print("HOME_REVIEW toolbar buttons=\(count) labels=\((0..<count).map { bar.buttons.element(boundBy: $0).label })")
+        print("HOME_REVIEW toolbar actions=\(toolbarIDs)")
     }
+
+    // Separate tests keep a failed tab from preventing capture of other requested pages.
+    // These run in the existing dedicated review phase, not instead of the full UI suite.
+    func captureSupplement(_ name: String, screen: String, id: Int = 0,
+                           tab: String? = nil, secondTeam: Bool = false) throws {
+        let app = XCUIApplication.fotiq()
+        app.launchArguments = ["-lang", "ar", "-screen", screen, "-id", String(id)]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 30))
+        // Render Free can cold-start slowly. Preserve errors in evidence rather than fabricating content.
+        if let tab {
+            let button = app.buttons[tab].firstMatch
+            guard button.waitForExistence(timeout: 90) else {
+                shot("extra-\(name)-tab-missing")
+                XCTFail("Capture tab missing: \(tab)")
+                return
+            }
+            button.tap()
+        } else {
+            sleep(15)
+        }
+        sleep(5)
+        if secondTeam {
+            let team = app.segmentedControls.firstMatch.buttons.element(boundBy: 1)
+            guard team.waitForExistence(timeout: 30) else {
+                shot("extra-\(name)-team-missing")
+                XCTFail("Second lineup team unavailable")
+                return
+            }
+            team.tap(); sleep(2)
+        }
+        let win = app.windows.firstMatch
+        var previous = ""
+        var stable = 0
+        var bottom = false
+        for page in 1...24 {
+            let data = XCUIScreen.main.screenshot().pngRepresentation
+            let file = String(format: "/tmp/review-home-extra-%@-%02d.png", name, page)
+            try data.write(to: URL(fileURLWithPath: file))
+            // Visible text positions remain unchanged after scrolling at the bottom.
+            // Two stable passes reduce false stops during delayed lazy layout.
+            // Capture one immutable tree: a refresh must not invalidate index-bound elements mid-read.
+            let snapshot = try app.snapshot()
+            func texts(_ node: XCUIElementSnapshot) -> [XCUIElementSnapshot] {
+                (node.elementType == .staticText ? [node] : []) + node.children.flatMap { texts($0) }
+            }
+            let signature = texts(snapshot).compactMap { element -> String? in
+                let f = element.frame
+                guard f.intersects(snapshot.frame), !f.isEmpty else { return nil }
+                return "\(element.label):\(Int(f.minY.rounded()))"
+            }.joined(separator: "|")
+            stable = !signature.isEmpty && signature == previous ? stable + 1 : 0
+            if stable >= 2 { bottom = true; break }
+            previous = signature
+            win.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78))
+                .press(forDuration: 0.1, thenDragTo: win.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
+            sleep(2)
+        }
+        let status = bottom ? "scroll-stable; inspect images for content/errors" : "capture-limit-reached; coverage incomplete"
+        try status.write(toFile: "/tmp/review-home-extra-\(name)-coverage.txt", atomically: true, encoding: .utf8)
+        print("HOME_REVIEW supplemental \(name): \(status)")
+    }
+
+    func testCaptureMatchLineupsHome() throws { try captureSupplement("lineups-home", screen: "match", id: 1575218, tab: "التشكيلة") }
+    func testCaptureMatchLineupsAway() throws { try captureSupplement("lineups-away", screen: "match", id: 1575218, tab: "التشكيلة", secondTeam: true) }
+    func testCaptureMatchStatistics() throws { try captureSupplement("statistics", screen: "match", id: 1575218, tab: "الإحصائيات") }
+    func testCaptureLeagueScorers() throws { try captureSupplement("scorers", screen: "league", id: 39, tab: "الهدافون") }
+    func testCaptureLeagueAssists() throws { try captureSupplement("assists", screen: "league", id: 39, tab: "صناع الأهداف") }
+    func testCaptureFullClub() throws { try captureSupplement("club", screen: "club", id: 40) }
+    func testCaptureFullPlayer() throws { try captureSupplement("player", screen: "player", id: 1100) }
+    func testCaptureFullSettings() throws { try captureSupplement("settings", screen: "settings") }
+    func testCaptureCurrentAnalyst() throws { try captureSupplement("analyst", screen: "ai") }
+
+
+    func testCaptureNativeTabBarOnEveryRootPage() throws {
+        for tab in ["home", "matches", "ai", "favorites", "search"] {
+            let app = XCUIApplication.fotiq()
+            // No -screen argument: exercise the real RootView and native TabView.
+            app.launchArguments = ["-lang", "ar", "-startTab", tab]
+            app.launch()
+            XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 30),
+                          "Native tab bar must exist on root page: \(tab)")
+            sleep(8)
+            try XCUIScreen.main.screenshot().pngRepresentation.write(
+                to: URL(fileURLWithPath: "/tmp/review-home-native-tabs-\(tab).png"))
+            app.terminate()
+        }
+    }
+
 }
