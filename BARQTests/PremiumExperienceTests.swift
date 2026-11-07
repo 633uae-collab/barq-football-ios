@@ -2,6 +2,18 @@ import XCTest
 @testable import BARQ
 
 final class PremiumExperienceTests: XCTestCase {
+    func testBrandMarkHasTransparentMatteAndPreservesOriginalColors() throws {
+        let cg = try XCTUnwrap(TransparentBrandMark.image.cgImage)
+        let bytes = try XCTUnwrap(cg.dataProvider?.data) as Data
+        func pixel(_ x: Int, _ y: Int) -> [UInt8] {
+            let offset = y * cg.bytesPerRow + x * 4
+            return Array(bytes[offset..<(offset + 4)])
+        }
+        XCTAssertEqual(pixel(512, 200), [0, 0, 0, 0])
+        XCTAssertEqual(pixel(512, 420), [0, 0, 0, 0])
+        XCTAssertEqual(pixel(300, 500), [255, 255, 255, 255])
+        XCTAssertEqual(pixel(680, 530), [0, 196, 106, 255])
+    }
     func testCameraClockUsesElapsedTimeWithoutFrameClamp() {
         let clock = SplashClock()
         XCTAssertEqual(clock.tick(100), 0)

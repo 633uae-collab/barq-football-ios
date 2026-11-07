@@ -1,11 +1,42 @@
 import SwiftUI
 import UIKit
 
-/// Uses the existing original bitmap, cropped only to its transparent/ navy margins.
+/// Removes only the original bitmap's dark matte, once, without redrawing the mark.
+enum TransparentBrandMark {
+    static let image: UIImage = {
+        guard let source = UIImage(named: "SplashMark"), let cg = source.cgImage else { return UIImage() }
+        let width = cg.width, height = cg.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let space = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return source }
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // Source matte is RGB 8/11/18. Recover edge coverage against the original
+        // white letter or green dot, then remove the matte from antialiased edges.
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            let r = Double(pixels[i]), g = Double(pixels[i + 1]), b = Double(pixels[i + 2])
+            let green = g > r * 1.5 && g > b
+            let coverage = min(1, max(0, green ? (g - 11) / (196 - 11) : (r - 8) / (255 - 8)))
+            pixels[i] = UInt8(min(255, max(0, r - 8 * (1 - coverage))))
+            pixels[i + 1] = UInt8(min(255, max(0, g - 11 * (1 - coverage))))
+            pixels[i + 2] = UInt8(min(255, max(0, b - 18 * (1 - coverage))))
+            pixels[i + 3] = UInt8((coverage * 255).rounded())
+        }
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+              let output = CGImage(width: width, height: height, bitsPerComponent: 8,
+                bitsPerPixel: 32, bytesPerRow: width * 4, space: space,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        else { return source }
+        return UIImage(cgImage: output, scale: source.scale, orientation: source.imageOrientation)
+    }()
+}
+
 struct BrandMark: View {
     var height: CGFloat = 28
     var body: some View {
-        Image("SplashMark").resizable().interpolation(.high)
+        Image(uiImage: TransparentBrandMark.image).resizable().interpolation(.high)
             .frame(width: height * 2, height: height * 2)
             .frame(width: height * 0.90, height: height).clipped()
             .accessibilityLabel("FOTIQ")
@@ -122,7 +153,9 @@ struct AnalystTabBarEmblemInstaller: UIViewRepresentable {
             }
 
             imageView.isHidden = true
-            let emblem = AnalystEmblem(size: 24, alwaysAnimate: true)
+            // The visible ring occupies 140/170 of the artwork. At 30 points its
+            // visible diameter is ~25 points, matching the native soccerball.
+            let emblem = AnalystEmblem(size: 30, alwaysAnimate: true)
                 .accessibilityHidden(true)
             let controller = UIHostingController(rootView: AnyView(emblem))
             controller.view.backgroundColor = .clear
@@ -132,8 +165,8 @@ struct AnalystTabBarEmblemInstaller: UIViewRepresentable {
             parent?.addChild(controller)
             button.addSubview(controller.view)
             NSLayoutConstraint.activate([
-                controller.view.widthAnchor.constraint(equalToConstant: 24),
-                controller.view.heightAnchor.constraint(equalToConstant: 24),
+                controller.view.widthAnchor.constraint(equalToConstant: 30),
+                controller.view.heightAnchor.constraint(equalToConstant: 30),
                 controller.view.centerXAnchor.constraint(equalTo: imageView.centerXAnchor),
                 controller.view.centerYAnchor.constraint(equalTo: imageView.centerYAnchor)
             ])
