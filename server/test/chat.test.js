@@ -54,3 +54,15 @@ test('player recent fixtures explicitly retain missing appearances', async () =>
   assert.equal(evidence.playerProfiles[0].lastFiveTeamMatches[0].player, null);
   assert.ok(evidence.missing.some(s => s.includes('non-appearances')));
 });
+test('provider accepts documented team statistics objects but still rejects objects on list routes', async () => {
+  const { Provider } = require('../provider');
+  const provider = new Provider({ key: 'fake', fetchImpl: async () => new Response(JSON.stringify({ response: { fixtures: { played: { total: 10 } } } }), { headers: { 'content-type': 'application/json' } }) });
+  const stats = await provider.load('/teams/statistics?team=529&league=140&season=2026');
+  assert.equal(stats.data.fixtures.played.total, 10);
+  await assert.rejects(provider.load('/fixtures?id=7'), /UPSTREAM_INVALID_RESPONSE/);
+});
+test('Liverpool name does not accidentally select an unrelated live fixture', async () => {
+  const paths = [];
+  await collectEvidence({ load: async path => { paths.push(path); return { data: [], fetchedAt: 1000 }; } }, 'Analyze Liverpool');
+  assert.ok(!paths.some(p => p.includes('live=')));
+});

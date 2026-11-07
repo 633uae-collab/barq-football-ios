@@ -5,6 +5,9 @@ on:
     inputs:
       runner: { description: "macOS runner label (macos-26-intel if arm queue is stuck)", required: false, default: "macos-26" }
       api_base: { description: "Optional FOTIQ backend base URL (else secret FOTIQ_API_BASE, else Render preview)", required: false, default: "" }
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   backend-tests:
     runs-on: ubuntu-latest

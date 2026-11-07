@@ -20,6 +20,16 @@ final class AnalystChatUITests: XCTestCase {
                 app.launch()
                 let field = app.descendants(matching: .any).matching(identifier: "analyst-question").firstMatch
                 XCTAssertTrue(field.waitForExistence(timeout: 40))
+                if index == 4 {
+                    app.buttons["analyst-entity-picker"].tap()
+                    let search = app.textFields["analyst-entity-search"]
+                    XCTAssertTrue(search.waitForExistence(timeout: 10))
+                    search.tap(); search.typeText("haaland")
+                    app.buttons["analyst-entity-find"].tap()
+                    let player = app.buttons["analyst-player-1100"]
+                    XCTAssertTrue(player.waitForExistence(timeout: 60))
+                    player.tap()
+                }
                 field.tap(); field.typeText(question)
                 let send = app.buttons["analyst-send"]
                 if !send.isHittable { app.swipeUp() }

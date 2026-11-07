@@ -17,7 +17,7 @@ async function collectEvidence(provider, question, context = {}) {
   const teamIds = context.teamIds || aliases.filter(([, re]) => re.test(question)).map(([id]) => id);
   const playerIds = context.playerIds || [];
   const upcoming = /upcoming|next match|قادمة|القادمة|قادمه/i.test(question);
-  const live = /live|مباشر/i.test(question);
+  const live = /\blive\b|مباشر/i.test(question);
   const lastFive = /last five|last 5|آخر خمس|اخر خمس|آخر 5/i.test(question);
   let fixtureId = context.fixtureId;
   if (!fixtureId && live) {

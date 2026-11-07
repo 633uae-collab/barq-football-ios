@@ -85,7 +85,8 @@ class Provider {
         if (/token|key|access/i.test(keys)) throw new ServiceError('API_AUTH_FAILED');
         throw new ServiceError('UPSTREAM_REJECTED_REQUEST', 502);
       }
-      if (!Array.isArray(body.response)) throw new ServiceError('UPSTREAM_INVALID_RESPONSE');
+      const objectResponse = path.split('?')[0] === '/teams/statistics' && body.response && typeof body.response === 'object' && !Array.isArray(body.response);
+      if (!Array.isArray(body.response) && !objectResponse) throw new ServiceError('UPSTREAM_INVALID_RESPONSE');
       return { data: body.response, fetchedAt: this.now() };
     } catch (e) {
       if (controller.signal.aborted) throw new ServiceError('UPSTREAM_TIMEOUT', 504);

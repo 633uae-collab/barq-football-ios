@@ -22,16 +22,16 @@ struct AnalystChatView: View {
             Label(en ? "Ask FOTIQ" : "اسأل FOTIQ", systemImage: "bubble.left.and.bubble.right").font(.headline)
             DisclosureGroup(en ? "Select teams or players (optional)" : "اختيار أندية أو لاعبين (اختياري)") {
                 TextField(en ? "Search by name" : "ابحث بالاسم", text: $search)
-                    .textFieldStyle(.roundedBorder).onSubmit { Task { await find() } }
-                Button(en ? "Search" : "بحث") { Task { await find() } }.buttonStyle(.glass)
+                    .accessibilityIdentifier("analyst-entity-search").textFieldStyle(.roundedBorder).onSubmit { Task { await find() } }
+                Button(en ? "Search" : "بحث") { Task { await find() } }.buttonStyle(.glass).accessibilityIdentifier("analyst-entity-find")
                 if let searchError { Text(searchError).font(.caption).foregroundStyle(.red) }
                 ForEach(results?.teams.prefix(5) ?? []) { team in
                     Button(team.name) { if !selectedTeams.contains(team) && selectedTeams.count < 2 { selectedTeams.append(team) }; results = nil }
                 }
                 ForEach(results?.players.prefix(5) ?? []) { player in
-                    Button(player.name) { if !selectedPlayers.contains(player) && selectedPlayers.count < 2 { selectedPlayers.append(player) }; results = nil }
+                    Button(player.name) { if !selectedPlayers.contains(player) && selectedPlayers.count < 2 { selectedPlayers.append(player) }; results = nil }.accessibilityIdentifier("analyst-player-\(player.id)")
                 }
-            }
+            }.accessibilityIdentifier("analyst-entity-picker")
             ForEach(selectedTeams) { team in
                 Button { selectedTeams.removeAll { $0.id == team.id } } label: { Label(team.name, systemImage: "xmark.circle") }
             }
