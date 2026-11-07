@@ -35,6 +35,8 @@ test('club comparison uses fresh season facts, last match is not silently replac
   } }, 'Compare Real Madrid and Barcelona');
   assert.equal(evidence.clubs.length, 2); assert.equal(paths.length, 4);
   assert.ok(paths.includes('/fixtures?team=529&last=5'));
+  assert.match(evidence.clubs[0].recentScope, /across competitions/);
+  assert.match(evidence.clubs[0].season.scope, /only/);
   assert.equal(evidence.clubs[0].season.fixtures.wins.total, 4);
 });
 test('missing live fixtures and unspecified player produce explicit limitations, never invented evidence', async () => {

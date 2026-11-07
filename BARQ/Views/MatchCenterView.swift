@@ -208,25 +208,52 @@ enum TimelineOrder {
             for (key, _) in TimelineOrder.keyedEvents(events) where aliases[key] == nil { aliases[key] = key }
         }
         mutating func merge(previous: [MatchEvent], incoming: [MatchEvent]) -> [MatchEvent] {
-            let inKeys = Set(TimelineOrder.keyedEvents(incoming).map(\.0))
+            let incomingKeyed = TimelineOrder.keyedEvents(incoming)
+            let inKeys = Set(incomingKeyed.map(\.0))
             let prevKeyed = TimelineOrder.keyedEvents(previous), prevKeys = Set(prevKeyed.map(\.0))
             seed(previous)
-            // In-place revision: a new key of the same type+team replaces the missing one (e.g. goal minute corrected 10' -> 22').
-            func slot(_ k: String) -> String { let p = k.split(separator: "|", omittingEmptySubsequences: false); return p.count > 4 ? "\(p[0])|\(p[4])" : k }
-            var revisedKeys = Dictionary(grouping: inKeys.filter { !prevKeys.contains($0) }, by: slot)
-            for old in prevKeys where !inKeys.contains(old) {
-                let s = slot(old)
-                if let new = revisedKeys[s]?.first {
-                    aliases[new] = aliases[old] ?? old
-                    revisedKeys[s]?.removeFirst()
+            // In-place provider revisions keep their row id, but a genuinely new event
+            // must never steal the identity of a temporarily missing event. API-Football
+            // often publishes several substitutions for one team within a minute, so
+            // type+team alone is not an identity. Require compatible participants/details
+            // and a unique one-to-one candidate in both directions.
+            func participant(_ p: NamedRef?) -> String { p?.id.map(String.init) ?? p?.name ?? "" }
+            func isRevision(_ old: MatchEvent, _ new: MatchEvent) -> Bool {
+                let type = old.type.lowercased()
+                guard type == new.type.lowercased(), old.team.id == new.team.id else { return false }
+                switch type {
+                case "subst":
+                    return participant(old.player) == participant(new.player)
+                        && participant(old.assist) == participant(new.assist)
+                case "card":
+                    return participant(old.player) == participant(new.player)
+                        && (old.detail ?? "") == (new.detail ?? "")
+                case "goal", "var":
+                    let a = participant(old.player), b = participant(new.player)
+                    let compatiblePlayer = a.isEmpty || b.isEmpty || a == b
+                    return compatiblePlayer && abs((old.time.elapsed ?? 0) - (new.time.elapsed ?? 0)) <= 15
+                default:
+                    return participant(old.player) == participant(new.player)
+                        && participant(old.assist) == participant(new.assist)
+                        && (old.detail ?? "") == (new.detail ?? "")
                 }
+            }
+            let missing = prevKeyed.filter { !inKeys.contains($0.0) }
+            let added = incomingKeyed.filter { !prevKeys.contains($0.0) }
+            var revised: [String: String] = [:], usedNew = Set<String>()
+            for (oldKey, oldEvent) in missing {
+                let candidates = added.filter { !usedNew.contains($0.0) && isRevision(oldEvent, $0.1) }
+                guard candidates.count == 1, let candidate = candidates.first else { continue }
+                let reverse = missing.filter { isRevision($0.1, candidate.1) }
+                guard reverse.count == 1 else { continue }
+                aliases[candidate.0] = aliases[oldKey] ?? oldKey
+                revised[oldKey] = candidate.0
+                usedNew.insert(candidate.0)
             }
             for k in inKeys where aliases[k] == nil { aliases[k] = k }
             var out = incoming
             for (k, e) in prevKeyed where !inKeys.contains(k) {
-                // An alias on a newly arrived key proves this is an in-place revision.
-                let replacement = inKeys.first { slot($0) == slot(k) && aliases[$0] == (aliases[k] ?? k) }
-                if replacement != nil { misses[k] = nil; continue }
+                if revised[k] != nil { misses[k] = nil; continue }
                 let n = misses[k, default: 0] + 1
                 if n < Self.maxMisses { misses[k] = n; out.append(e) } else { misses[k] = nil }
             }
