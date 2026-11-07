@@ -9,7 +9,7 @@ final class AnalystChatUITests: XCTestCase {
             ("لماذا خسر برشلونة آخر مباراة؟ تحقق أولاً من النتيجة", "Why did Barcelona lose their last match? Verify the result first"),
             ("قارن بين ريال مدريد وبرشلونة", "Compare Real Madrid and Barcelona"),
             ("من أفضل لاعب في الدوري الإنجليزي هذا الموسم؟ وضح معيارك", "Who is the best Premier League player this season? Explain your criteria"),
-            ("حلل أداء لاعب خلال آخر خمس مباريات", "Analyze a player over the last five matches"),
+            ("حلل أداء هالاند خلال آخر خمس مباريات", "Analyze Haaland over the last five matches"),
             ("توقع نتيجة مباراة برشلونة القادمة بناء على الإحصائيات", "Predict Barcelona's next match based on statistics")
         ]
         var report = ""
@@ -23,26 +23,7 @@ final class AnalystChatUITests: XCTestCase {
                 newChat.tap()
                 let field = app.descendants(matching: .any).matching(identifier: "analyst-question").firstMatch
                 XCTAssertTrue(field.waitForExistence(timeout: 40))
-                if index == 4 {
-                    let picker = app.descendants(matching: .any).matching(identifier: "analyst-entity-picker").firstMatch
-                    XCTAssertTrue(picker.waitForExistence(timeout: 10))
-                    picker.tap()
-                    let search = app.textFields["analyst-entity-search"]
-                    let searchReady = search.waitForExistence(timeout: 10)
-                    XCTAssertTrue(searchReady, "Player search must be reachable")
-                    if !searchReady {
-                        report += "\n\(index + 1) \(language) FAILED: player search not reachable\n"
-                        try report.write(toFile: "/tmp/fotiq-chat-results.txt", atomically: true, encoding: .utf8)
-                        try XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/v7-chat-\(index + 1)-\(language)-setup-failed.png"))
-                        app.terminate()
-                        continue
-                    }
-                    search.tap(); search.typeText("haaland")
-                    app.buttons["analyst-entity-find"].tap()
-                    let player = app.buttons["analyst-player-1100"]
-                    XCTAssertTrue(player.waitForExistence(timeout: 60))
-                    player.tap()
-                }
+                XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-entity-picker").firstMatch.exists)
                 field.tap(); field.typeText(question)
                 let send = app.buttons["analyst-send"]
                 if !send.isHittable { app.swipeUp() }

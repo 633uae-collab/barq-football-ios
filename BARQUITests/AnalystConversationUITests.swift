@@ -11,12 +11,16 @@ final class AnalystConversationUITests: XCTestCase {
         let directory = URL(fileURLWithPath: "/tmp/fotiq-conversation-shots", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("00-welcome.png"))
+        XCTAssertTrue(app.staticTexts["analyst-welcome"].exists)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-entity-picker").firstMatch.exists)
         var report = ""
         let questions = ["حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة", "For the same match, explain the starting lineups and substitutions in English. Use updated data.", "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم"]
         for (index, question) in questions.enumerated() {
             let field = app.descendants(matching: .any).matching(identifier: "analyst-question").firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 15)); field.tap(); field.typeText(question)
             let began = Date(); app.buttons["analyst-send"].tap()
+            XCTAssertFalse(app.staticTexts["analyst-welcome"].exists, "Welcome must disappear immediately after sending")
+            XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-welcome-logo").firstMatch.exists)
             let answer = app.staticTexts["analyst-answer"], error = app.staticTexts["analyst-error"]
             let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in answer.exists || error.exists }, object: nil)], timeout: 180)
             let elapsed = Date().timeIntervalSince(began)
@@ -36,7 +40,7 @@ final class AnalystConversationUITests: XCTestCase {
         XCTAssertTrue(restored.waitForExistence(timeout: 10) || restoredError.exists, "Stored response or failure must survive process termination")
         try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("04-restored.png"))
         app.buttons["analyst-new-chat"].tap()
-        XCTAssertTrue(app.staticTexts["هلا بك في FOTIQ AI، اسألني عن أي شيء في عالم كرة القدم"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["analyst-welcome"].waitForExistence(timeout: 10))
         app.buttons["analyst-history"].tap()
         XCTAssertTrue(app.buttons.matching(identifier: "analyst-saved-conversation").firstMatch.waitForExistence(timeout: 10))
     }

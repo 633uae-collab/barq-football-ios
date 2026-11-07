@@ -5,11 +5,6 @@ struct AnalystChatView: View {
     @State private var question = ""
     @State private var sending = false
     @State private var showingHistory = false
-    @State private var search = ""
-    @State private var results: SearchResponse?
-    @State private var selectedPlayers: [SearchResponse.P] = []
-    @State private var selectedTeams: [SearchResponse.T] = []
-    @State private var searchError: String?
     @FocusState private var writing: Bool
     private var en: Bool { L.lang == "en" }
     var body: some View {
@@ -18,9 +13,9 @@ struct AnalystChatView: View {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     if archive.current.turns.isEmpty {
                         VStack(spacing: 16) {
-                            BrandMark(height: 48)
-                            Text(en ? "Welcome to FOTIQ AI. Ask me anything about football." : "هلا بك في FOTIQ AI، اسألني عن أي شيء في عالم كرة القدم")
-                                .font(.title3.weight(.medium)).multilineTextAlignment(.center)
+                            BrandMark(height: 48).accessibilityIdentifier("analyst-welcome-logo")
+                            Text(en ? "Every football question on your mind, answered here." : "كل سؤال في بالك عن الكورة، جوابه هني.")
+                                .font(.title3.weight(.medium)).multilineTextAlignment(.center).accessibilityIdentifier("analyst-welcome")
                             Text(en ? "Fresh football data · Arabic & English" : "بيانات كرة قدم حديثة · عربي وإنجليزي")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity).padding(.vertical, 50)
@@ -73,7 +68,7 @@ struct AnalystChatView: View {
                 List {
                     Button(en ? "New conversation" : "محادثة جديدة") { newConversation(); showingHistory = false }
                     ForEach(archive.conversations.filter { !$0.turns.isEmpty }) { conversation in
-                        Button { archive.selectedID = conversation.id; selectedPlayers = []; selectedTeams = []; showingHistory = false } label: {
+                        Button { archive.selectedID = conversation.id; showingHistory = false } label: {
                             VStack(alignment: .leading) {
                                 Text(conversation.title).lineLimit(2)
                                 Text(conversation.createdAt.formatted()).font(.caption).foregroundStyle(.secondary)
@@ -89,28 +84,6 @@ struct AnalystChatView: View {
     private var composer: some View {
         VStack(spacing: 10) {
             if let error = archive.storageError { Text(error).font(.caption).foregroundStyle(.red) }
-            DisclosureGroup {
-                TextField(en ? "Search by name" : "ابحث بالاسم", text: $search)
-                    .accessibilityIdentifier("analyst-entity-search").textFieldStyle(.roundedBorder).onSubmit { Task { await find() } }
-                Button(en ? "Search" : "بحث") { Task { await find() } }.buttonStyle(.glass).accessibilityIdentifier("analyst-entity-find")
-                if let searchError { Text(searchError).font(.caption).foregroundStyle(.red) }
-                ForEach(results?.teams.prefix(5) ?? []) { team in
-                    Button(team.name) { if !selectedTeams.contains(team) && selectedTeams.count < 2 { selectedTeams.append(team) }; results = nil }
-                }
-                ForEach(results?.players.prefix(5) ?? []) { player in
-                    Button(player.name) { if !selectedPlayers.contains(player) && selectedPlayers.count < 2 { selectedPlayers.append(player) }; results = nil }.accessibilityIdentifier("analyst-player-\(player.id)")
-                }
-            } label: {
-                Text(en ? "Select teams or players (optional)" : "اختيار أندية أو لاعبين (اختياري)")
-                    .accessibilityIdentifier("analyst-entity-picker")
-            }
-            ForEach(selectedTeams) { team in
-                Button { selectedTeams.removeAll { $0.id == team.id } } label: { Label(team.name, systemImage: "xmark.circle") }
-            }
-            ForEach(selectedPlayers) { player in
-                Button { selectedPlayers.removeAll { $0.id == player.id } } label: { Label(player.name, systemImage: "xmark.circle") }
-            }
-
             HStack(alignment: .bottom, spacing: 12) {
                 TextField(en ? "Ask about football…" : "اكتب سؤالك عن كرة القدم…", text: $question, axis: .vertical)
                     .lineLimit(1...5).focused($writing).accessibilityIdentifier("analyst-question")
@@ -123,23 +96,14 @@ struct AnalystChatView: View {
         }.padding(.horizontal).padding(.vertical, 8)
     }
     private func newConversation() {
-        archive.newConversation(); question = ""; selectedPlayers = []; selectedTeams = []; results = nil
-    }
-    @MainActor private func find() async {
-        guard search.count >= 3 else { return }
-        do {
-            let query = search.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            results = try await API.shared.get("/api/search?q=\(query)", attempts: 1)
-            searchError = nil
-        } catch { searchError = error.localizedDescription }
+        archive.newConversation(); question = ""
     }
     @MainActor private func send() async {
         guard !sending else { return }
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let conversationID = archive.selectedID else { return }
         let history = archive.current.history
-        let context = selectedTeams.isEmpty && selectedPlayers.isEmpty ? archive.current.context :
-            AnalystContext(teamIds: selectedTeams.isEmpty ? nil : selectedTeams.map(\.id), playerIds: selectedPlayers.isEmpty ? nil : selectedPlayers.map(\.id))
+        let context = archive.current.context
         writing = false; sending = true; question = ""
         let message = AnalystTurn(question: text)
         archive.append(message, context: context)
