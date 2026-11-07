@@ -73,7 +73,9 @@ jobs:
             N=$(echo "$T" | tr -d ' ')
             ( xcrun xctrace record --template "$T" --device "$UDID" --time-limit 20s --output "diag/trace/$N.trace" \
               --env FOTIQ_UI_TEST=1 --launch -- "$APP" -lang ar -resetOnboarding YES > "diag/trace/$N.out" 2>&1 ) &
-            XP=$!; sleep 45; kill -INT $XP 2>/dev/null; sleep 15; kill -9 $XP 2>/dev/null; pkill -9 -f "xctrace record" || true
+            XP=$!; sleep 45; kill -INT $XP 2>/dev/null || true
+            sleep 15; kill -9 $XP 2>/dev/null || true
+            pkill -9 -f "xctrace record" || true
             xcrun simctl io "$UDID" screenshot "diag/trace/$N-end.png" || true
             xcrun simctl terminate "$UDID" ae.barq.football || true
           done
@@ -89,13 +91,23 @@ jobs:
           set -o pipefail
           xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > ui-app-timing.log 2>&1 &
           LGP=$!
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -resultBundlePath ui.xcresult -skip-testing:BARQUITests/LiveTimelineUITests -skip-testing:BARQUITests/HomeReviewUITests 2>&1 | tee uitest.log | grep -E "Test Case|HOMEV8|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -resultBundlePath ui.xcresult -skip-testing:BARQUITests/LiveTimelineUITests -skip-testing:BARQUITests/HomeReviewUITests 2>&1 | tee uitest.log | grep -E "Test Case|CHAT_RESULT|HOMEV8|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
           mkdir -p shots/onboarding; cp /tmp/onb-*.png shots/onboarding/ || true
           cp /tmp/fotiq-chat-results.txt shots/ || true
           cp /tmp/v7-chat-*.png shots/ || true
           kill $LGP || true; mkdir -p diag; cp ui-app-timing.log diag/ || true
           grep -q "TEST SUCCEEDED" uitest.log
           mkdir -p shots; cp /tmp/v7-*.png shots/ || true; cp /tmp/fotiq-springboard.png shots/v4-00-home-screen-icon.png || echo "no springboard capture"
+      - name: Upload native chat evidence immediately after UI tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-chat-evidence
+          path: |
+            shots/fotiq-chat-results.txt
+            shots/v7-chat-*.png
+            uitest.log
+          if-no-files-found: error
       - name: Home design review captures (screenshots only)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |

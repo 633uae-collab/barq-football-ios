@@ -66,3 +66,38 @@ test('Liverpool name does not accidentally select an unrelated live fixture', as
   await collectEvidence({ load: async path => { paths.push(path); return { data: [], fetchedAt: 1000 }; } }, 'Analyze Liverpool');
   assert.ok(!paths.some(p => p.includes('live=')));
 });
+test('last five player appearances exclude unused substitutes and use current squad teams', async () => {
+  const paths = [];
+  const evidence = await collectEvidence({ load: async path => {
+    paths.push(path); let data = [];
+    if (path.startsWith('/players/teams')) data = [{ team: { id: 99 }, seasons: [2026] }];
+    else if (path.startsWith('/players/squads')) data = [{ team: { id: 50 } }];
+    else if (path.startsWith('/fixtures?')) data = Array.from({length: 8}, (_, i) => ({fixture: { id: 100+i, date: `2026-10-${String(28-i).padStart(2,'0')}T12:00:00Z` }, teams: {} }));
+    else if (path.startsWith('/fixtures/players')) {
+      const id = Number(new URLSearchParams(path.split('?')[1]).get('fixture'));
+      data = [{ players: [{ player: { id: 1100, name: 'Haaland' }, statistics: [{ games: { minutes: id === 100 ? 0 : 90 }, goals: { total: 1 } }] }] }];
+    }
+    return { fetchedAt: 1000, data };
+  } }, 'last five matches', { playerIds: [1100] });
+  const p = evidence.playerProfiles[0];
+  assert.equal(p.lastFiveAppearances.length, 5);
+  assert.deepEqual(p.lastFiveAppearances.map(x => x.match.id), [101,102,103,104,105]);
+  assert.ok(paths.includes('/fixtures?team=50&last=10'));
+  assert.ok(!paths.includes('/fixtures?team=99&last=10'));
+  assert.equal(p.lastFiveTeamMatches[0].player.statistics[0].games.minutes, 0);
+});
+test('upcoming analysis retrieves recent form and same-competition statistics for both teams', async () => {
+  const paths = [];
+  const evidence = await collectEvidence({ load: async path => {
+    paths.push(path);
+    if (path.startsWith('/teams/statistics')) return { fetchedAt: 2000, data: { form: 'WWD', fixtures: { wins: { total: 2 } } } };
+    return { fetchedAt: 2000, data: [{fixture: { id: 77, date: '2026-11-08T16:00:00Z' }, league: {id: 140, season: 2026, name: 'La Liga'}, teams: {home: {id: 529}, away: {id: 541}}}] };
+  } }, "Predict Barcelona's next match");
+  assert.equal(evidence.fixtureId, 77);
+  assert.deepEqual(evidence.clubs.map(c => c.teamId), [529, 541]);
+  for (const team of [529, 541]) {
+    assert.ok(paths.includes(`/fixtures?team=${team}&last=5`));
+    assert.ok(paths.includes(`/teams/statistics?team=${team}&league=140&season=2026`));
+  }
+  assert.ok(evidence.missing.some(x => x.includes('No calibrated prediction')));
+});

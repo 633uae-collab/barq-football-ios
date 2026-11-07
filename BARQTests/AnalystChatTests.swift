@@ -14,6 +14,12 @@ final class AnalystChatTests: XCTestCase {
         do { _ = try await api.askAnalyst("Analyze"); XCTFail("Must reject quota") }
         catch { XCTAssertEqual((error as? AnalystChatError)?.code, "AI_FREE_QUOTA_REACHED"); XCTAssertFalse(error.localizedDescription.isEmpty) }
     }
+    func testUnknownQuotaResetDoesNotInventSixtySeconds() {
+        let message = AnalystChatError(code: "PLAN_LIMIT", retryAfter: nil).errorDescription ?? ""
+        XCTAssertFalse(message.isEmpty)
+        XCTAssertFalse(message.contains("60"))
+        XCTAssertTrue((AnalystChatError(code: "AI_FREE_QUOTA_REACHED", retryAfter: 123).errorDescription ?? "").contains("123"))
+    }
     func testWrongModelAndEmptyAnswersRejected() async {
         for body in [#"{"answer":"","model":"openai/gpt-oss-120b","fetchedAt":1,"generatedAt":2}"#, #"{"answer":"a","model":"other","fetchedAt":1,"generatedAt":2}"#] {
             StubProtocol.mode = .body(body)

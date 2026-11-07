@@ -4,7 +4,8 @@ const { prepareEvidence } = require('./analyst-evidence');
 const aliases = [[529, /barcelona|برشلونة|برشلونه/i], [541, /real madrid|ريال مدريد/i], [40, /liverpool|ليفربول/i], [50, /manchester city|مانشستر سيتي/i]];
 const playerStats = p => ({ name: p.player?.name, statistics: (p.statistics || []).map(s => ({ team: s.team?.name, league: s.league?.name, games: s.games, goals: s.goals, shots: s.shots, passes: s.passes, tackles: s.tackles, dribbles: s.dribbles, cards: s.cards })) });
 const summary = f => ({ id: f.fixture?.id, kickoffUTC: f.fixture?.date, status: f.fixture?.status,
-  league: f.league, teams: f.teams, goals: f.goals });
+  league: { id: f.league?.id, name: f.league?.name, season: f.league?.season, round: f.league?.round },
+  teams: { home: { id: f.teams?.home?.id, name: f.teams?.home?.name }, away: { id: f.teams?.away?.id, name: f.teams?.away?.name } }, goals: f.goals });
 async function collectEvidence(provider, question, context = {}) {
   const sources = [], missing = [];
   const load = async (path, params) => {
@@ -42,6 +43,22 @@ async function collectEvidence(provider, question, context = {}) {
       if (teamIds.length === 1 && !fixtureId) fixtureId = fixtures[0]?.fixture?.id;
     }
   }
+  if (upcoming && evidence.clubs?.length === 1) {
+    const club = evidence.clubs[0], next = club.matches[0];
+    club.recentMatches = (await load('/fixtures', { team: club.teamId, last: 5 })).map(summary);
+    const opponent = [next?.teams?.home?.id, next?.teams?.away?.id].find(id => Number.isInteger(id) && id !== club.teamId);
+    if (opponent) {
+      const recent = await load('/fixtures', { team: opponent, last: 5 });
+      const other = { teamId: opponent, matches: recent.map(summary) };
+      if (next.league?.id && next.league?.season) {
+        const stats = await load('/teams/statistics', { team: opponent, league: next.league.id, season: next.league.season });
+        other.season = { league: next.league.name, year: next.league.season, fixtures: stats.fixtures,
+          goals: stats.goals, form: stats.form, cleanSheet: stats.clean_sheet, failedToScore: stats.failed_to_score };
+      }
+      evidence.clubs.push(other);
+    } else missing.push('Upcoming opponent unavailable; no opponent statistics can be inferred.');
+    missing.push('No calibrated prediction source supplied; qualitative outlook only, no numerical probabilities or guaranteed score.');
+  }
   if (fixtureId) {
     const f = (await load('/fixtures', { id: fixtureId }))[0];
     if (f) {
@@ -70,13 +87,32 @@ async function collectEvidence(provider, question, context = {}) {
       const stats = await load('/players', { id: player, season: latest.season });
       const item = { playerId: player, profile: profile?.player?.name, season: latest.season, statistics: stats.map(playerStats) };
       if (lastFive && latest.team) {
-        const recent = await load('/fixtures', { team: latest.team, last: 5 });
-        item.lastFiveTeamMatches = [];
-        for (const f of recent) {
-          const rows = await load('/fixtures/players', { fixture: f.fixture.id, team: latest.team });
-          item.lastFiveTeamMatches.push({ match: summary(f), player: rows.flatMap(t => t.players || []).find(p => p.player?.id === player) || null });
+        const squads = await load('/players/squads', { player });
+        const currentTeams = [...new Set(squads.map(t => t.team?.id).filter(Number.isInteger))].slice(0, 2);
+        if (!currentTeams.length) {
+          currentTeams.push(latest.team);
+          missing.push('Current player team unavailable; career season team is a fallback, not verified current registration.');
         }
-        missing.push('Last five team fixtures may contain non-appearances; these are not necessarily the last five player appearances.');
+        const candidates = new Map();
+        for (const team of currentTeams) {
+          for (const f of await load('/fixtures', { team, last: 10 })) {
+            if (f.fixture?.id) candidates.set(f.fixture.id, { fixture: f, team });
+          }
+        }
+        const recent = [...candidates.values()].sort((a,b) =>
+          (Date.parse(b.fixture.fixture?.date) || 0) - (Date.parse(a.fixture.fixture?.date) || 0));
+        item.lastFiveTeamMatches = []; item.lastFiveAppearances = [];
+        for (const { fixture: f, team } of recent.slice(0, 20)) {
+          const rows = await load('/fixtures/players', { fixture: f.fixture.id, team });
+          const record = rows.flatMap(t => t.players || []).find(p => p.player?.id === player);
+          const entry = { match: summary(f), player: record ? playerStats(record) : null };
+          if (item.lastFiveTeamMatches.length < 5) item.lastFiveTeamMatches.push({ match: { id: f.fixture.id, kickoffUTC: f.fixture.date }, player: record ? { name: record.player?.name, statistics: (record.statistics || []).map(s => ({ games: { minutes: s.games?.minutes } })) } : null });
+          if (record?.statistics?.some(s => Number(s.games?.minutes) > 0)) item.lastFiveAppearances.push(entry);
+          if (item.lastFiveAppearances.length === 5) break;
+        }
+        missing.push('Team fixtures may contain non-appearances; only lastFiveAppearances have verified positive minutes.');
+        if (item.lastFiveAppearances.length < 5) missing.push(`Only ${item.lastFiveAppearances.length} appearances verified within at most 20 recent fixtures; do not invent the remaining matches.`);
+        item.appearanceCoverage = { requested: 5, found: item.lastFiveAppearances.length, candidateFixtures: recent.length, maximumTeams: 2, maximumFixturesPerTeam: 10 };
       }
       evidence.playerProfiles.push(item);
     }

@@ -21,9 +21,19 @@ final class AnalystChatUITests: XCTestCase {
                 let field = app.descendants(matching: .any).matching(identifier: "analyst-question").firstMatch
                 XCTAssertTrue(field.waitForExistence(timeout: 40))
                 if index == 4 {
-                    app.buttons["analyst-entity-picker"].tap()
+                    let picker = app.descendants(matching: .any).matching(identifier: "analyst-entity-picker").firstMatch
+                    XCTAssertTrue(picker.waitForExistence(timeout: 10))
+                    picker.tap()
                     let search = app.textFields["analyst-entity-search"]
-                    XCTAssertTrue(search.waitForExistence(timeout: 10))
+                    let searchReady = search.waitForExistence(timeout: 10)
+                    XCTAssertTrue(searchReady, "Player search must be reachable")
+                    if !searchReady {
+                        report += "\n\(index + 1) \(language) FAILED: player search not reachable\n"
+                        try report.write(toFile: "/tmp/fotiq-chat-results.txt", atomically: true, encoding: .utf8)
+                        try XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/v7-chat-\(index + 1)-\(language)-setup-failed.png"))
+                        app.terminate()
+                        continue
+                    }
                     search.tap(); search.typeText("haaland")
                     app.buttons["analyst-entity-find"].tap()
                     let player = app.buttons["analyst-player-1100"]
@@ -41,6 +51,8 @@ final class AnalystChatUITests: XCTestCase {
                 let elapsed = Date().timeIntervalSince(started)
                 let text = answer.exists ? answer.label : (failure.exists ? failure.label : "Timed out")
                 report += "\n\(index + 1) \(language) \(elapsed)s\n\(question)\n\(text)\n"
+                try report.write(toFile: "/tmp/fotiq-chat-results.txt", atomically: true, encoding: .utf8)
+                print("CHAT_RESULT question=\(index + 1) language=\(language) elapsed=\(elapsed) success=\(answer.exists && !failure.exists)")
                 try XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/v7-chat-\(index + 1)-\(language).png"))
                 XCTAssertEqual(result, .completed)
                 XCTAssertTrue(answer.exists, text)

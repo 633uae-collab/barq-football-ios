@@ -29,8 +29,10 @@ Context accepts only validated fixture/team/player IDs (at most two teams and tw
 client-provided football facts or arbitrary provider paths. Fresh provider loads gather relevant data.
 Club text aliases currently cover Barcelona, Real Madrid, Liverpool and Manchester City;
 other clubs/players can be selected through native search. Unspecified players require clarification.
-Last-five player data currently refers to the selected player's latest listed team's five fixtures,
-including explicitly missing appearances, not necessarily five appearances by the player.
+Last-five player appearances require positive recorded minutes. Search scans at most ten recent fixtures
+for each of up to two teams returned by the current squad endpoint (twenty candidate fixtures total).
+Missing appearances and incomplete coverage are explicit; career-team fallback is labelled unverified
+when current squad data is absent. This bounded search cannot guarantee coverage across older transfers.
 Starting formations are not reported as current shapes. Predictions have no fabricated percentages.
 Large evidence is rejected rather than silently truncating generated answers. Time validation remains
 narrow and cannot certify every statement. Production readiness requires review of the actual UI answers.

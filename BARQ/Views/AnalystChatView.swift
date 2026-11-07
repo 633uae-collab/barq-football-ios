@@ -20,7 +20,7 @@ struct AnalystChatView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label(en ? "Ask FOTIQ" : "اسأل FOTIQ", systemImage: "bubble.left.and.bubble.right").font(.headline)
-            DisclosureGroup(en ? "Select teams or players (optional)" : "اختيار أندية أو لاعبين (اختياري)") {
+            DisclosureGroup {
                 TextField(en ? "Search by name" : "ابحث بالاسم", text: $search)
                     .accessibilityIdentifier("analyst-entity-search").textFieldStyle(.roundedBorder).onSubmit { Task { await find() } }
                 Button(en ? "Search" : "بحث") { Task { await find() } }.buttonStyle(.glass).accessibilityIdentifier("analyst-entity-find")
@@ -31,7 +31,10 @@ struct AnalystChatView: View {
                 ForEach(results?.players.prefix(5) ?? []) { player in
                     Button(player.name) { if !selectedPlayers.contains(player) && selectedPlayers.count < 2 { selectedPlayers.append(player) }; results = nil }.accessibilityIdentifier("analyst-player-\(player.id)")
                 }
-            }.accessibilityIdentifier("analyst-entity-picker")
+            } label: {
+                Text(en ? "Select teams or players (optional)" : "اختيار أندية أو لاعبين (اختياري)")
+                    .accessibilityIdentifier("analyst-entity-picker")
+            }
             ForEach(selectedTeams) { team in
                 Button { selectedTeams.removeAll { $0.id == team.id } } label: { Label(team.name, systemImage: "xmark.circle") }
             }
