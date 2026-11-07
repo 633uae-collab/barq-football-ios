@@ -2,7 +2,7 @@ name: Launch journey validation and video
 on:
   workflow_dispatch:
   push:
-    branches: [codex/fotiq-development]
+    branches: [codex/fotiq-development, codex/backend-rebuild]
     paths:
       - .github/workflows/launch-journey.yml
       - BARQ/Views/OnboardingViews.swift
