@@ -7,7 +7,7 @@ const { createApp } = require('../app');
 const { openStorage } = require('../storage');
 const { Provider } = require('../provider');
 const fixture = require('./real-fixture.json');
-async function harness(t, fetchImpl) {
+async function harness(t, fetchImpl, storageMode = 'persistent') {
   const folder = mkdtempSync(join(tmpdir(), 'fotiq-test-')), path = join(folder, 'prefs.sqlite');
   const storage = openStorage(path), calls = [];
   const provider = new Provider({ key: 'test-only', fetchImpl: async (url, opts) => {
@@ -24,7 +24,7 @@ async function harness(t, fetchImpl) {
     if (u.pathname === '/predictions') response = [{ predictions: { percent: { home: '50%', away: '25%', draw: '25%' } } }];
     return new Response(JSON.stringify({ errors: [], response }), { headers: { 'content-type': 'application/json' } });
   } });
-  const server = createApp({ provider, storage }).listen(0, '127.0.0.1');
+  const server = createApp({ provider, storage, storageMode }).listen(0, '127.0.0.1');
   await new Promise(r => server.once('listening', r));
   t.after(async () => { await new Promise(r => server.close(r)); storage.close(); rmSync(folder, { recursive: true, force: true }); });
   return { storage, calls, path, request: async (url, options) => {
@@ -87,4 +87,15 @@ test('provider outage returns 503 JSON and never fake fixtures', async t => {
   const h = await harness(t, async () => new Response('Site Unavailable', { status: 503 }));
   const r = await h.request('/api/fixtures'); assert.equal(r.status, 503);
   assert.equal(r.body.error, 'UPSTREAM_UNAVAILABLE'); assert.equal(r.body.fixtures, undefined);
+});
+
+test('free preview never acknowledges or stores preferences and still serves match data', async t => {
+  const h = await harness(t, undefined, 'preview');
+  const response = await h.request('/api/prefs/preview-device', { method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ favTeams: [40], favLeagues: [], saved: [], muted: [], level: 1 }) });
+  assert.equal(response.status, 503);
+  assert.equal(response.body.error, 'PREFERENCES_SYNC_REQUIRES_PERSISTENT_STORAGE');
+  assert.equal(h.storage.q('SELECT * FROM prefs').length, 0);
+  assert.equal((await h.request('/healthz')).body.preferencesSync, false);
+  assert.equal((await h.request('/api/fixtures')).status, 200);
 });

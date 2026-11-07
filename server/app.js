@@ -14,7 +14,7 @@ const date = value => {
     || new Date(value).toISOString().slice(0, 10) !== value) throw new ServiceError('INVALID_DATE', 400);
   return value;
 };
-function createApp({ provider, storage }) {
+function createApp({ provider, storage, storageMode = 'persistent' }) {
   const app = express(); app.disable('x-powered-by');
   // Random per-install device ID is the existing client's capability. Never enumerate it.
   // No proxy headers trusted here: prevents spoofed addresses bypassing the budget.
@@ -45,7 +45,7 @@ function createApp({ provider, storage }) {
   };
   app.get('/healthz', (_req, res) => {
     storage.q('SELECT 1');
-    res.json({ ok: true, service: 'fotiq-backend', providerConfigured: !!provider.key,
+    res.json({ ok: true, service: 'fotiq-backend', storageMode, preferencesSync: storageMode === 'persistent', providerConfigured: !!provider.key,
       providerVerified: false, analyst: 'original_engine_missing', replay: 'original_recordings_missing' });
   });
   app.get('/api/catalog', async (_req, res) => {
@@ -129,6 +129,8 @@ function createApp({ provider, storage }) {
       notes: ['Player and match search are not restored yet'] });
   });
   app.put('/api/prefs/:device', (req, res) => {
+    // Never acknowledge a snapshot we cannot retain. iOS keeps its durable outbox on 503.
+    if (storageMode === 'preview') throw new ServiceError('PREFERENCES_SYNC_REQUIRES_PERSISTENT_STORAGE');
     if (!/^[a-z0-9-]{8,64}$/i.test(req.params.device)) throw new ServiceError('INVALID_DEVICE', 400);
     const b = req.body;
     if (!b || typeof b !== 'object' || Array.isArray(b)) throw new ServiceError('INVALID_PREFERENCES', 400);

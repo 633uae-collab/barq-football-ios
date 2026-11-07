@@ -67,3 +67,18 @@ Production startup now rejects a missing key and a relative/in-memory database p
 Validation at preparation: 26 Node tests pass (all 9 existing plus 17 added), including real child-process startup, HTTP preferences write, SIGTERM shutdown, restart and SQLite recovery. API data remains mocked/captured; this restart test is local, not a Render disk verification. No tests were removed or weakened. This is a draft reconstruction checkpoint, **not a claim that FOTIQ is ready for production or TestFlight**.
 
 Render setup references: https://render.com/docs/node-version, https://render.com/docs/web-services, https://render.com/docs/health-checks, https://render.com/docs/disks. Persistent disks require a paid service and permit only one instance; deploys with a disk have brief downtime. No uninterrupted-availability guarantee is made.
+
+## Owner-approved free preview (not production)
+
+The owner chose Free compute instead of paying for a disk. Use the same branch and build/start commands above, select **$0/month**, and set:
+
+- `NODE_ENV=production`
+- `FOTIQ_STORAGE_MODE=preview`
+- `APISPORTS_KEY`: enter only in Render's secret field
+- `API_DAILY_BUDGET=1000` (conservative initial preview budget)
+
+No `FOTIQ_DB_PATH` or disk is needed in preview. SQLite is memory-only and preferences writes explicitly return HTTP 503 `PREFERENCES_SYNC_REQUIRES_PERSISTENT_STORAGE`; the existing iOS local preferences and durable outbox remain intact rather than acknowledging a server copy that will disappear. This is not cross-device backup or cloud preference sync. The normal persistent mode remains available unchanged.
+
+Set health check `/healthz`. Verify it reports `storageMode: preview` and `preferencesSync: false`. Provider routes still require real API verification after deployment; missing analyst/push/replay features remain missing. Free services sleep after 15 minutes without traffic and may take about a minute to wake; current app timeouts can show Retry during that wake-up. Free has monthly usage limits and no persistent disk. Do not add paid resources or a payment method for this preview; if billing/verification is requested, stop and review it. See https://render.com/docs/free.
+
+Validation for preview support: all 28 Node tests passed locally (9 original + 19 added), including refusal to acknowledge/store ephemeral preferences and successful fixture-route handling in preview. No iOS feature/test was deleted; no hosting resource was created by these code changes.

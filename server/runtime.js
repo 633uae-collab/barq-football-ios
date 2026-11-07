@@ -5,10 +5,12 @@ function config(env = process.env) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
   if (!Number.isSafeInteger(dailyLimit) || dailyLimit < 1) throw new Error('Invalid API_DAILY_BUDGET');
   const key = env.APISPORTS_KEY?.trim();
+  const storageMode = env.FOTIQ_STORAGE_MODE || 'persistent';
+  if (!['persistent', 'preview'].includes(storageMode)) throw new Error('Invalid FOTIQ_STORAGE_MODE');
   if (env.NODE_ENV === 'production') {
     if (!key) throw new Error('APISPORTS_KEY is required in production');
-    if (!env.FOTIQ_DB_PATH || !isAbsolute(env.FOTIQ_DB_PATH)) throw new Error('FOTIQ_DB_PATH must be an absolute path on a persistent disk');
+    if (storageMode === 'persistent' && (!env.FOTIQ_DB_PATH || !isAbsolute(env.FOTIQ_DB_PATH))) throw new Error('FOTIQ_DB_PATH must be an absolute path on a persistent disk');
   }
-  return { port, dailyLimit, key, dbPath: env.FOTIQ_DB_PATH || resolve(__dirname, 'data/fotiq.sqlite') };
+  return { port, dailyLimit, key, storageMode, dbPath: storageMode === 'preview' ? ':memory:' : env.FOTIQ_DB_PATH || resolve(__dirname, 'data/fotiq.sqlite') };
 }
 module.exports = { config };

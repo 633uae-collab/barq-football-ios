@@ -66,3 +66,10 @@ test('real server process accepts durable preferences, restarts on the same data
   assert.deepEqual(JSON.parse(db.q('SELECT body FROM prefs WHERE device=?', ['runtime-test-device'])[0].body), payload);
   db.close();
 });
+
+test('preview needs no disk but still requires provider credentials and never uses a supplied disk', () => {
+  const c = config({ NODE_ENV: 'production', FOTIQ_STORAGE_MODE: 'preview', APISPORTS_KEY: 'test', FOTIQ_DB_PATH: '/unused/db' });
+  assert.equal(c.storageMode, 'preview'); assert.equal(c.dbPath, ':memory:');
+  assert.throws(() => config({ NODE_ENV: 'production', FOTIQ_STORAGE_MODE: 'preview' }), /APISPORTS_KEY/);
+  assert.throws(() => config({ FOTIQ_STORAGE_MODE: 'typo' }), /FOTIQ_STORAGE_MODE/);
+});
