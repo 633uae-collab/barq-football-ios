@@ -55,3 +55,22 @@ test('incomplete output and oversize evidence are rejected, secrets not reflecte
   await assert.rejects(a.answer('q', { data: 'x'.repeat(19000) }), /AI_EVIDENCE_TOO_LARGE/);
   assert.equal(a.active, false);
 });
+test('network and provider authentication failures never expose secrets or retry', async () => {
+  for (const fail of [async () => { throw new Error('test-key evaluation-only'); }, async () => new Response('test-key', { status: 401 }), async () => new Response('test-key', { status: 500 })]) {
+    let calls = 0;
+    const a = new GroqAnalyst({ ...options, fetchImpl: async () => { calls++; return fail(); } });
+    await assert.rejects(a.answer('q', {}), e => !e.message.includes('test-key') && /^AI_/.test(e.message));
+    assert.equal(calls, 1); assert.equal(a.active, false);
+  }
+});
+test('internal CLI is opt-in, expiring, claimed once, bounded and secret-redacted', async () => {
+  const { run } = require('../internal-eval');
+  const env = { GROQ_API_KEY: 'secret-groq', APISPORTS_KEY: 'secret-football', FOTIQ_AI_EVAL_TOKEN: 'secret-token', GROQ_FREE_PLAN_CONFIRMED: 'true', FOTIQ_INTERNAL_EVAL_UNTIL: new Date(600000).toISOString() };
+  let calls = 0, claims = 0; const logs = [], waits = [];
+  const opts = { env, now: () => 0, claim: () => { if (claims++) throw new Error('claimed'); }, pause: async ms => waits.push(ms), log: s => logs.push(s), provider: { load: async () => { calls++; return { fetchedAt: calls, data: [{ fixture: { id: 1575218 } }] }; } }, analyst: { answer: async () => ({ answer: 'secret-groq secret-football secret-token' }) } };
+  assert.equal(await run({ ...opts, env: {} }), false);
+  assert.equal(await run({ ...opts, now: () => 600001 }), false);
+  assert.equal(await run(opts), true); assert.equal(calls, 2); assert.deepEqual(waits, [65000]);
+  assert.equal(await run(opts), false); assert.equal(calls, 2);
+  assert.ok(!logs.join('').includes('secret-')); assert.ok(logs.join('').includes('[REDACTED]'));
+});
