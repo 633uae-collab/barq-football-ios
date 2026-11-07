@@ -30,3 +30,11 @@ test('aggregate contradictions are surfaced and red-carded players cannot be sub
  const e=prepareEvidence(f,1); assert.equal(e.events[2].playerOut,null); assert.ok(e.warnings.some(s=>s.includes('differs')));
  assert.equal(e.statistics[0].values[0].value,0);
 });
+test('live first-half goals never become a completed halftime result', () => {
+ const f=fixture(); f.fixture.status={short:'1H',elapsed:17}; f.goals={home:1,away:0}; f.score={halftime:{home:0,away:0},fulltime:{home:null,away:null}};
+ const e=prepareEvidence(f,1000);
+ assert.deepEqual(e.currentScore,{home:1,away:0}); assert.equal(e.completedPeriodScores.halftime,null);
+ assert.equal(e.completedPeriodScores.fulltime,null); assert.equal('score' in e,false);
+ f.fixture.status.short='HT'; f.score.halftime={home:1,away:0};
+ assert.deepEqual(prepareEvidence(f,1000).completedPeriodScores.halftime,{home:1,away:0});
+});

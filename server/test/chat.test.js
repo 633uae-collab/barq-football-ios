@@ -90,8 +90,10 @@ test('upcoming analysis retrieves recent form and same-competition statistics fo
   const paths = [];
   const evidence = await collectEvidence({ load: async path => {
     paths.push(path);
-    if (path.startsWith('/teams/statistics')) return { fetchedAt: 2000, data: { form: 'WWD', fixtures: { wins: { total: 2 } } } };
-    return { fetchedAt: 2000, data: [{fixture: { id: 77, date: '2026-11-08T16:00:00Z' }, league: {id: 140, season: 2026, name: 'La Liga'}, teams: {home: {id: 529}, away: {id: 541}}}] };
+    if (path.startsWith('/teams/statistics')) return { fetchedAt: 2000, data: { form: 'WWD', fixtures: {
+      played: { home: 7, away: 8 }, wins: { total: 2, home: 5, away: 1 }, draws: { home: 1, away: 2 }, loses: { home: 1, away: 5 }
+    }, goals: { for: { total: { home: 15, away: 7 }, average: { home: '2.1', away: '0.9' } }, against: { total: { home: 5, away: 12 }, average: { home: '0.7', away: '1.5' } } }, clean_sheet: { home: 4, away: 1 }, failed_to_score: { home: 1, away: 3 } } };
+    return { fetchedAt: 2000, data: [{fixture: { id: 77, date: '2026-11-08T16:00:00Z', status: { short: 'FT' } }, league: {id: 140, season: 2026, name: 'La Liga'}, teams: {home: {id: 529}, away: {id: 541}}, goals: { home: 2, away: 1 }}] };
   } }, "Predict Barcelona's next match");
   assert.equal(evidence.fixtureId, 77);
   assert.deepEqual(evidence.clubs.map(c => c.teamId), [529, 541]);
@@ -99,5 +101,19 @@ test('upcoming analysis retrieves recent form and same-competition statistics fo
     assert.ok(paths.includes(`/fixtures?team=${team}&last=5`));
     assert.ok(paths.includes(`/teams/statistics?team=${team}&league=140&season=2026`));
   }
+  assert.equal(evidence.clubs[0].nextFixtureVenue.role, 'home');
+  assert.equal(evidence.clubs[0].nextFixtureVenue.fixtures.wins, 5);
+  assert.equal(evidence.clubs[1].nextFixtureVenue.role, 'away');
+  assert.equal(evidence.clubs[1].nextFixtureVenue.goalsAgainst.average, '1.5');
+  assert.deepEqual(evidence.clubs[0].recentResultsNewestFirst.map(x => x.result), ['W']);
+  assert.deepEqual(evidence.clubs[1].recentResultsNewestFirst.map(x => x.result), ['L']);
   assert.ok(evidence.missing.some(x => x.includes('No calibrated prediction')));
+});
+test('club form is derived newest first only from completed results for the selected club', async () => {
+ const evidence=await collectEvidence({load:async path=>({fetchedAt:1000,data:path.startsWith('/teams/statistics')?{}:[
+ {fixture:{id:1,date:'2026-11-01',status:{short:'FT'}},teams:{home:{id:529},away:{id:2}},goals:{home:0,away:1}},
+ {fixture:{id:2,date:'2026-11-02',status:{short:'FT'}},teams:{home:{id:2},away:{id:529}},goals:{home:0,away:2}},
+ {fixture:{id:3,date:'2026-11-03',status:{short:'1H'}},teams:{home:{id:529},away:{id:2}},goals:{home:1,away:0}}
+ ]})},'Compare Barcelona and Real Madrid');
+ assert.deepEqual(evidence.clubs[0].recentResultsNewestFirst.map(r=>r.result),[null,'W','L']);
 });

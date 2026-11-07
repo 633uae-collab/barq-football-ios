@@ -45,7 +45,7 @@ struct AnalystChatView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(message.question).font(.subheadline.bold()).textSelection(.enabled)
                     if let reply = message.answer {
-                        Text(reply.answer).textSelection(.enabled).accessibilityIdentifier("analyst-answer")
+                        Text((try? AttributedString(markdown: reply.answer, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(reply.answer)).textSelection(.enabled).accessibilityIdentifier("analyst-answer")
                         Text("API-Football · " + (en ? "Data retrieved: " : "وقت جلب البيانات: ") + Date(timeIntervalSince1970: reply.fetchedAt / 1000).formatted(date: .abbreviated, time: .standard))
                             .font(.caption2).foregroundStyle(.secondary)
                         Text(reply.model).font(.caption2).foregroundStyle(.secondary)

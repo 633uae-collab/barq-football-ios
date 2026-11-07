@@ -16,6 +16,7 @@ test('every identical question fetches fresh provider data and a new Groq answer
     groq++;
     const b = JSON.parse(opts.body);
     assert.equal(b.reasoning_effort, 'high');
+    assert.match(b.messages[0].content, /nextFixtureVenue/);
     assert.equal(JSON.parse(b.messages[1].content).evidence.fetchedAt, upstream);
     return success();
   } });
@@ -73,4 +74,11 @@ test('internal CLI is opt-in, expiring, claimed once, bounded and secret-redacte
   assert.equal(await run(opts), true); assert.equal(calls, 2); assert.deepEqual(waits, [65000]);
   assert.equal(await run(opts), false); assert.equal(calls, 2);
   assert.ok(!logs.join('').includes('secret-')); assert.ok(logs.join('').includes('[REDACTED]'));
+});
+test('missing provider reset time is not presented as a sixty-second quota reset', async () => {
+ let calls=0;
+ const analyst=new GroqAnalyst({key:'fake',now:()=>1000,fetchImpl:async()=>{calls++;return new Response('{}',{status:429});}});
+ await assert.rejects(analyst.answer('Analyze', {fetchedAt:1000}),e=>e.code==='AI_FREE_QUOTA_REACHED' && e.retryAfter===undefined);
+ await assert.rejects(analyst.answer('Analyze', {fetchedAt:1000}),e=>e.code==='AI_FREE_QUOTA_REACHED' && e.retryAfter===undefined);
+ assert.equal(calls,1);
 });
