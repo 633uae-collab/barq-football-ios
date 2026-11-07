@@ -99,3 +99,26 @@ test('free preview never acknowledges or stores preferences and still serves mat
   assert.equal((await h.request('/healthz')).body.preferencesSync, false);
   assert.equal((await h.request('/api/fixtures')).status, 200);
 });
+
+
+test('player search uses profiles without a guessed league or season and preserves failures', async t => {
+  const h = await harness(t, async url => {
+    const u = new URL(url);
+    assert.equal(u.searchParams.has('season'), false);
+    assert.equal(u.searchParams.has('league'), false);
+    const response = u.pathname === '/players/profiles' ? [{ player: { id: 1100, name: 'E. Haaland', photo: 'https://example.com/1100.png' } }] : [];
+    return new Response(JSON.stringify({ errors: [], response }), { headers: { 'content-type': 'application/json' } });
+  });
+  const r = await h.request('/api/search?q=haaland');
+  assert.equal(r.status, 200); assert.equal(r.body.players[0].id, 1100);
+  assert.equal(r.body.players[0].name, 'E. Haaland');
+  assert.ok(h.calls.some(url => new URL(url).pathname === '/players/profiles'));
+  h.calls.length = 0;
+  const short = await h.request('/api/search?q=abc');
+  assert.equal(short.status, 200);
+  assert.ok(!h.calls.some(url => new URL(url).pathname === '/players/profiles'));
+  const failing = await harness(t, async url => new URL(url).pathname === '/players/profiles'
+    ? new Response('Unavailable', { status: 503 })
+    : new Response(JSON.stringify({ errors: [], response: [] }), { headers: { 'content-type': 'application/json' } }));
+  assert.equal((await failing.request('/api/search?q=haaland')).status, 503);
+});

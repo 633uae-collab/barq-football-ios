@@ -123,10 +123,13 @@ function createApp({ provider, storage, storageMode = 'persistent' }) {
     if (q.length < 3) return res.json({ q, teams: [], leagues: [], players: [], matches: [], notes: ['Enter at least 3 characters'] });
     const aliases = { 'برشلونة': 'Barcelona', 'ريال مدريد': 'Real Madrid', 'ليفربول': 'Liverpool', 'مانشستر سيتي': 'Manchester City', 'باريس': 'Paris Saint Germain', 'الهلال': 'Al Hilal', 'النصر': 'Al Nassr', 'العين': 'Al Ain' };
     const search = aliases[q] || q;
-    const [teams, leagues] = await Promise.all([get('/teams', { search }, 3600000), get('/leagues', { search }, 3600000)]);
+    const [teams, leagues, players] = await Promise.all([
+      get('/teams', { search }, 3600000), get('/leagues', { search }, 3600000),
+      search.length >= 4 ? get('/players/profiles', { search }, 86400000) : Promise.resolve({ data: [], stale: false })
+    ]);
     res.json({ q, translated: search === q ? undefined : search, teams: teams.data.map(t => t.team),
-      leagues: leagues.data.map(N.league), players: [], matches: [], stale: teams.stale || leagues.stale,
-      notes: ['Player and match search are not restored yet'] });
+      leagues: leagues.data.map(N.league), players: players.data.map(p => p.player), matches: [], stale: teams.stale || leagues.stale || players.stale,
+      notes: ['Match search is not restored yet', ...(search.length < 4 ? ['Player search requires at least 4 characters'] : [])] });
   });
   app.put('/api/prefs/:device', (req, res) => {
     // Never acknowledge a snapshot we cannot retain. iOS keeps its durable outbox on 503.
