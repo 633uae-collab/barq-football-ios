@@ -77,11 +77,13 @@ async function collectEvidence(provider, question, context = {}) {
     evidence.clubs = [];
     for (const team of teamIds) {
       const fixtures = await load('/fixtures', { team, [upcoming ? 'next' : 'last']: upcoming ? 1 : 5 });
-      const club = { teamId: team, matches: fixtures.map(summary), recentResultsNewestFirst: upcoming ? [] : clubResults(fixtures, team) };
+      const club = { teamId: team,
+        recentScope: 'Latest fixtures across competitions as returned by API-Football; inspect each match league before making competition-specific claims.',
+        matches: fixtures.map(summary), recentResultsNewestFirst: upcoming ? [] : clubResults(fixtures, team) };
       const league = fixtures[0]?.league;
       if (league?.id && league?.season) {
         const stats = await load('/teams/statistics', { team, league: league.id, season: league.season });
-        club.season = { league: league.name, year: league.season, fixtures: stats.fixtures,
+        club.season = { scope: `Season aggregate for ${league.name} only`, league: league.name, year: league.season, fixtures: stats.fixtures,
           goals: stats.goals, form: stats.form, cleanSheet: stats.clean_sheet, failedToScore: stats.failed_to_score };
         if (upcoming) {
           const role = fixtures[0]?.teams?.home?.id === team ? 'home' : fixtures[0]?.teams?.away?.id === team ? 'away' : null;
@@ -101,10 +103,12 @@ async function collectEvidence(provider, question, context = {}) {
     const opponent = [next?.teams?.home?.id, next?.teams?.away?.id].find(id => Number.isInteger(id) && id !== club.teamId);
     if (opponent) {
       const recent = await load('/fixtures', { team: opponent, last: 5 });
-      const other = { teamId: opponent, matches: recent.map(summary), recentResultsNewestFirst: clubResults(recent, opponent) };
+      const other = { teamId: opponent,
+        recentScope: 'Latest fixtures across competitions as returned by API-Football; inspect each match league before making competition-specific claims.',
+        matches: recent.map(summary), recentResultsNewestFirst: clubResults(recent, opponent) };
       if (next.league?.id && next.league?.season) {
         const stats = await load('/teams/statistics', { team: opponent, league: next.league.id, season: next.league.season });
-        other.season = { league: next.league.name, year: next.league.season, fixtures: stats.fixtures,
+        other.season = { scope: `Season aggregate for ${next.league.name} only`, league: next.league.name, year: next.league.season, fixtures: stats.fixtures,
           goals: stats.goals, form: stats.form, cleanSheet: stats.clean_sheet, failedToScore: stats.failed_to_score };
         const role = next.teams?.home?.id === opponent ? 'home' : next.teams?.away?.id === opponent ? 'away' : null;
         other.nextFixtureVenue = relevantVenueSeason(stats, role);

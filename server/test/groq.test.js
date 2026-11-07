@@ -19,6 +19,9 @@ test('every identical question fetches fresh provider data and a new Groq answer
     assert.match(b.messages[0].content, /nextFixtureVenue/);
     assert.match(b.messages[0].content, /passing\.keyPasses means key passes/);
     assert.match(b.messages[0].content, /own goal was credited/);
+    assert.match(b.messages[0].content, /If evidence\.events is empty, do not emit any event-\*/);
+    assert.match(b.messages[0].content, /never expected, predicted or current formation/);
+    assert.match(b.messages[0].content, /Recent club matches may span competitions/);
     assert.equal(JSON.parse(b.messages[1].content).evidence.fetchedAt, upstream);
     return success();
   } });

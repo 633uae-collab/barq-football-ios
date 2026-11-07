@@ -117,4 +117,25 @@ final class TimelineReplayTests: XCTestCase {
         XCTAssertEqual(stabilizer.aliases[TimelineOrder.key(goal)], original,
                        "the SwiftUI row id must survive an in-place minute correction")
     }
+
+    func testDistinctSameTeamSubstitutionDoesNotStealMissingRowIdentity() throws {
+        let urls = (Bundle(for: Self.self).urls(forResourcesWithExtension: "json", subdirectory: nil) ?? [])
+        let substitutions = urls.lazy.compactMap { try? self.load($0).events }
+            .flatMap { $0 }.filter { $0.type.lowercased() == "subst" }
+        let pair = try XCTUnwrap(Dictionary(grouping: substitutions, by: { $0.team.id }).values.first { group in
+            guard group.count > 1 else { return false }
+            let first = group[0]
+            return group.dropFirst().contains { ($0.player?.id != first.player?.id || $0.player?.name != first.player?.name)
+                && ($0.assist?.id != first.assist?.id || $0.assist?.name != first.assist?.name) }
+        })
+        var old = pair[0]
+        var new = try XCTUnwrap(pair.dropFirst().first { ($0.player?.id != old.player?.id || $0.player?.name != old.player?.name)
+            && ($0.assist?.id != old.assist?.id || $0.assist?.name != old.assist?.name) })
+        old.time.elapsed = 71; new.time.elapsed = 72
+        var stabilizer = TimelineOrder.Stabilizer()
+        let shown = stabilizer.merge(previous: [old], incoming: [new])
+        XCTAssertEqual(shown.count, 2, "a distinct new substitution and one transiently missing row must both remain visible")
+        XCTAssertEqual(stabilizer.aliases[TimelineOrder.key(new)], TimelineOrder.key(new),
+                       "a new substitution must keep its own identity")
+    }
 }
