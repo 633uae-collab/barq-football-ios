@@ -503,25 +503,23 @@ struct PickTile: View, Equatable {
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var splash = true
-    /// Not built at launch (measured: building it before the first F frame delayed that frame by seconds).
-    /// Mounted right after the first splash frame; LaunchGate still holds its network/data work until the splash ends.
-    @State private var mounted = false
     @State private var onboarded = Onboarding.isDone()
     @State private var cinematic = Onboarding.needsCinema()
     var body: some View {
         ZStack {
             Color("LaunchBackground").ignoresSafeArea()
-            if mounted {
-                Group {
-                    if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
-                }
-                .onAppear {
-                    SplashDiag.log.notice("NEXT page appear +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
-                    // next runloop turn = after its first layout/draw commit
-                    DispatchQueue.main.async {
-                        SplashDiag.log.notice("NEXT page drawn +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
-                        SplashClock.nextReady = true
-                    }
+            // Build and lay out the destination before the first animated splash frame.
+            // iOS keeps the matching static launch screen visible while this initial work
+            // completes, and LaunchGate still prevents network work until the reveal ends.
+            Group {
+                if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
+            }
+            .onAppear {
+                SplashDiag.log.notice("NEXT page appear +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+                // next runloop turn = after its first layout/draw commit
+                DispatchQueue.main.async {
+                    SplashDiag.log.notice("NEXT page drawn +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+                    SplashClock.nextReady = true
                 }
             }
             if splash {
@@ -535,11 +533,6 @@ struct LaunchFlow<Content: View>: View {
                     }
                 }.zIndex(1)
             }
-        }
-        .task {   // mount the next page only once the first F frame has been produced
-            while !SplashClock.sawFirstFrame && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(16)) }
-            try? await Task.sleep(for: .milliseconds(50))   // let that frame reach the screen first
-            mounted = true
         }
     }
 }
