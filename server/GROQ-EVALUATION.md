@@ -57,3 +57,16 @@ unverified, identifies an own goal's credited team without inventing the scorer'
 exact score/favourite/margin without a calibrated prediction source. These corrections require a fresh
 bilingual simulator run before approval. The current public route therefore remains review-limited and
 is not declared ready for unrestricted users.
+
+## Dynamic welcome (review)
+GET `/api/analyst/welcome` is separate from chat. It retrieves today's fixtures,
+selects a recent supported major-competition match, and uses GPT-OSS 120B only
+for a short invitation. The factual team/phase prefix is assembled from the
+provider. There is no news feed: transfer/news prompts are deliberately absent.
+Generation is cached by fixture/phase/language, capped at four attempts per UTC
+day per process with a fifteen-minute gap. This is an application budget, not
+an assertion about account quota. Fresh evidence is shared for sixty seconds;
+stale/missing data, invalid output, quota or network errors return the generic
+welcome. Deliberate chat aborts lower-priority welcome generation. No retries,
+paid fallback or automatic chat turn. Cache and budget are process-local on
+Render Free and reset on deployment; public-scale durable quota remains work.

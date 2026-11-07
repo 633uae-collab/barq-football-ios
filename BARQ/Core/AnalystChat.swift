@@ -32,3 +32,15 @@ struct AnalystChatError: LocalizedError {
 }
 
 struct AnalystHistoryMessage: Codable { let role: String; let content: String }
+
+struct AnalystWelcome: Decodable {
+    let text: String
+    let dynamic: Bool
+    let expiresAt: Double
+    static func fallback(english: Bool) -> String {
+        english ? "Every football question on your mind, answered here." : "كل سؤال في بالك عن الكورة، جوابه هني."
+    }
+    func displayText(at date: Date, english: Bool) -> String {
+        expiresAt > date.timeIntervalSince1970 * 1000 ? text : Self.fallback(english: english)
+    }
+}

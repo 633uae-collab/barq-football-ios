@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct AnalystChatView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var welcome: AnalystWelcome?
+    @State private var visible = false
     @State private var archive = AnalystConversations()
     @State private var question = ""
     @State private var sending = false
@@ -14,10 +17,10 @@ struct AnalystChatView: View {
                     if archive.current.turns.isEmpty {
                         VStack(spacing: 16) {
                             BrandMark(height: 48).accessibilityIdentifier("analyst-welcome-logo")
-                            Text(en ? "Every football question on your mind, answered here." : "كل سؤال في بالك عن الكورة، جوابه هني.")
-                                .font(.title3.weight(.medium)).multilineTextAlignment(.center).accessibilityIdentifier("analyst-welcome")
-                            Text(en ? "Fresh football data · Arabic & English" : "بيانات كرة قدم حديثة · عربي وإنجليزي")
-                                .font(.caption).foregroundStyle(.secondary)
+                            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                                Text(welcome?.displayText(at: timeline.date, english: en) ?? AnalystWelcome.fallback(english: en))
+                                    .font(.title3.weight(.medium)).multilineTextAlignment(.center).accessibilityIdentifier("analyst-welcome")
+                            }
                         }.frame(maxWidth: .infinity).padding(.vertical, 50)
                     }
                     ForEach(archive.current.turns) { message in
@@ -51,6 +54,16 @@ struct AnalystChatView: View {
             .onChange(of: archive.current.turns.count) { _, _ in withAnimation { scroll.scrollTo("chat-bottom", anchor: .bottom) } }
             .onChange(of: sending) { _, value in if !value { withAnimation { scroll.scrollTo("chat-bottom", anchor: .bottom) } } }
             .onChange(of: archive.selectedID) { _, _ in scroll.scrollTo("chat-bottom", anchor: .bottom) }
+        }
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
+        .task(id: "\(visible)-\(scenePhase == .active)-\(archive.current.turns.isEmpty)-\(en)") {
+            guard visible, scenePhase == .active, archive.current.turns.isEmpty else { return }
+            welcome = nil
+            while !Task.isCancelled {
+                if let value = try? await API.shared.analystWelcome(language: en ? "en" : "ar"), !Task.isCancelled { welcome = value }
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .toolbar {
