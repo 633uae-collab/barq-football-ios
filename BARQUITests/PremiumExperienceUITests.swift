@@ -49,4 +49,22 @@ final class PremiumExperienceUITests: XCTestCase {
         XCTAssertNotEqual(firstTab, secondTab, "The compact analyst emblem must keep rotating in the native tab bar")
         XCTAssertEqual(app.tabBars.buttons.count, 5, "The emblem must not change the approved tab-bar layout")
     }
+    func testRealDynamicWelcomeCaptureWithoutSending() throws {
+        let app = XCUIApplication.fotiq()
+        app.launchArguments = ["-lang", "ar", "-startTab", "ai", "-apiOverride", "https://barq-football-ios.onrender.com"]
+        app.launch()
+        XCTAssertTrue(app.buttons["analyst-new-chat"].waitForExistence(timeout: 40))
+        app.buttons["analyst-new-chat"].tap()
+        XCTAssertTrue(app.staticTexts["analyst-welcome"].waitForExistence(timeout: 10))
+        sleep(25)
+        XCTAssertTrue(app.staticTexts["analyst-welcome"].exists)
+        XCTAssertFalse(app.staticTexts["analyst-answer"].exists)
+        XCTAssertFalse(app.buttons["analyst-send"].isEnabled)
+        XCTAssertEqual(app.tabBars.buttons.count, 5)
+        let directory = URL(fileURLWithPath: "/tmp/fotiq-launch-shots", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("07-real-dynamic-welcome.png"))
+        try app.staticTexts["analyst-welcome"].label.write(to: directory.appendingPathComponent("welcome-observed.txt"), atomically: true, encoding: .utf8)
+    }
+
 }
