@@ -30,8 +30,14 @@ async function run({ env = process.env, now = Date.now, provider, analyst, log =
       const result = await provider.load('/fixtures?id=1575218');
       const f = result.data[0];
       if (!f || f.fixture?.id !== 1575218) throw new Error('missing');
-      const evidence = { fetchedAt: result.fetchedAt, fixture: f.fixture, league: f.league,
-        teams: f.teams, goals: f.goals, score: f.score, events: f.events || [], lineups: f.lineups || [], statistics: f.statistics || [] };
+      // Keep source facts, remove repeated URLs/IDs and unused substitutes to fit free TPM.
+      const evidence = { fetchedAt: result.fetchedAt, fixture: { id: f.fixture.id, date: f.fixture.date, status: f.fixture.status },
+        league: { name: f.league?.name, season: f.league?.season },
+        teams: { home: f.teams?.home?.name, away: f.teams?.away?.name }, goals: f.goals, score: f.score,
+        events: (f.events || []).map(e => ({ minute: e.time, team: e.team?.name, player: e.player?.name, assist: e.assist?.name, type: e.type, detail: e.detail })),
+        lineups: (f.lineups || []).map(l => ({ team: l.team?.name, formation: l.formation, coach: l.coach?.name,
+          startXI: (l.startXI || []).map(x => ({ name: x.player?.name, position: x.player?.pos })) })),
+        statistics: (f.statistics || []).map(s => ({ team: s.team?.name, statistics: s.statistics })) };
       emit({ phase: 'evidence', language, evidence });
       const answer = await analyst.answer(question, evidence);
       emit({ phase: 'answer', language, ...answer });
