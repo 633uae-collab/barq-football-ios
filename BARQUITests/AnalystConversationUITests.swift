@@ -1,6 +1,28 @@
 import XCTest
 
 final class AnalystConversationUITests: XCTestCase {
+    func testLiveWelcomeRemainsOutsideTheConversation() throws {
+        let app = XCUIApplication.fotiq()
+        app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
+        app.launch()
+        XCTAssertTrue(app.buttons["analyst-new-chat"].waitForExistence(timeout: 40))
+        app.buttons["analyst-new-chat"].tap()
+        let welcome = app.staticTexts["analyst-welcome"]
+        XCTAssertTrue(welcome.waitForExistence(timeout: 10))
+        // Allow the real Render/Groq request to complete; generic fallback is valid
+        // when the provider is unavailable. The saved label records what happened.
+        sleep(25)
+        XCTAssertTrue(welcome.exists)
+        XCTAssertFalse(app.staticTexts["analyst-answer"].exists)
+        XCTAssertFalse(app.staticTexts["analyst-error"].exists)
+        XCTAssertFalse(app.buttons["analyst-send"].isEnabled)
+        XCTAssertEqual(app.tabBars.buttons.count, 5)
+        let directory = URL(fileURLWithPath: "/tmp/fotiq-conversation-shots", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try welcome.label.write(to: directory.appendingPathComponent("welcome-observed.txt"), atomically: true, encoding: .utf8)
+        try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("05-live-welcome.png"))
+    }
+
     func testRealBilingualFollowUpsAndConversationRestoration() throws {
         continueAfterFailure = true
         let app = XCUIApplication.fotiq()
