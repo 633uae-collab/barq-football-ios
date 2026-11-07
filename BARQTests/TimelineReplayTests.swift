@@ -104,4 +104,17 @@ final class TimelineReplayTests: XCTestCase {
         var unattributed = goal; unattributed.player = nil
         XCTAssertEqual(TimelineOrder.key(goal), TimelineOrder.key(unattributed))
     }
+
+    func testCorrectedGoalMinuteKeepsDisplayedRowIdentity() throws {
+        let urls = (Bundle(for: Self.self).urls(forResourcesWithExtension: "json", subdirectory: nil) ?? [])
+        let goal = try XCTUnwrap(urls.lazy.compactMap { try? self.load($0).events.first { $0.type.lowercased() == "goal" } }.first)
+        var first = goal; first.time.elapsed = (goal.time.elapsed ?? 1) + 1; first.player = nil
+        var stabilizer = TimelineOrder.Stabilizer()
+        stabilizer.seed([first])
+        let original = try XCTUnwrap(stabilizer.aliases[TimelineOrder.key(first)])
+        let shown = stabilizer.merge(previous: [first], incoming: [goal])
+        XCTAssertEqual(shown, [goal], "corrected provider content must replace the old event")
+        XCTAssertEqual(stabilizer.aliases[TimelineOrder.key(goal)], original,
+                       "the SwiftUI row id must survive an in-place minute correction")
+    }
 }
