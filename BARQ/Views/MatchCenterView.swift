@@ -43,7 +43,7 @@ struct MatchCenterView: View {
                         }.scrollIndicators(.hidden)
                     }
                     switch tab {
-                    case .timeline: TimelineSection(d: d, animateInsert: !holdPosition)
+                    case .timeline: TimelineSection(d: d, stableIDs: stabilizer.aliases, animateInsert: !holdPosition)
                     case .lineups: LineupSection(lineups: d.lineups)
                     case .stats: StatsSection(stats: d.statistics)
                     case .h2h: H2HSection(home: d.match.home.id, away: d.match.away.id)
@@ -97,7 +97,11 @@ struct MatchCenterView: View {
             let new: MatchDetail = try await API.shared.get(path)
             if replay { replayStep += 1 }
             var merged = new
-            if let old = d, old.match.id == new.match.id { merged.events = stabilizer.merge(previous: old.events, incoming: new.events) }
+            if let old = d, old.match.id == new.match.id {
+                merged.events = stabilizer.merge(previous: old.events, incoming: new.events)
+            } else {
+                stabilizer.seed(new.events)
+            }
             // compare what is displayed (merged), not the raw response, which may be transiently shorter
             let grew = merged.events.count > (d?.events.count ?? 0) && d != nil
             pendingY = nil
@@ -196,20 +200,39 @@ enum TimelineOrder {
     struct Stabilizer {
         static let maxMisses = 3
         var misses: [String: Int] = [:]
+        /// Current provider key -> first displayed row id. API-Football can correct an
+        /// event minute/player after publishing it; the corrected content should replace
+        /// the row without SwiftUI destroying and recreating that row.
+        private(set) var aliases: [String: String] = [:]
+        mutating func seed(_ events: [MatchEvent]) {
+            for (key, _) in TimelineOrder.keyedEvents(events) where aliases[key] == nil { aliases[key] = key }
+        }
         mutating func merge(previous: [MatchEvent], incoming: [MatchEvent]) -> [MatchEvent] {
             let inKeys = Set(TimelineOrder.keyedEvents(incoming).map(\.0))
             let prevKeyed = TimelineOrder.keyedEvents(previous), prevKeys = Set(prevKeyed.map(\.0))
+            seed(previous)
             // In-place revision: a new key of the same type+team replaces the missing one (e.g. goal minute corrected 10' -> 22').
             func slot(_ k: String) -> String { let p = k.split(separator: "|", omittingEmptySubsequences: false); return p.count > 4 ? "\(p[0])|\(p[4])" : k }
-            var revisedSlots: [String: Int] = [:]
-            for k in inKeys where !prevKeys.contains(k) { revisedSlots[slot(k), default: 0] += 1 }
+            var revisedKeys = Dictionary(grouping: inKeys.filter { !prevKeys.contains($0) }, by: slot)
+            for old in prevKeys where !inKeys.contains(old) {
+                let s = slot(old)
+                if let new = revisedKeys[s]?.first {
+                    aliases[new] = aliases[old] ?? old
+                    revisedKeys[s]?.removeFirst()
+                }
+            }
+            for k in inKeys where aliases[k] == nil { aliases[k] = k }
             var out = incoming
             for (k, e) in prevKeyed where !inKeys.contains(k) {
-                if let r = revisedSlots[slot(k)], r > 0 { revisedSlots[slot(k)] = r - 1; misses[k] = nil; continue }
+                // An alias on a newly arrived key proves this is an in-place revision.
+                let replacement = inKeys.first { slot($0) == slot(k) && aliases[$0] == (aliases[k] ?? k) }
+                if replacement != nil { misses[k] = nil; continue }
                 let n = misses[k, default: 0] + 1
                 if n < Self.maxMisses { misses[k] = n; out.append(e) } else { misses[k] = nil }
             }
             for k in inKeys { misses[k] = nil }
+            let displayed = Set(TimelineOrder.keyedEvents(out).map(\.0))
+            aliases = aliases.filter { displayed.contains($0.key) }
             return out
         }
     }
@@ -232,12 +255,15 @@ enum TimelineOrder {
 
 struct TimelineSection: View {
     let d: MatchDetail
+    var stableIDs: [String: String] = [:]
     var animateInsert = true
     var body: some View {
         if d.events.isEmpty && d.match.isUpcoming { EmptyState(symbol: "list.bullet.below.rectangle", title: "لا توجد أحداث بعد") }
         else {
             VStack(spacing: 0) {
-                ForEach(TimelineOrder.keyed(d.events, status: d.match.status.short), id: \.key) { item in
+                ForEach(TimelineOrder.keyed(d.events, status: d.match.status.short).map {
+                    TimelineOrder.Keyed(key: stableIDs[$0.key] ?? $0.key, row: $0.row)
+                }, id: \.key) { item in
                     switch item.row {
                     case .marker(let m): marker(m).accessibilityElement(children: .combine).accessibilityIdentifier("tl-\(item.key)")
                     case .event(_, let e): eventRow(e).accessibilityElement(children: .combine).accessibilityIdentifier("tl-\(item.key)")
