@@ -51,7 +51,33 @@ class GroqAnalyst {
     if (this.quotaResetKnown) e.retryAfter = Math.max(1, Math.ceil((this.blockedUntil - this.now()) / 1000));
     return e;
   }
+  // Low-priority, bounded welcome generation; deliberate questions take priority.
+  async welcome(event, lang) {
+    if (!this.chatEnabled || !this.freePlanConfirmed || !this.key || this.active || this.now() < this.blockedUntil) throw new ServiceError('AI_BUSY', 429);
+    const controller = new AbortController();
+    this.welcomeController = controller;
+    try {
+      const r = await this.fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST', redirect: 'error', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+        headers: { authorization: `Bearer ${this.key}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ model: MODEL, reasoning_effort: 'low', max_completion_tokens: 1200,
+          messages: [{ role: 'system', content: 'Write exactly one short question inviting a football question. No factual claims, names, numbers, predictions, news, scores, quotation marks or extra text. Arabic: warm Emirati Arabic starting with وش or شو. English: start What or How. End with a question mark. Maximum 95 characters. The verified phase is supplied separately: before means ask about expectations, live means ask about current events, after means ask about performance.' },
+          { role: 'user', content: JSON.stringify({ language: lang, phase: event.phase }) }] })
+      });
+      if (r.status === 429) {
+        const retry = Number(r.headers.get('retry-after'));
+        this.quotaResetKnown = Number.isFinite(retry) && retry > 0;
+        this.blockedUntil = this.now() + (this.quotaResetKnown ? retry : 60) * 1000;
+        throw this.quotaError();
+      }
+      if (!r.ok) throw new ServiceError('AI_UPSTREAM_UNAVAILABLE');
+      const choice = (await r.json()).choices?.[0];
+      if (choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string') throw new ServiceError('AI_INCOMPLETE_RESPONSE');
+      return choice.message.content;
+    } finally { if (this.welcomeController === controller) this.welcomeController = null; }
+  }
   async answer(question, evidence, history = []) {
+    this.welcomeController?.abort();
     if (this.active) throw new ServiceError('AI_BUSY', 429);
     if (this.now() < this.blockedUntil) throw this.quotaError();
     this.active = true;
@@ -91,6 +117,7 @@ class GroqAnalyst {
 }
 function mountGroq(app, { analyst, provider }) {
   require('./chat').mountChat(app, { analyst, provider });
+  require('./welcome').mountWelcome(app, { analyst, provider });
   app.post('/api/analyst/evaluate', async (req, res) => {
     analyst.authorize(req.get('authorization'));
     const { question, fixtureId } = req.body || {};
