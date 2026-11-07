@@ -61,8 +61,15 @@ final class HomeReviewUITests: XCTestCase {
         if row.exists, row.isHittable { row.press(forDuration: 1.5); sleep(3); shot("longpress-preview"); app.tap(); sleep(2) }
         // "all leagues" link at the bottom
         for _ in 0..<12 { app.swipeUp(velocity: .fast) }
-        let all = app.buttons["كل الدوريات"]
-        if all.waitForExistence(timeout: 5) { all.tap(); sleep(6); shot("all-leagues"); back(app) }
+        // Both Upcoming and Today contain this link. Select the visible instance after scrolling.
+        let links = app.buttons.matching(identifier: "كل الدوريات")
+        let ready = NSPredicate { _, _ in links.allElementsBoundByIndex.contains { $0.isHittable } }
+        let visible = XCTNSPredicateExpectation(predicate: ready, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 10), .completed,
+                       "All leagues link must be reachable from Home")
+        if let all = links.allElementsBoundByIndex.first(where: { $0.isHittable }) {
+            all.tap(); sleep(6); shot("all-leagues"); back(app)
+        }
         // open first hero card -> match center
         for _ in 0..<14 { app.swipeDown(velocity: .fast) }
         sleep(2)
