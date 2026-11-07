@@ -204,3 +204,28 @@ test('typed Haaland questions resolve identity without a picker and retrieve fre
     assert.ok(evidence.missing.some(x=>x.includes('No season available')));
   }
 });
+
+
+test('HTTP quota errors preserve unknown provider reset even during local spacing', async t => {
+  let now = 1762500000000, calls = 0;
+  let retryHeader;
+  const analyst = new GroqAnalyst({ key: 'test-only', chatEnabled: true, freePlanConfirmed: true, now: () => now,
+    fetchImpl: async () => { calls++; return new Response('{}', { status: 429, headers: retryHeader ? { 'retry-after': retryHeader } : {} }); } });
+  const provider = { load: async () => ({ fetchedAt: now, data: [{ fixture: { id: 7 } }] }) };
+  const server = createApp({ analyst, provider, storage: {} }).listen(0, '127.0.0.1');
+  await new Promise(r => server.once('listening', r)); t.after(() => new Promise(r => server.close(r)));
+  const send = () => fetch(`http://127.0.0.1:${server.address().port}/api/analyst/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: 'Analyze', context: { fixtureId: 7 } }) });
+  for (let i = 0; i < 2; i++) {
+    const response = await send();
+    assert.equal(response.status, 429);
+    assert.equal((await response.json()).error, 'AI_FREE_QUOTA_REACHED');
+    assert.equal(response.headers.get('retry-after'), null);
+  }
+  assert.equal(calls, 1);
+  now += 65001; retryHeader = '120';
+  let response = await send();
+  assert.equal(response.headers.get('retry-after'), '120');
+  now += 10000; response = await send();
+  assert.equal(response.headers.get('retry-after'), '110');
+  assert.equal(calls, 2);
+});
