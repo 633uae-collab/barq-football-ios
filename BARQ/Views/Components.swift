@@ -176,7 +176,7 @@ struct MatchRow: View {
     func teamCol(_ t: TeamRef) -> some View {
         VStack(spacing: 6) {
             RemoteImage(url: t.logo, size: 38)
-            Text(t.name).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            Text(t.name).accessibilityIdentifier("score-team-\(f.id)-\(t.id)").font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
         }.frame(maxWidth: .infinity)
     }
 }

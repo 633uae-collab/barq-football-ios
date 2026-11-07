@@ -4,6 +4,10 @@ MODE=${1:?first or quick}
 [[ "$MODE" == first || "$MODE" == quick ]]
 mkdir -p out
 APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
+if [[ "$MODE" == first ]]; then
+  # A fresh simulator install also clears the OS launch-screen snapshot cache.
+  xcrun simctl uninstall "$UDID" ae.barq.football 2>/dev/null || true
+fi
 xcrun simctl install "$UDID" "$APP"
 if [[ "$MODE" == first ]]; then
   xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true

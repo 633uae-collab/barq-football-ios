@@ -72,6 +72,8 @@ struct MatchCenterView: View {
             if let f = d?.match {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { store.toggleSaved(f.id) } label: { Image(systemName: store.savedMatches.contains(f.id) ? "bookmark.fill" : "bookmark") }
+                        .accessibilityIdentifier("match-save")
+                        .accessibilityValue(store.savedMatches.contains(f.id) ? "saved" : "unsaved")
                     Menu {
                         if f.isUpcoming { Button("أضف لتقويم الآيفون", systemImage: "calendar.badge.plus") { Task { do { try await CalendarService.add(f); msg = "تمت الإضافة للتقويم" } catch { msg = error.localizedDescription } } } }
                         if !f.isDone { Button("تابع على شاشة القفل", systemImage: "platter.filled.bottom.iphone") { do { if let detail = d { try LiveActivities.start(detail) } else { try LiveActivities.start(for: f) }; msg = "بدأت المتابعة المباشرة" } catch { msg = error.localizedDescription } } }

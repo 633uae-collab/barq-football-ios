@@ -57,6 +57,29 @@ final class ScoreAssociationUITests: XCTestCase {
                 try screenshot.pngRepresentation.write(to: directory.appendingPathComponent(name + ".png"))
                 let attachment = XCTAttachment(screenshot: screenshot)
                 attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+                if id == 1570451 && language == "ar" {
+                    let save = app.buttons["match-save"]
+                    XCTAssertTrue(save.exists)
+                    if save.value as? String != "saved" { save.tap() }
+                    XCTAssertEqual(save.value as? String, "saved")
+                    app.terminate()
+                    app.launchArguments = ["-startTab", "favorites", "-lang", language]
+                    app.launch()
+                    XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 30))
+                    let savedHome = app.staticTexts["score-home-\(id)"]
+                    let savedAway = app.staticTexts["score-away-\(id)"]
+                    XCTAssertTrue(savedHome.waitForExistence(timeout: 90))
+                    XCTAssertEqual(savedHome.label, String(home))
+                    XCTAssertEqual(savedAway.label, String(away))
+                    let tree = try app.snapshot()
+                    let left = try XCTUnwrap(find("score-away-\(id)", in: tree)).frame
+                    let right = try XCTUnwrap(find("score-home-\(id)", in: tree)).frame
+                    let homeTeam = try XCTUnwrap(find("score-team-\(id)-\(f.home.id)", in: tree)).frame
+                    let awayTeam = try XCTUnwrap(find("score-team-\(id)-\(f.away.id)", in: tree)).frame
+                    XCTAssertGreaterThan(right.midX, left.midX)
+                    XCTAssertGreaterThan(homeTeam.midX, awayTeam.midX)
+                    try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("score-madrid-saved-ar.png"))
+                }
                 app.terminate()
             }
         }
