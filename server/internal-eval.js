@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { GroqAnalyst, MODEL } = require('./groq');
+const { prepareEvidence } = require('./analyst-evidence');
 const { Provider } = require('./provider');
 async function run({ env = process.env, now = Date.now, provider, analyst, log = console.log,
   claim = () => fs.closeSync(fs.openSync(path.join(os.tmpdir(), 'fotiq-groq-evaluation-20261107.lock'), 'wx', 0o600)),
@@ -15,29 +16,29 @@ async function run({ env = process.env, now = Date.now, provider, analyst, log =
   // Never log raw exception messages, headers, environment, credentials or URLs with credentials.
   const secrets = [env.GROQ_API_KEY, env.APISPORTS_KEY, env.FOTIQ_AI_EVAL_TOKEN].filter(Boolean);
   const emit = value => { let s = JSON.stringify(value); for (const secret of secrets) s = s.split(secret).join('[REDACTED]'); log('FOTIQ_INTERNAL_EVAL ' + s); };
-  provider ||= new Provider({ key: env.APISPORTS_KEY, dailyLimit: 2 });
+  provider ||= new Provider({ key: env.APISPORTS_KEY, dailyLimit: 3 });
   analyst ||= new GroqAnalyst({ key: env.GROQ_API_KEY });
   const questions = [
     ['ar', 'حلل هذه المباراة بالعربية. اذكر النتيجة والحالة والإحصائيات الداعمة ونقاط القوة والضعف وما تسمح التشكيلة باستنتاجه. افصل الحقائق عن الاستنتاجات، ووضح البيانات الناقصة. لا تخترع احتمالات فوز.'],
     ['en', 'Analyze this match in English. State the score, status, supporting statistics, strengths and weaknesses, and what the lineups allow you to infer. Separate facts from inferences and identify missing evidence. Do not invent win probabilities.']
   ];
-  emit({ phase: 'start', model: MODEL, maxRequests: 2, fixtureId: 1575218 });
+  let fixtureId = 1575218;
+  if (env.FOTIQ_INTERNAL_EVAL_LIVE === 'true') {
+    const live = await provider.load('/fixtures?live=all');
+    const candidate = live.data.find(f => ['1H', '2H', 'HT', 'ET', 'BT', 'P'].includes(f.fixture?.status?.short));
+    if (!candidate) { emit({ phase: 'finished', reason: 'NO_LIVE_MATCH', httpEndpointCreated: false }); return true; }
+    fixtureId = candidate.fixture.id;
+  }
+  emit({ phase: 'start', model: MODEL, maxRequests: 2, fixtureId });
   for (let i = 0; i < questions.length; i++) {
     if (i) await pause(65000); // Respect the verified free account's per-minute token budget.
     if (now() + 70000 >= deadline) break;
     const [language, question] = questions[i];
     try {
-      const result = await provider.load('/fixtures?id=1575218');
+      const result = await provider.load(`/fixtures?id=${fixtureId}`);
       const f = result.data[0];
-      if (!f || f.fixture?.id !== 1575218) throw new Error('missing');
-      // Keep source facts, remove repeated URLs/IDs and unused substitutes to fit free TPM.
-      const evidence = { fetchedAt: result.fetchedAt, fixture: { id: f.fixture.id, date: f.fixture.date, status: f.fixture.status },
-        league: { name: f.league?.name, season: f.league?.season },
-        teams: { home: f.teams?.home?.name, away: f.teams?.away?.name }, goals: f.goals, score: f.score,
-        events: (f.events || []).map(e => ({ minute: e.time, team: e.team?.name, player: e.player?.name, assist: e.assist?.name, type: e.type, detail: e.detail })),
-        lineups: (f.lineups || []).map(l => ({ team: l.team?.name, formation: l.formation, coach: l.coach?.name,
-          startXI: (l.startXI || []).map(x => ({ name: x.player?.name, position: x.player?.pos })) })),
-        statistics: (f.statistics || []).map(s => ({ team: s.team?.name, statistics: s.statistics })) };
+      if (!f || f.fixture?.id !== fixtureId) throw new Error('missing');
+      const evidence = prepareEvidence(f, result.fetchedAt);
       emit({ phase: 'evidence', language, evidence });
       const answer = await analyst.answer(question, evidence);
       emit({ phase: 'answer', language, ...answer });
