@@ -35,7 +35,10 @@ function prepareEvidence(f, fetchedAt) {
       return { ...event, playerIn: null, playerOut: null, participants: [e.player?.name, e.assist?.name].filter(Boolean) };
     }
     if (String(e.type).toLowerCase() === 'card' && /red/i.test(e.detail || '')) rosters.get(e.team?.id)?.on.delete(e.player?.id);
+    const ownGoal = String(e.type).toLowerCase() === 'goal' && /own goal/i.test(e.detail || '');
     return { ...event, player: e.player?.name ?? null,
+      ...(ownGoal ? { creditedTeam: e.team?.name ?? null, playerClub: null,
+        ownGoalNote: 'Provider credits this goal to creditedTeam; the scorer club is not supplied. Never call the scorer a player of creditedTeam.' } : {}),
       ...(String(e.type).toLowerCase() === 'goal' ? { goalAssist: e.assist?.name ?? null } : {}) };
   });
   const statistics = (f.statistics || []).map(s => {
@@ -53,6 +56,7 @@ function prepareEvidence(f, fetchedAt) {
     limitations: ['Lineups and formations describe kickoff, not confirmed current tactical shape.',
       'Whole-match statistics do not establish before/after red-card or substitution effects.',
       'Null goalAssist means unreported; never borrow a participant from a substitution.',
+      'For an own goal, creditedTeam is the team awarded the goal; playerClub is unknown unless separately supplied.',
       'Retrieval time is not kickoff time or the provider last-update time.'] };
 }
 module.exports = { prepareEvidence };
