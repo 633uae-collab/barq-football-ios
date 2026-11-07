@@ -11,11 +11,16 @@ Set `GROQ_API_KEY` and a separately generated `FOTIQ_AI_EVAL_TOKEN` in Render En
 Every accepted question loads API-Football via uncached provider.load first; upstream failure blocks analysis. Each answer uses a separate Groq call. No answer cache or history persistence. Response includes retrieval timestamp, generation timestamp and quota headers; retrieval time is not the upstream measurement time. 429 returns AI_FREE_QUOTA_REACHED and Retry-After; if Groq omits its reset, 60 seconds is a retry interval, not a promised quota reset. No automatic request is scheduled. Existing API budget also applies.
 
 ## Coverage and limits
-Current private prototype is match-scoped: fixture, teams, score, events, lineups and aggregate stats. Club season statistics, individual player statistics, comparisons across fixtures and prediction sources are NOT integrated yet. Missing facts and numerical odds must be declined. Instructions discourage hallucination but do not guarantee factual accuracy. No claim that real Groq answers have been tested yet.
+Native chat now gathers live/finished/upcoming fixtures, events, verified substitution direction,
+kickoff lineups, aggregate match statistics, club form and venue-relevant season splits, current
+scoring leaders, selected player statistics and up to five appearances with positive recorded minutes.
+It does not have a calibrated prediction source, complete injury/news context, or guaranteed coverage
+of every historical player appearance. Missing facts and numerical odds must be declined. Instructions
+and narrow event-time validation reduce errors but do not guarantee full semantic accuracy.
 
 Before public adoption: evaluate Arabic/English groundedness on a live match, a finished match and absent-data fixture; compare candidates blindly for factual support, tactical usefulness and uncertainty; reject unsupported claims and prompt injection; measure latency/token usage on Render Free. Inspect current provider lineups/stats against every numerical assertion. Implement public abuse controls and durable shared quota accounting before removing evaluator authentication. Process-local cooldown is not a durable global quota tracker. Test the iOS quota/error presentation before enabling UI. Obtain user approval after sharing actual results.
 
-## Native chat integration (pending simulator acceptance)
+## Native chat integration
 `POST /api/analyst/chat` is separate from the private evaluation route. It is disabled unless
 `FOTIQ_AI_CHAT_ENABLED=true`, a server key exists and `GROQ_FREE_PLAN_CONFIRMED=true`.
 The native client contains no provider or administrator token. Public chat has a global
@@ -36,3 +41,19 @@ when current squad data is absent. This bounded search cannot guarantee coverage
 Starting formations are not reported as current shapes. Predictions have no fabricated percentages.
 Large evidence is rejected rather than silently truncating generated answers. Time validation remains
 narrow and cannot certify every statement. Production readiness requires review of the actual UI answers.
+
+### Latest simulator evidence
+
+On iOS 26, head `8dde75f` completed all six acceptance questions in Arabic and English through the
+native SwiftUI screen: 12/12 requests returned `openai/gpt-oss-120b`. Mean response time was 13.458s,
+median 13.080s, and the observed range was 10.278–23.571s. The same run verified the player picker,
+the native tab bar and readable bullet formatting. It also exposed semantic weaknesses: an own-goal
+player was treated as belonging to the credited team, key passes were mistranslated as assists in an
+Arabic answer, provider pass-accuracy values were presented with an unverified percent unit, and one
+prediction used stronger certainty than the available evidence justified.
+
+The follow-up evidence schema now keeps assists separate from key passes, marks the pass-accuracy unit
+unverified, identifies an own goal's credited team without inventing the scorer's club, and prohibits an
+exact score/favourite/margin without a calibrated prediction source. These corrections require a fresh
+bilingual simulator run before approval. The current public route therefore remains review-limited and
+is not declared ready for unrestricted users.

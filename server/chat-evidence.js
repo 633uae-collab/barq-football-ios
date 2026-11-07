@@ -2,7 +2,21 @@
 const { prepareEvidence } = require('./analyst-evidence');
 // Entity aliases resolve identifiers only; every football fact comes from a fresh provider response.
 const aliases = [[529, /barcelona|برشلونة|برشلونه/i], [541, /real madrid|ريال مدريد/i], [40, /liverpool|ليفربول/i], [50, /manchester city|مانشستر سيتي/i]];
-const playerStats = p => ({ name: p.player?.name, statistics: (p.statistics || []).map(s => ({ team: s.team?.name, league: s.league?.name, games: s.games, goals: s.goals, shots: s.shots, passes: s.passes, tackles: s.tackles, dribbles: s.dribbles, cards: s.cards })) });
+// Provider player fields are overloaded. Give the model semantic names and keep
+// assists separate from key passes. API-Football's per-fixture `passes.accuracy`
+// values are retained as provider values but are not labelled as percentages.
+const playerStats = p => ({ name: p.player?.name, statistics: (p.statistics || []).map(s => ({
+  team: s.team?.name,
+  league: s.league?.name,
+  games: s.games,
+  scoring: { goals: s.goals?.total ?? null, assists: s.goals?.assists ?? null, conceded: s.goals?.conceded ?? null, saves: s.goals?.saves ?? null },
+  shooting: { total: s.shots?.total ?? null, onTarget: s.shots?.on ?? null },
+  passing: { total: s.passes?.total ?? null, keyPasses: s.passes?.key ?? null,
+    accuracyProviderValue: s.passes?.accuracy ?? null, accuracyUnitVerified: false },
+  defending: { tackles: s.tackles?.total ?? null, blocks: s.tackles?.blocks ?? null, interceptions: s.tackles?.interceptions ?? null },
+  dribbling: s.dribbles,
+  discipline: s.cards
+})) });
 const summary = f => ({ id: f.fixture?.id, kickoffUTC: f.fixture?.date, status: f.fixture?.status,
   league: { id: f.league?.id, name: f.league?.name, season: f.league?.season, round: f.league?.round },
   teams: { home: { id: f.teams?.home?.id, name: f.teams?.home?.name }, away: { id: f.teams?.away?.id, name: f.teams?.away?.name } }, goals: f.goals });
@@ -45,7 +59,8 @@ async function collectEvidence(provider, question, context = {}) {
     return r.data;
   };
   const evidence = { schema: 'fotiq-chat-evidence-v1', sources, missing, events: [],
-    limitations: ['Starting lineups are not current tactical shape.', 'No causal claim or probability is established by match totals.', 'Retrieval time is not the provider update time.'] };
+    limitations: ['Starting lineups are not current tactical shape.', 'No causal claim or probability is established by match totals.', 'Retrieval time is not the provider update time.',
+      'Player passing.keyPasses are chances created, not assists. passing.accuracyProviderValue has no verified unit and must not be printed as a percentage.'] };
   const teamIds = context.teamIds || aliases.filter(([, re]) => re.test(question)).map(([id]) => id);
   const playerIds = context.playerIds || [];
   const upcoming = /upcoming|next match|قادمة|القادمة|قادمه/i.test(question);

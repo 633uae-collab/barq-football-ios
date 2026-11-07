@@ -117,3 +117,13 @@ test('club form is derived newest first only from completed results for the sele
  ]})},'Compare Barcelona and Real Madrid');
  assert.deepEqual(evidence.clubs[0].recentResultsNewestFirst.map(r=>r.result),[null,'W','L']);
 });
+test('player evidence distinguishes assists, key passes and unverified accuracy units', async () => {
+ const evidence=await collectEvidence({load:async path=>({fetchedAt:1000,data:path.startsWith('/leagues')?
+  [{seasons:[{year:2026,current:true}]}]:[{player:{name:'Player'},statistics:[{goals:{total:5,assists:2},passes:{total:30,key:7,accuracy:'14'}}]}]})},
+  'Who is the best Premier League player this season?');
+ const stat=evidence.scoringLeaders[0].statistics[0];
+ assert.deepEqual(stat.scoring,{goals:5,assists:2,conceded:null,saves:null});
+ assert.deepEqual(stat.passing,{total:30,keyPasses:7,accuracyProviderValue:'14',accuracyUnitVerified:false});
+ assert.equal('passes' in stat,false);
+ assert.ok(evidence.limitations.some(x=>x.includes('not assists')));
+});

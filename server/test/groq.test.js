@@ -17,6 +17,8 @@ test('every identical question fetches fresh provider data and a new Groq answer
     const b = JSON.parse(opts.body);
     assert.equal(b.reasoning_effort, 'high');
     assert.match(b.messages[0].content, /nextFixtureVenue/);
+    assert.match(b.messages[0].content, /passing\.keyPasses means key passes/);
+    assert.match(b.messages[0].content, /own goal was credited/);
     assert.equal(JSON.parse(b.messages[1].content).evidence.fetchedAt, upstream);
     return success();
   } });

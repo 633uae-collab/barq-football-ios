@@ -38,3 +38,10 @@ test('live first-half goals never become a completed halftime result', () => {
  f.fixture.status.short='HT'; f.score.halftime={home:1,away:0};
  assert.deepEqual(prepareEvidence(f,1000).completedPeriodScores.halftime,{home:1,away:0});
 });
+test('own goals expose the credited team without inventing the scorer club', () => {
+ const f=fixture();
+ f.events=[{time:{elapsed:5},team:{id:1,name:'Home'},player:{id:9,name:'Player'},assist:{id:null,name:null},type:'Goal',detail:'Own Goal'}];
+ const event=prepareEvidence(f,1000).events[0];
+ assert.equal(event.creditedTeam,'Home'); assert.equal(event.playerClub,null);
+ assert.match(event.ownGoalNote,/scorer club is not supplied/i);
+});
