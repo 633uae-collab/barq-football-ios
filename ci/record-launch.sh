@@ -10,6 +10,18 @@ if [[ "$MODE" == first ]]; then
 fi
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > "out/$MODE-timing.log" 2>&1 &
 LOG=$!
+if [[ "$MODE" == quick ]]; then
+  # XCTest can terminate its app on completion. Bring the completed user's home
+  # onscreen before recording the subsequent close/reopen, without changing prefs.
+  xcrun simctl launch "$UDID" ae.barq.football -lang ar
+  for i in $(seq 1 45); do
+    if grep -q 'FINISH cinematic=false' "out/$MODE-timing.log"; then break; fi
+    sleep 1
+  done
+  grep -q 'FINISH cinematic=false' "out/$MODE-timing.log"
+  sleep 2
+  : > "out/$MODE-timing.log"
+fi
 xcrun simctl io "$UDID" recordVideo --codec=h264 --force "out/$MODE-launch-uncut.mp4" > "out/$MODE-recording.log" 2>&1 &
 REC=$!
 cleanup() { kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true; }

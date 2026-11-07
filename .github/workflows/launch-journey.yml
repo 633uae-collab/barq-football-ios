@@ -15,6 +15,7 @@ on:
       - BARQTests/LaunchJourneyTests.swift
       - BARQUITests/LaunchJourneyUITests.swift
       - ci/verify-launch-timing.py
+      - ci/record-launch.sh
 permissions:
   contents: read
 jobs:
