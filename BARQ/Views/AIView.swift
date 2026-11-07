@@ -10,6 +10,7 @@ struct AIView: View {
     @State private var scorers: [TopPlayer] = []
     @State private var spin = false
     @State private var speaker = AVSpeechSynthesizer()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
@@ -38,7 +39,13 @@ struct AIView: View {
         .screenBackground()
         .navigationTitle("FOTIQ AI")
         .barqDestinations()
-        .task { await load() }
+        .task {
+            await load()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(30)) } catch { break }
+                if scenePhase == .active { await load() }
+            }
+        }
         .refreshable { await load() }
     }
 

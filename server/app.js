@@ -14,7 +14,7 @@ const date = value => {
     || new Date(value).toISOString().slice(0, 10) !== value) throw new ServiceError('INVALID_DATE', 400);
   return value;
 };
-function createApp({ provider, storage, storageMode = 'persistent' }) {
+function createApp({ provider, storage, storageMode = 'persistent', observations }) {
   const app = express(); app.disable('x-powered-by');
   // Random per-install device ID is the existing client's capability. Never enumerate it.
   // No proxy headers trusted here: prevents spoofed addresses bypassing the budget.
@@ -46,7 +46,8 @@ function createApp({ provider, storage, storageMode = 'persistent' }) {
   app.get('/healthz', (_req, res) => {
     storage.q('SELECT 1');
     res.json({ ok: true, service: 'fotiq-backend', storageMode, preferencesSync: storageMode === 'persistent', providerConfigured: !!provider.key,
-      providerVerified: false, analyst: 'original_engine_missing', replay: 'original_recordings_missing' });
+      providerVerified: false, analyst: observations ? 'statistical-rules-v1' : 'original_engine_missing',
+      replay: observations ? 'observed_snapshots_only' : 'original_recordings_missing', replayPersistent: !!observations && storageMode === 'persistent' });
   });
   app.get('/api/catalog', async (_req, res) => {
     const r = await catalog(); const leagues = r.data.map(N.league);
@@ -57,11 +58,16 @@ function createApp({ provider, storage, storageMode = 'persistent' }) {
     const r = await get('/fixtures', { date: day, timezone: TZ });
     res.json({ date: day, fixtures: r.data.map(N.fixture), fetchedAt: r.fetchedAt, stale: r.stale });
   });
-  app.get('/api/match/:id', async (req, res) => {
-    const r = await get('/fixtures', { id: id(req.params.id), timezone: TZ });
+  const matchDetail = async fixtureId => {
+    const r = await get('/fixtures', { id: fixtureId, timezone: TZ });
     const f = r.data[0]; if (!f) throw new ServiceError('MATCH_NOT_FOUND', 404);
-    res.json({ match: N.fixture(f), events: f.events || [], lineups: f.lineups || [],
-      statistics: f.statistics || [], fetchedAt: r.fetchedAt, stale: r.stale });
+    const detail = { match: N.fixture(f), events: f.events || [], lineups: f.lineups || [],
+      statistics: f.statistics || [], fetchedAt: r.fetchedAt, stale: r.stale };
+    observations?.record(detail);
+    return detail;
+  };
+  app.get('/api/match/:id', async (req, res) => {
+    res.json(await matchDetail(id(req.params.id)));
   });
   app.get('/api/h2h/:home/:away', async (req, res) => {
     const r = await get('/fixtures/headtohead', { h2h: `${id(req.params.home)}-${id(req.params.away)}`, last: 10 }, 3600000);
@@ -148,7 +154,26 @@ function createApp({ provider, storage, storageMode = 'persistent' }) {
       [req.params.device, JSON.stringify(body), Date.now()]);
     res.json({ ok: true });
   });
-  // These originals are absent. Explicit failure preserves the distinction from a working empty feed.
+  // Optional module: absent dependencies must still fail explicitly, never report fake success.
+  if (observations) {
+    app.get('/api/insights/:id', async (req, res) => res.json(observations.analyze(await matchDetail(id(req.params.id)))));
+    app.get('/api/feed', async (_req, res) => {
+      const r = await get('/fixtures', { live: 'all', timezone: TZ }, 60000);
+      if (r.stale) throw new ServiceError('ANALYST_DATA_STALE');
+      // Bound API usage. Tracking reports only matches actually sampled, not all live matches.
+      const selected = r.data.slice(0, 5);
+      const results = await Promise.all(selected.map(f => matchDetail(f.fixture.id).then(d => observations.analyze(d))));
+      res.json({ tracking: results.filter(r => r.status === 'tracking').length,
+        insights: results.flatMap(r => r.insights).sort((a, b) => b.at - a.at),
+        engine: 'statistical-rules-v1', liveTotal: r.data.length, fetchedAt: r.fetchedAt });
+    });
+    app.get('/api/replay', (_req, res) => res.json(observations.list()));
+    app.get('/api/replay/:id/:step', (req, res) => {
+      if (!/^(0|[1-9]\d{0,5})$/.test(req.params.step)) throw new ServiceError('INVALID_REPLAY_STEP', 400);
+      res.json(observations.replay(id(req.params.id), Number(req.params.step)));
+    });
+  }
+  // Original recordings are not fabricated when the recording module is unavailable.
   for (const route of ['/api/feed', '/api/insights/:id']) app.get(route, (_req, res) => res.status(503).json({ error: 'ANALYST_ENGINE_NOT_RESTORED' }));
   for (const route of ['/api/replay', '/api/replay/:id/:step']) app.get(route, (_req, res) => res.status(503).json({ error: 'REPLAY_RECORDINGS_NOT_RESTORED' }));
   for (const method of ['post', 'delete']) app[method](method === 'post' ? '/api/push/register' : '/api/push/:device', (_req, res) =>
