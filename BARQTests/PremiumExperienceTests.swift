@@ -8,6 +8,14 @@ final class PremiumExperienceTests: XCTestCase {
         XCTAssertEqual(clock.tick(100.1), 0.1, accuracy: 0.0001)
         XCTAssertEqual(clock.tick(101.75), 1.75, accuracy: 0.0001)
     }
+    func testCameraClockDoesNotConsumeTransitionWhileDestinationIsPreparing() {
+        let clock = SplashClock()
+        XCTAssertEqual(clock.tick(100, active: false), 0)
+        XCTAssertEqual(clock.tick(102, active: false), 0)
+        XCTAssertEqual(clock.tick(104, active: true), 0)
+        XCTAssertEqual(clock.tick(104.3, active: true), 0.3, accuracy: 0.0001)
+        XCTAssertEqual(clock.largestFrameGap, 0.3, accuracy: 0.0001)
+    }
     func testApertureStartsClosedAndEndsBeyondEntirePhoneViewport() {
         for size in [CGSize(width: 375, height: 812), CGSize(width: 440, height: 956)] {
             XCTAssertEqual(SplashView.aperture(t: 0, size: size).width, 0)

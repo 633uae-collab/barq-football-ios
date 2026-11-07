@@ -114,15 +114,32 @@ enum Onboarding {
 final class SplashClock {
     nonisolated(unsafe) static var nextReady = false
     nonisolated(unsafe) static var sawFirstFrame = false
+    private var loggedFirstVisualFrame = false
     private var start: TimeInterval?
     private var previous: TimeInterval?
     private(set) var largestFrameGap: Double = 0
     private(set) var elapsed: Double = 0
-    func tick(_ now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Double {
-        if start == nil {
-            start = now
+    func tick(_ now: TimeInterval = ProcessInfo.processInfo.systemUptime, active: Bool = true) -> Double {
+        if !loggedFirstVisualFrame {
+            loggedFirstVisualFrame = true
             Self.sawFirstFrame = true
             SplashDiag.log.notice("FIRST splash frame +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+        }
+        // Keep the original F perfectly still while SwiftUI compiles and commits the
+        // destination's first frame. Starting the camera clock before that commit used
+        // to consume most of the 1.75 s transition inside a main-thread layout stall,
+        // which looked like a normal cut instead of a fly-through.
+        guard active else {
+            start = nil
+            previous = nil
+            largestFrameGap = 0
+            elapsed = 0
+            return 0
+        }
+        if start == nil {
+            start = now
+            previous = now
+            SplashDiag.log.notice("START camera +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         }
         if let previous { largestFrameGap = max(largestFrameGap, now - previous) }
         previous = now
@@ -168,7 +185,7 @@ struct SplashView: View {
     }
     var body: some View {
         TimelineView(.animation(paused: Self.held != nil)) { _ in
-            let elapsed = clock.tick()
+            let elapsed = clock.tick(active: Self.nextReady)
             let t = Self.held ?? (cinematic && !reduceMotion ? min(1, max(0, (elapsed - Self.hold) / Self.push)) : 0)
             Canvas { context, size in
                 let bounds = CGRect(origin: .zero, size: size)
