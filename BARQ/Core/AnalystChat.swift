@@ -1,15 +1,16 @@
 import Foundation
 
-struct AnalystContext: Encodable {
+struct AnalystContext: Codable {
     var fixtureId: Int?
     var teamIds: [Int]?
     var playerIds: [Int]?
 }
-struct AnalystReply: Decodable {
+struct AnalystReply: Codable {
     var answer: String
     var model: String
     var fetchedAt: Double
     var generatedAt: Double
+    var context: AnalystContext?
 }
 struct AnalystChatError: LocalizedError {
     let code: String
@@ -27,5 +28,19 @@ struct AnalystChatError: LocalizedError {
         case "AI_FACT_CHECK_FAILED", "AI_INCOMPLETE_RESPONSE": return en ? "The answer could not be verified or was incomplete. It was not displayed. You can send a new request." : "تعذّر التحقق من الإجابة أو كانت غير مكتملة، لذلك لم نعرضها. تقدر ترسل طلباً جديداً."
         default: return en ? "Unable to complete the analysis. Check your connection and try again." : "تعذّر إكمال التحليل. تأكد من الاتصال وحاول مرة أخرى."
         }
+    }
+}
+
+struct AnalystHistoryMessage: Codable { let role: String; let content: String }
+
+struct AnalystWelcome: Decodable {
+    let text: String
+    let dynamic: Bool
+    let expiresAt: Double
+    static func fallback(english: Bool) -> String {
+        english ? "Every football question on your mind, answered here." : "كل سؤال في بالك عن الكورة، جوابه هني."
+    }
+    func displayText(at date: Date, english: Bool) -> String {
+        expiresAt > date.timeIntervalSince1970 * 1000 ? text : Self.fallback(english: english)
     }
 }

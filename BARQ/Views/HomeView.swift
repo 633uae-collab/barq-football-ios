@@ -39,6 +39,7 @@ struct HomeView: View {
         .navigationTitle("FOTIQ")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) { BrandMark() }
             ToolbarItem(placement: .topBarLeading) {
                 NavigationLink(value: Route.notifications) {
                     Image(systemName: store.unread > 0 ? "bell.badge" : "bell")

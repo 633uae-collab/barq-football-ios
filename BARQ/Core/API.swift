@@ -103,17 +103,28 @@ actor API {
         return v
     }
 
+    func analystWelcome(language: String) async throws -> AnalystWelcome {
+        let b = try await resolveBase()
+        guard let url = URL(string: b + "/api/analyst/welcome?lang=" + (language == "en" ? "en" : "ar")) else { throw APIError.bad }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await analystSession.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw APIError.offline }
+        return try JSONDecoder().decode(AnalystWelcome.self, from: data)
+    }
+
     /// One POST per deliberate send. Never retry or cache a generated answer.
-    func askAnalyst(_ question: String, context: AnalystContext = AnalystContext()) async throws -> AnalystReply {
+    func askAnalyst(_ question: String, context: AnalystContext = AnalystContext(), history: [AnalystHistoryMessage] = []) async throws -> AnalystReply {
         let b = try await resolveBase()
         guard let url = URL(string: b + "/api/analyst/chat") else { throw APIError.bad }
-        struct Request: Encodable { let question: String; let context: AnalystContext }
+        struct Request: Encodable { let question: String; let context: AnalystContext; let history: [AnalystHistoryMessage] }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.httpBody = try JSONEncoder().encode(Request(question: question, context: context))
+        request.httpBody = try JSONEncoder().encode(Request(question: question, context: context, history: history))
         let (data, response) = try await analystSession.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.offline }
         guard (200..<300).contains(http.statusCode) else {

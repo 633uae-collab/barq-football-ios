@@ -1,6 +1,9 @@
 name: iOS build
 on:
   push:
+    # Cinematic branch records offline launch first. Dispatch this unchanged full suite
+    # after PR4 live Groq acceptance finishes, to avoid competing for its free quota.
+    branches-ignore: [codex/premium-cinematic]
   workflow_dispatch:
     inputs:
       runner: { description: "macOS runner label (macos-26-intel if arm queue is stuck)", required: false, default: "macos-26" }

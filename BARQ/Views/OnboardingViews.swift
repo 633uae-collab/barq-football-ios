@@ -59,7 +59,7 @@ enum Onboarding {
     }
     static func loadDraft(_ d: UserDefaults = .standard) -> Draft {
         guard let data = d.data(forKey: draftKey), var draft = try? JSONDecoder().decode(Draft.self, from: data) else { return Draft() }
-        draft.step = draft.clubs.isEmpty ? 0 : min(2, max(0, draft.step))
+        draft.step = (0...2).contains(draft.step) ? draft.step : 0
         return draft
     }
     static func saveDraft(_ draft: Draft, _ d: UserDefaults = .standard) {
@@ -108,149 +108,124 @@ enum Onboarding {
     }
 }
 
-// MARK: - Splash (v2: cinematic camera push through the gap between the F's arms)
+// MARK: - Cinematic portal
 
-/// First launch: original FOTIQ mark (F + green dot, 1024 px original asset) holds 0.3 s, then a camera push
-/// (scaleEffect anchored on the gap between the F's top and middle arms + offset bringing that gap to screen centre,
-/// accelerating log-space zoom) flies through the gap; the next screen is revealed through the gap itself.
-/// Reduce Motion: hold, then a plain cross-fade.
-/// Frame-clamped animation clock: each rendered frame advances at most 1/30 s, so if the main thread stalls
-/// (first launch builds onboarding + decodes network data underneath) the camera move resumes where it was
-/// instead of jumping to t = 1. On a smooth 60 fps device this equals wall time.
+/// A monotonic wall-time clock. Dropped frames never lengthen the animation.
 final class SplashClock {
-    /// Splash F is drawn first; the next page is mounted only after that first frame. The camera move starts
-    /// (hold 0.3 s -> push) once the next page has appeared, so its build can only lengthen the still F, never freeze the push.
     nonisolated(unsafe) static var nextReady = false
     nonisolated(unsafe) static var sawFirstFrame = false
-    private var last: Date?
+    private var loggedFirstVisualFrame = false
+    private var start: TimeInterval?
+    private var previous: TimeInterval?
+    private(set) var largestFrameGap: Double = 0
     private(set) var elapsed: Double = 0
-    func tick(_ now: Date) -> Double {
-        if !Self.sawFirstFrame {
+    func tick(_ now: TimeInterval = ProcessInfo.processInfo.systemUptime, active: Bool = true) -> Double {
+        if !loggedFirstVisualFrame {
+            loggedFirstVisualFrame = true
             Self.sawFirstFrame = true
-            SplashDiag.log.notice("FIRST splash frame +\(Int(now.timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+            SplashDiag.log.notice("FIRST splash frame +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         }
-        guard Self.nextReady else { last = now; return 0 }
-        if let l = last { elapsed += min(max(0, now.timeIntervalSince(l)), 1.0 / 30) }
-        last = now
+        // Keep the original F perfectly still while SwiftUI compiles and commits the
+        // destination's first frame. Starting the camera clock before that commit used
+        // to consume most of the 1.75 s transition inside a main-thread layout stall,
+        // which looked like a normal cut instead of a fly-through.
+        guard active else {
+            start = nil
+            previous = nil
+            largestFrameGap = 0
+            elapsed = 0
+            return 0
+        }
+        if start == nil {
+            start = now
+            previous = now
+            SplashDiag.log.notice("START camera +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+        }
+        if let previous { largestFrameGap = max(largestFrameGap, now - previous) }
+        previous = now
+        elapsed = max(0, now - (start ?? now))
         return elapsed
     }
 }
 
 struct SplashView: View {
-    nonisolated(unsafe) static var holeLogged = false
     var cinematic = true
     var onRevealStart: () -> Void = {}
     var onFinish: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var clock = SplashClock()
     @State private var fade = 1.0
-    /// Logo-relative unit geometry measured from design/fotiq-icon-original.png (1024x1024):
-    /// white F spans x 0.28-0.67, y 0.25-0.75; top arm ends y 0.375, middle arm starts y 0.47.
-    static let gap = CGRect(x: 0.415, y: 0.378, width: 0.27, height: 0.09)
-    static let target = UnitPoint(x: 0.47, y: 0.423)       // camera focus: inside the gap, close to the stem
-    static let hold = 0.3, push = 1.25, maxScale: CGFloat = 70
-    static var held: Double? {                              // QA screenshots: -splashHold start|zoom|reveal
-        switch UserDefaults.standard.string(forKey: "splashHold") { case "start": 0; case "zoom": 0.55; case "reveal": 0.86; default: nil }
+    // Measured from the existing 1024px asset: clear space x414..622, y377..471.
+    // The aperture stays INSIDE that space, never erasing part of the white F.
+    static let gap = CGRect(x: 0.410, y: 0.372, width: 0.190, height: 0.084)
+    static let target = UnitPoint(x: gap.midX, y: gap.midY)
+    static let hold = 0.30, push = 1.45, maxScale: CGFloat = 90
+    static var held: Double? {
+        switch UserDefaults.standard.string(forKey: "splashHold") {
+        case "start": 0; case "zoom": 0.55; case "reveal": 0.86; default: nil
+        }
     }
-
-    /// Camera curve: accelerating ease-in (cubic) applied in log-scale space so the approach feels like real forward motion.
-    static func scale(_ t: Double) -> CGFloat { exp(log(maxScale) * CGFloat(t * t * t)) }
-    static func travel(_ t: Double) -> CGFloat { CGFloat(1 - pow(1 - t, 2)) * 0.6 + CGFloat(t) * 0.4 }
-    /// Hole (reveal) opens during the second half, synced with the camera.
-    static func hole(_ t: Double) -> CGFloat { CGFloat(max(0, min(1, (t - 0.5) / 0.35))) }
-
+    static func ease(_ t: Double) -> Double { let x = min(1, max(0, t)); return x * x * (3 - 2 * x) }
+    /// Pinhole projection: moving the camera toward the logo plane changes its apparent size.
+    static func scale(_ t: Double) -> CGFloat {
+        let distance = exp(-log(Double(maxScale)) * ease(t))
+        return CGFloat(1 / distance)
+    }
+    static func travel(_ t: Double) -> CGFloat { CGFloat(ease(min(1, t / 0.8))) }
+    static func hole(_ t: Double) -> CGFloat { CGFloat(ease((t - 0.16) / 0.32)) }
+    static func aperture(t: Double, size: CGSize) -> CGRect {
+        let side = size.width * 0.45 / 0.442
+        let focus = CGPoint(x: (size.width - side) / 2 + target.x * side,
+                            y: (size.height - side) / 2 + target.y * side)
+        let k = travel(t), scale = scale(t), open = hole(t)
+        let center = CGPoint(x: focus.x + (size.width / 2 - focus.x) * k,
+                             y: focus.y + (size.height / 2 - focus.y) * k)
+        let width = gap.width * side * scale * open, height = gap.height * side * scale * open
+        return CGRect(x: center.x - width / 2, y: center.y - height / 2, width: width, height: height)
+    }
     var body: some View {
-        GeometryReader { geo in
-            let W = geo.size.width, H = geo.size.height
-            let side = W * 0.38 / 0.44                      // F + dot ≈ 38 % of screen width
-            let origin = CGPoint(x: (W - side) / 2, y: (H - side) / 2)
-            if reduceMotion || (!cinematic && Self.held == nil) {
-                scene(t: 0, side: side, origin: origin, W: W, H: H)
-            } else {
-                TimelineView(.animation(minimumInterval: 1 / 60, paused: Self.held != nil)) { tl in
-                    let el = clock.tick(tl.date)
-                    let _ = SplashDiag.log.notice("FRAME wall=+\(Int(tl.date.timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms el=\(Int(el * 1000), privacy: .public)ms")
-                    let t = Self.held ?? max(0, min(1, (el - Self.hold) / Self.push))
-                    scene(t: t, side: side, origin: origin, W: W, H: H)
-                }
+        TimelineView(.animation(paused: Self.held != nil)) { _ in
+            let elapsed = clock.tick(active: SplashClock.nextReady)
+            let t = Self.held ?? (cinematic && !reduceMotion ? min(1, max(0, (elapsed - Self.hold) / Self.push)) : 0)
+            Canvas(rendersAsynchronously: true) { context, size in
+                let bounds = CGRect(origin: .zero, size: size)
+                if t > 0 && Self.aperture(t: t, size: size).contains(bounds) { return }
+                var cover = Path(bounds)
+                if t > 0 { cover.addRect(Self.aperture(t: t, size: size)) }
+                // Clip BOTH the navy and original bitmap. The old bitmap's opaque navy
+                // otherwise hid the destination even when the backdrop had a hole.
+                context.clip(to: cover, style: FillStyle(eoFill: true))
+                context.fill(Path(bounds), with: .color(Color("LaunchBackground").opacity(0.995)))
+                let side = size.width * 0.45 / 0.442
+                let s = Self.scale(t), k = Self.travel(t)
+                let focus = CGPoint(x: (size.width - side) / 2 + Self.target.x * side,
+                                    y: (size.height - side) / 2 + Self.target.y * side)
+                let center = CGPoint(x: focus.x + (size.width / 2 - focus.x) * k,
+                                     y: focus.y + (size.height / 2 - focus.y) * k)
+                let rect = CGRect(x: center.x - Self.target.x * side * s,
+                                  y: center.y - Self.target.y * side * s, width: side * s, height: side * s)
+                context.draw(context.resolve(Image("SplashMark")), in: rect)
             }
         }
-        .ignoresSafeArea()
-        .opacity(fade)
-        .allowsHitTesting(fade > 0.5)
-        .accessibilityElement(children: .ignore)
-        .accessibilityIdentifier("splash")
+        .ignoresSafeArea().opacity(fade)
+        .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
         .task {
-            if Self.held != nil || reduceMotion || !cinematic {   // no TimelineView tick here: mount the next page now
-                SplashClock.sawFirstFrame = true
-            }
-            if Self.held != nil { onRevealStart(); return }
-            if !cinematic {
-                // The root mounts beneath the static original mark; no network work can delay it.
-                do {
-                    try await Task.sleep(for: .seconds(0.2))
-                    while !SplashClock.nextReady { try Task.checkCancellation(); try await Task.sleep(for: .milliseconds(16)) }
-                    withAnimation(.easeOut(duration: 0.15)) { fade = 0 }
-                    try await Task.sleep(for: .seconds(0.15))
-                } catch { return }
-            } else if reduceMotion {
-                onRevealStart()
-                try? await Task.sleep(for: .seconds(Self.hold + 0.2))
-                withAnimation(.easeInOut(duration: 0.45)) { fade = 0 }
-                try? await Task.sleep(for: .seconds(0.45))
-            } else {
-                // Finish on the animation's own (frame-clamped) clock, never on wall time,
-                // so a main-thread stall can't cut from the first frame straight to the end.
-                let deadline = Date().addingTimeInterval(30)  // safety (includes waiting for the next page to be built): never block the app if frames stop
-                var revealed = false
-                while clock.elapsed < Self.hold + Self.push - 0.18 && Date() < deadline && !Task.isCancelled {
-                    // mount the next screen just before the gap opens (hole starts at t = 0.5), so building it
-                    // can't stall the hold or the first half of the camera push
-                    if !revealed, clock.elapsed >= Self.hold + Self.push * 0.4 { revealed = true; onRevealStart() }
-                    try? await Task.sleep(for: .milliseconds(16))
-                }
-                if !revealed { onRevealStart() }
-                withAnimation(.easeOut(duration: 0.18)) { fade = 0 }
-                try? await Task.sleep(for: .seconds(0.18))
+            guard Self.held == nil else { onRevealStart(); return }
+            let duration = cinematic && !reduceMotion ? Self.hold + Self.push : 0.40
+            while clock.elapsed < duration && !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(8))
             }
             guard !Task.isCancelled else { return }
+            onRevealStart()
+            if !cinematic || reduceMotion {
+                withAnimation(.easeOut(duration: 0.20)) { fade = 0 }
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            }
+            // Cinematic removal has NO opacity transition: the aperture already covers
+            // the viewport. Its last rendered frame and the uncovered page are identical.
+            SplashDiag.log.notice("FINISH cinematic=\(cinematic, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public)")
             onFinish()
         }
-    }
-
-    /// One frame of the camera move. Everything in logo space moves together (stem, arms, dot, navy, gap hole).
-    func scene(t: Double, side: CGFloat, origin: CGPoint, W: CGFloat, H: CGFloat) -> some View {
-        let s = Self.scale(t), k = Self.travel(t), h = Self.hole(t)
-        let tgt = CGPoint(x: origin.x + Self.target.x * side, y: origin.y + Self.target.y * side)
-        let dx = (W / 2 - tgt.x) * k, dy = (H / 2 - tgt.y) * k
-        // gap hole in logo-local coords, growing from the focus point to (slightly beyond) the full gap
-        let g = Self.gap, grow = 1 + max(0, h - 0.8) * 1.5
-        let hw = g.width * side * h * grow, hh = g.height * side * h * grow
-        let hc = CGPoint(x: Self.target.x * side, y: Self.target.y * side)
-        let holeRect = CGRect(x: hc.x - hw / 2, y: hc.y - hh / 2, width: hw, height: hh)
-        // Navy backdrop is drawn in SCREEN space (never scaled): scaling a vector shape 70x made SwiftUI rasterize a
-        // ~100k-pt layer every frame, which froze rendering (run 41676707424: zoom frame stuck ~5 s on relaunch).
-        let hcS = CGPoint(x: tgt.x + dx, y: tgt.y + dy)            // gap focus on screen (anchor + camera offset)
-        let holeS = CGRect(x: hcS.x - hw * s / 2, y: hcS.y - hh * s / 2, width: hw * s, height: hh * s)
-            .intersection(CGRect(x: -2, y: -2, width: W + 4, height: H + 4))
-        _ = holeRect
-        if h > 0, !Self.holeLogged { Self.holeLogged = true; SplashDiag.log.notice("HOLE first open t=\(t, privacy: .public) +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms") }
-        return ZStack(alignment: .topLeading) {
-            Path { p in
-                p.addRect(CGRect(x: 0, y: 0, width: W, height: H))
-                if h > 0, !holeS.isNull { p.addRoundedRect(in: holeS, cornerSize: CGSize(width: min(hh * s * 0.25, 40), height: min(hh * s * 0.25, 40))) }
-            }
-            // 99.5% opaque (visually identical navy): a fully opaque cover lets Core Animation skip drawing the page beneath,
-            // so its native Liquid Glass was first drawn only when the gap opened (blocks 0.5-1 s mid-reveal, run 41726432232).
-            // Slightly translucent, the page and its glass get their first draw during the held logo, before the push.
-            .fill(Color("LaunchBackground").opacity(0.995), style: FillStyle(eoFill: true))
-            Image("SplashMark").resizable().interpolation(.high).frame(width: side, height: side)
-                .scaleEffect(s, anchor: Self.target)
-                .offset(x: dx, y: dy)
-                .position(x: origin.x + side / 2, y: origin.y + side / 2)
-                .accessibilityIdentifier("splash-logo")
-        }
-        .frame(width: W, height: H)
     }
 }
 
@@ -345,7 +320,7 @@ struct OnboardingView: View {
 
     var footer: some View {
         HStack(spacing: 12) {
-            if step > 0 {
+            Group {
                 Button { advance() } label: { Text("تخطي").frame(maxWidth: .infinity) }
                     .buttonStyle(.glass).controlSize(.large).disabled(editing && !compsReady).accessibilityIdentifier("ob-skip")
             }
@@ -357,6 +332,7 @@ struct OnboardingView: View {
             .disabled((editing && !compsReady) || (step == 0 && clubs.isEmpty))
             .accessibilityIdentifier(step == 2 ? "ob-start" : "ob-next")
         }
+        .environment(\.layoutDirection, .leftToRight)
         .padding()
     }
 
@@ -381,7 +357,7 @@ struct OnboardingView: View {
 struct ClubPickStep: View {
     @Binding var selected: [TeamRef]
     @State private var model = ClubPickerModel()
-    @State private var directoryReady = false
+    @State private var directoryReady = true
     @State private var q = ""
     @State private var popularRetry = 0
     @State private var searchRetry = 0
@@ -504,11 +480,7 @@ struct CompetitionPickStep: View {
             do {
                 let c: CatalogResponse = try await API.shared.get("/api/catalog", maxAge: 3600, attempts: 1)
                 guard !Task.isCancelled else { return }
-                let order = c.order ?? []
-                let all = c.leagues.filter { ($0.type ?? "League") == kind }
-                let ranked = all.filter { order.contains($0.id) }.sorted { (order.firstIndex(of: $0.id) ?? 0) < (order.firstIndex(of: $1.id) ?? 0) }
-                let rest = all.filter { !order.contains($0.id) && $0.active != false }.prefix(kind == "Cup" ? 40 : 30)
-                items = ranked + rest
+                items = CompetitionOrder.sorted(c.leagues, kind: kind)
             } catch {
                 guard !Task.isCancelled else { return }
                 self.error = error.localizedDescription
@@ -549,25 +521,23 @@ struct PickTile: View, Equatable {
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var splash = true
-    /// Not built at launch (measured: building it before the first F frame delayed that frame by seconds).
-    /// Mounted right after the first splash frame; LaunchGate still holds its network/data work until the splash ends.
-    @State private var mounted = false
     @State private var onboarded = Onboarding.isDone()
     @State private var cinematic = Onboarding.needsCinema()
     var body: some View {
         ZStack {
             Color("LaunchBackground").ignoresSafeArea()
-            if mounted {
-                Group {
-                    if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
-                }
-                .onAppear {
-                    SplashDiag.log.notice("NEXT page appear +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
-                    // next runloop turn = after its first layout/draw commit
-                    DispatchQueue.main.async {
-                        SplashDiag.log.notice("NEXT page drawn +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
-                        SplashClock.nextReady = true
-                    }
+            // Build and lay out the destination before the first animated splash frame.
+            // iOS keeps the matching static launch screen visible while this initial work
+            // completes, and LaunchGate still prevents network work until the reveal ends.
+            Group {
+                if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
+            }
+            .onAppear {
+                SplashDiag.log.notice("NEXT page appear +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+                // next runloop turn = after its first layout/draw commit
+                DispatchQueue.main.async {
+                    SplashDiag.log.notice("NEXT page drawn +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+                    SplashClock.nextReady = true
                 }
             }
             if splash {
@@ -579,13 +549,8 @@ struct LaunchFlow<Content: View>: View {
                         try? await Task.sleep(for: .milliseconds(50))
                         LaunchGate.open = true
                     }
-                }.transition(.opacity).zIndex(1)
+                }.zIndex(1)
             }
-        }
-        .task {   // mount the next page only once the first F frame has been produced
-            while !SplashClock.sawFirstFrame && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(16)) }
-            try? await Task.sleep(for: .milliseconds(50))   // let that frame reach the screen first
-            mounted = true
         }
     }
 }

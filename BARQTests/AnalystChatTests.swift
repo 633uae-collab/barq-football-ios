@@ -1,6 +1,11 @@
 import XCTest
 @testable import BARQ
 final class AnalystChatTests: XCTestCase {
+    func testWelcomeExpiresToGenericWithoutBecomingAChatTurn() throws {
+        let value = try JSONDecoder().decode(AnalystWelcome.self, from: Data(#"{"text":"What about this match?","dynamic":true,"expiresAt":2000}"#.utf8))
+        XCTAssertEqual(value.displayText(at: Date(timeIntervalSince1970: 1), english: true), "What about this match?")
+        XCTAssertEqual(value.displayText(at: Date(timeIntervalSince1970: 2), english: false), "كل سؤال في بالك عن الكورة، جوابه هني.")
+    }
     func testDecodesChatReply() async throws {
         StubProtocol.mode = .body(#"{"answer":"تحليل حقيقي","model":"openai/gpt-oss-120b","fetchedAt":1000,"generatedAt":2000}"#)
         let api = API(protocolClasses: [StubProtocol.self], fixedBase: "https://stub.local")
