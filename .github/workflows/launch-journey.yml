@@ -7,6 +7,7 @@ on:
       - .github/workflows/launch-journey.yml
       - BARQ/Views/OnboardingViews.swift
       - BARQ/Views/BrandViews.swift
+      - BARQ/Views/AnalystChatView.swift
       - BARQ/Core/CompetitionOrder.swift
       - BARQTests/PremiumExperienceTests.swift
       - BARQUITests/PremiumExperienceUITests.swift
