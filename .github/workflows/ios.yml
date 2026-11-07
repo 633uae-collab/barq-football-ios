@@ -10,7 +10,7 @@ on:
       api_base: { description: "Optional FOTIQ backend base URL (else secret FOTIQ_API_BASE, else Render preview)", required: false, default: "" }
 concurrency:
   group: ios-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   backend-tests:
     runs-on: ubuntu-latest

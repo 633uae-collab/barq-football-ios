@@ -160,3 +160,35 @@ test('history is bounded untrusted context and never skips a fresh Groq request'
   for (let i = 0; i < 2; i++) { assert.equal((await send(history)).status, 200); now += 65001; }
   assert.equal(calls, 2); assert.equal(loads, 2);
 });
+
+test('season comparison separates domestic league totals from unrelated recent cup results', async () => {
+  const paths = [];
+  const evidence = await collectEvidence({ load: async path => {
+    paths.push(path);
+    const data = path.startsWith('/leagues?') ? [{ league: { id: 140, name: 'La Liga', type: 'League' }, seasons: [{year:2026,current:true}] }] :
+      path.startsWith('/teams/statistics?') ? { fixtures: { played:{total:10}, wins:{total:7},draws:{total:2},loses:{total:1} }, goals: {for:{total:{total:23}},against:{total:{total:8}}}, clean_sheet:{total:4}, failed_to_score:{total:1} } :
+      [{ fixture:{id:99}, league:{id:2,name:'UEFA Champions League',season:2026}, goals:{home:6,away:1} }];
+    return {data,fetchedAt:1000};
+  } }, 'قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم');
+  assert.equal(evidence.seasonOnlyComparison, true);
+  assert.equal(evidence.clubs.length, 2);
+  for (const club of evidence.clubs) {
+    assert.equal(club.season.league, 'La Liga');
+    assert.deepEqual(club.season.totals,{played:10,wins:7,draws:2,losses:1,goalsFor:23,goalsAgainst:8,cleanSheets:4,failedToScore:1});
+    assert.equal(club.matches, undefined);
+    assert.equal(club.recentResultsNewestFirst, undefined);
+  }
+  assert.ok(paths.includes('/teams/statistics?team=529&league=140&season=2026'));
+  assert.ok(!paths.some(p => p.includes('league=2&')));
+  const {validateAnswer} = require('../analyst-validation');
+  assert.throws(() => validateAnswer('Barcelona won 6-1 against Alaves in this competition',evidence), /AI_FACT_CHECK_FAILED/);
+  assert.doesNotThrow(() => validateAnswer('La Liga 2026: played 10, won 7, drawn 2, lost 1.',evidence));
+});
+test('unavailable domestic season and inconsistent season totals remain unavailable', async () => {
+  for (const inconsistent of [false,true]) {
+    const e = await collectEvidence({load:async path=>({fetchedAt:1,data:path.startsWith('/leagues?') ? (inconsistent?[{league:{id:140,type:'League'},seasons:[{year:2026,current:true}]}]:[]) :
+      path.startsWith('/teams/statistics?') ? {fixtures:{played:{total:4},wins:{total:3},draws:{total:1},loses:{total:2}}} : []})},'Compare Barcelona and Real Madrid this season');
+    assert.ok(e.missing.length > 0);
+    assert.ok(e.clubs.every(c => inconsistent ? c.season.totals === null : !c.season));
+  }
+});

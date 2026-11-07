@@ -68,6 +68,11 @@ async function collectEvidence(provider, question, context = {}, history = []) {
   const teamIds = namedTeams.length ? namedTeams : context.teamIds || [];
 
   const playerIds = context.playerIds || [];
+  const seasonComparison = teamIds.length === 2 && /season|الموسم/i.test(question);
+  if (seasonComparison) {
+    evidence.seasonOnlyComparison = true;
+    evidence.limitations.push('Season-only comparison: no individual match results supplied. Do not invent scorelines or reconstruct season totals from recent fixtures.');
+  }
   const upcoming = /upcoming|next match|قادمة|القادمة|قادمه/i.test(routingQuestion);
   const live = /\blive\b|مباشر/i.test(routingQuestion);
   const lastFive = /last five|last 5|آخر خمس|اخر خمس|آخر 5/i.test(routingQuestion);
@@ -81,15 +86,32 @@ async function collectEvidence(provider, question, context = {}, history = []) {
   if (teamIds.length) {
     evidence.clubs = [];
     for (const team of teamIds) {
-      const fixtures = await load('/fixtures', { team, [upcoming ? 'next' : 'last']: upcoming ? 1 : 5 });
+      const fixtures = seasonComparison ? [] : await load('/fixtures', { team, [upcoming ? 'next' : 'last']: upcoming ? 1 : 5 });
       const club = { teamId: team,
         recentScope: 'Latest fixtures across competitions as returned by API-Football; inspect each match league before making competition-specific claims.',
         matches: fixtures.map(summary), recentResultsNewestFirst: upcoming ? [] : clubResults(fixtures, team) };
-      const league = fixtures[0]?.league;
+      let league = fixtures[0]?.league;
+      if (seasonComparison) {
+        const leagues = await load('/leagues', { team, current: 'true', type: 'league' });
+        const domestic = leagues.find(l => l.league?.type === 'League' && l.seasons?.some(s => s.current));
+        league = domestic ? { ...domestic.league, season: domestic.seasons.find(s => s.current).year } : undefined;
+        delete club.matches; delete club.recentResultsNewestFirst; delete club.recentScope;
+        if (!league) missing.push(`Current domestic league season unavailable for club ${team}; no alternative competition inferred.`);
+      }
       if (league?.id && league?.season) {
         const stats = await load('/teams/statistics', { team, league: league.id, season: league.season });
         club.season = { scope: `Season aggregate for ${league.name} only`, league: league.name, year: league.season, fixtures: stats.fixtures,
           goals: stats.goals, form: stats.form, cleanSheet: stats.clean_sheet, failedToScore: stats.failed_to_score };
+        if (seasonComparison) {
+          const value = n => typeof n === 'number' && Number.isFinite(n) ? n : null;
+          club.season = { league: league.name, year: league.season, scope: 'Current domestic league only; season totals, not recent match results',
+            totals: { played: value(stats.fixtures?.played?.total), wins: value(stats.fixtures?.wins?.total), draws: value(stats.fixtures?.draws?.total), losses: value(stats.fixtures?.loses?.total ?? stats.fixtures?.losses?.total),
+              goalsFor: value(stats.goals?.for?.total?.total), goalsAgainst: value(stats.goals?.against?.total?.total), cleanSheets: value(stats.clean_sheet?.total), failedToScore: value(stats.failed_to_score?.total) } };
+          const t = club.season.totals;
+          if ([t.played,t.wins,t.draws,t.losses].every(n => n !== null) && t.played !== t.wins+t.draws+t.losses) {
+            club.season.totals = null; missing.push(`Conflicting season totals for club ${team}; do not use them.`);
+          }
+        }
         if (upcoming) {
           const role = fixtures[0]?.teams?.home?.id === team ? 'home' : fixtures[0]?.teams?.away?.id === team ? 'away' : null;
           club.nextFixtureVenue = relevantVenueSeason(stats, role);
