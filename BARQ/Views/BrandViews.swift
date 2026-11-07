@@ -27,12 +27,19 @@ struct BrandHeading: View {
 /// No repeat-forever animation survives scrolling off screen or backgrounding.
 struct AnalystEmblem: View {
     var size: CGFloat = 170
+    /// Tab-bar labels are always on screen, while the larger hero should animate
+    /// only while its scroll position is visible. Both placements still pause in
+    /// the background and for Reduce Motion.
+    var alwaysAnimate = false
     @Environment(\.scenePhase) private var phase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visible = false
     @State private var start = Date()
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !visible || phase != .active || reduceMotion)) { context in
+        TimelineView(.animation(
+            minimumInterval: size <= 32 ? 1.0 / 24 : 1.0 / 30,
+            paused: !(alwaysAnimate || visible) || phase != .active || reduceMotion
+        )) { context in
             let angle = reduceMotion ? 0 : context.date.timeIntervalSince(start).truncatingRemainder(dividingBy: 14) / 14 * 360
             ZStack {
                 Circle().fill(RadialGradient(colors: [.cyan.opacity(0.6), .purple.opacity(0.3), .clear], center: .center, startRadius: 4, endRadius: 90)).frame(width: 170, height: 170).blur(radius: 8)
@@ -45,5 +52,19 @@ struct AnalystEmblem: View {
         .onScrollVisibilityChange(threshold: 0.1) { visible = $0 }
         .onDisappear { visible = false }
         .accessibilityLabel("التحليل المباشر")
+    }
+}
+
+/// Compact form of the exact same analyst emblem used by the AI hero.
+/// It intentionally keeps the native Tab label and Liquid Glass container.
+struct AnalystTabLabel: View {
+    var body: some View {
+        Label {
+            Text("المحلل")
+        } icon: {
+            AnalystEmblem(size: 24, alwaysAnimate: true)
+                .accessibilityHidden(true)
+                .accessibilityIdentifier("analyst-tab-emblem")
+        }
     }
 }

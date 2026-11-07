@@ -27,4 +27,26 @@ final class PremiumExperienceUITests: XCTestCase {
         XCTAssertTrue(el("home-notifications").waitForExistence(timeout: 20))
         XCTAssertTrue(app.tabBars.firstMatch.exists)
     }
+
+    func testAnalystTabUsesTheAnimatedEmblem() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication.fotiq()
+        app.launchArguments = ["-lang", "ar", "-startTab", "ai", "-apiOverride", "https://127.0.0.1:9"]
+        app.launch()
+
+        let analyst = app.tabBars.buttons["المحلل"]
+        XCTAssertTrue(analyst.waitForExistence(timeout: 30))
+        XCTAssertTrue(analyst.isHittable)
+
+        let directory = URL(fileURLWithPath: "/tmp/fotiq-launch-shots", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let firstTab = analyst.screenshot().pngRepresentation
+        try XCUIScreen.main.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("05-analyst-tab-emblem-start.png"))
+        sleep(2)
+        let secondTab = analyst.screenshot().pngRepresentation
+        try XCUIScreen.main.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("06-analyst-tab-emblem-rotated.png"))
+
+        XCTAssertNotEqual(firstTab, secondTab, "The compact analyst emblem must keep rotating in the native tab bar")
+        XCTAssertEqual(app.tabBars.buttons.count, 5, "The emblem must not change the approved tab-bar layout")
+    }
 }

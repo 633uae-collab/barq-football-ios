@@ -48,7 +48,11 @@ struct RootView: View {
         TabView(selection: $tab) {
             Tab("الرئيسية", systemImage: "house", value: AppTab.home) { NavigationStack { HomeView() } }
             Tab("المباريات", systemImage: "soccerball", value: AppTab.matches) { NavigationStack { MatchesView() } }
-            Tab("المحلل", systemImage: "brain.head.profile", value: AppTab.ai) { NavigationStack { AIView() } }
+            Tab(value: AppTab.ai) {
+                NavigationStack { AIView() }
+            } label: {
+                AnalystTabLabel()
+            }
             Tab("المفضلة", systemImage: "star", value: AppTab.favorites) { NavigationStack { FavoritesView() } }
             Tab(value: AppTab.search, role: .search) { NavigationStack { SearchView() } }
         }
