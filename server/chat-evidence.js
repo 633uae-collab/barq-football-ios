@@ -6,6 +6,37 @@ const playerStats = p => ({ name: p.player?.name, statistics: (p.statistics || [
 const summary = f => ({ id: f.fixture?.id, kickoffUTC: f.fixture?.date, status: f.fixture?.status,
   league: { id: f.league?.id, name: f.league?.name, season: f.league?.season, round: f.league?.round },
   teams: { home: { id: f.teams?.home?.id, name: f.teams?.home?.name }, away: { id: f.teams?.away?.id, name: f.teams?.away?.name } }, goals: f.goals });
+function clubResults(fixtures, team) {
+  return [...fixtures].sort((a, b) => (Date.parse(b.fixture?.date) || 0) - (Date.parse(a.fixture?.date) || 0)).map(f => {
+    const home = f.teams?.home?.id === team, away = f.teams?.away?.id === team;
+    const own = home ? f.goals?.home : f.goals?.away, opponent = home ? f.goals?.away : f.goals?.home;
+    const known = (home || away) && ['FT','AET','PEN'].includes(f.fixture?.status?.short) && Number.isInteger(own) && Number.isInteger(opponent);
+    return { fixtureId: f.fixture?.id, kickoffUTC: f.fixture?.date, result: known ? (own > opponent ? 'W' : own < opponent ? 'L' : 'D') : null,
+      basis: f.fixture?.status?.short === 'PEN' ? 'goals before penalty shootout; shootout outcome not inferred' : 'completed match goals' };
+  });
+}
+function relevantVenueSeason(stats, role) {
+  if (!['home', 'away'].includes(role)) return null;
+  return {
+    role,
+    fixtures: {
+      played: stats.fixtures?.played?.[role] ?? null,
+      wins: stats.fixtures?.wins?.[role] ?? null,
+      draws: stats.fixtures?.draws?.[role] ?? null,
+      losses: stats.fixtures?.loses?.[role] ?? stats.fixtures?.losses?.[role] ?? null
+    },
+    goalsFor: {
+      total: stats.goals?.for?.total?.[role] ?? null,
+      average: stats.goals?.for?.average?.[role] ?? null
+    },
+    goalsAgainst: {
+      total: stats.goals?.against?.total?.[role] ?? null,
+      average: stats.goals?.against?.average?.[role] ?? null
+    },
+    cleanSheets: stats.clean_sheet?.[role] ?? null,
+    failedToScore: stats.failed_to_score?.[role] ?? null
+  };
+}
 async function collectEvidence(provider, question, context = {}) {
   const sources = [], missing = [];
   const load = async (path, params) => {
@@ -31,12 +62,16 @@ async function collectEvidence(provider, question, context = {}) {
     evidence.clubs = [];
     for (const team of teamIds) {
       const fixtures = await load('/fixtures', { team, [upcoming ? 'next' : 'last']: upcoming ? 1 : 5 });
-      const club = { teamId: team, matches: fixtures.map(summary) };
+      const club = { teamId: team, matches: fixtures.map(summary), recentResultsNewestFirst: upcoming ? [] : clubResults(fixtures, team) };
       const league = fixtures[0]?.league;
       if (league?.id && league?.season) {
         const stats = await load('/teams/statistics', { team, league: league.id, season: league.season });
         club.season = { league: league.name, year: league.season, fixtures: stats.fixtures,
           goals: stats.goals, form: stats.form, cleanSheet: stats.clean_sheet, failedToScore: stats.failed_to_score };
+        if (upcoming) {
+          const role = fixtures[0]?.teams?.home?.id === team ? 'home' : fixtures[0]?.teams?.away?.id === team ? 'away' : null;
+          club.nextFixtureVenue = relevantVenueSeason(stats, role);
+        }
       }
       evidence.clubs.push(club);
       // "Why lost last game" must use the actual last game, not search backwards for a loss.
@@ -45,15 +80,19 @@ async function collectEvidence(provider, question, context = {}) {
   }
   if (upcoming && evidence.clubs?.length === 1) {
     const club = evidence.clubs[0], next = club.matches[0];
-    club.recentMatches = (await load('/fixtures', { team: club.teamId, last: 5 })).map(summary);
+    const clubRecent = await load('/fixtures', { team: club.teamId, last: 5 });
+    club.recentMatches = clubRecent.map(summary);
+    club.recentResultsNewestFirst = clubResults(clubRecent, club.teamId);
     const opponent = [next?.teams?.home?.id, next?.teams?.away?.id].find(id => Number.isInteger(id) && id !== club.teamId);
     if (opponent) {
       const recent = await load('/fixtures', { team: opponent, last: 5 });
-      const other = { teamId: opponent, matches: recent.map(summary) };
+      const other = { teamId: opponent, matches: recent.map(summary), recentResultsNewestFirst: clubResults(recent, opponent) };
       if (next.league?.id && next.league?.season) {
         const stats = await load('/teams/statistics', { team: opponent, league: next.league.id, season: next.league.season });
         other.season = { league: next.league.name, year: next.league.season, fixtures: stats.fixtures,
           goals: stats.goals, form: stats.form, cleanSheet: stats.clean_sheet, failedToScore: stats.failed_to_score };
+        const role = next.teams?.home?.id === opponent ? 'home' : next.teams?.away?.id === opponent ? 'away' : null;
+        other.nextFixtureVenue = relevantVenueSeason(stats, role);
       }
       evidence.clubs.push(other);
     } else missing.push('Upcoming opponent unavailable; no opponent statistics can be inferred.');

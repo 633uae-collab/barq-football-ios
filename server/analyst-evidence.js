@@ -4,6 +4,12 @@
 function prepareEvidence(f, fetchedAt) {
   const iso = value => { const d = new Date(value); return value != null && Number.isFinite(d.valueOf()) ? d.toISOString() : null; };
   const warnings = [];
+  const state = f.fixture?.status?.short;
+  const halfComplete = ['HT', '2H', 'ET', 'BT', 'P', 'FT', 'AET', 'PEN'].includes(state);
+  const matchComplete = ['FT', 'AET', 'PEN'].includes(state);
+  const completedPeriodScores = { halftime: halfComplete ? (f.score?.halftime ?? null) : null,
+    fulltime: matchComplete ? (f.score?.fulltime ?? null) : null };
+  if (!halfComplete) warnings.push('First-half score is not final yet. Never call a provisional halftime field the current score.');
   const rosters = new Map();
   const lineups = (f.lineups || []).map(l => {
     const starters = l.startXI || [], bench = l.substitutes || [];
@@ -42,7 +48,7 @@ function prepareEvidence(f, fetchedAt) {
   return { schema: 'fotiq-match-evidence-v2', fetchedAt, retrievedAtUTC: iso(fetchedAt), providerUpdatedAt: null,
     kickoffUTC: iso(f.fixture?.date), fixtureId: f.fixture?.id, status: f.fixture?.status ?? null,
     league: { name: f.league?.name, season: f.league?.season, round: f.league?.round },
-    teams: { home: f.teams?.home?.name, away: f.teams?.away?.name }, goals: f.goals, score: f.score,
+    teams: { home: f.teams?.home?.name, away: f.teams?.away?.name }, goals: f.goals, currentScore: f.goals ?? null, completedPeriodScores,
     events, lineups, statistics, warnings,
     limitations: ['Lineups and formations describe kickoff, not confirmed current tactical shape.',
       'Whole-match statistics do not establish before/after red-card or substitution effects.',
