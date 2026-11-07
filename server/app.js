@@ -14,7 +14,7 @@ const date = value => {
     || new Date(value).toISOString().slice(0, 10) !== value) throw new ServiceError('INVALID_DATE', 400);
   return value;
 };
-function createApp({ provider, storage, storageMode = 'persistent', observations }) {
+function createApp({ provider, storage, storageMode = 'persistent', observations, analyst }) {
   const app = express(); app.disable('x-powered-by');
   // Random per-install device ID is the existing client's capability. Never enumerate it.
   // No proxy headers trusted here: prevents spoofed addresses bypassing the budget.
@@ -196,11 +196,12 @@ function createApp({ provider, storage, storageMode = 'persistent', observations
     players.sort((a, b) => score(b) - score(a) || a.id - b.id);
     res.json({ date: day, fetchedAt: r.fetchedAt, stale: r.stale || daily.stale, players: players.slice(0, 10) });
   });
+  if (analyst) require('./groq').mountGroq(app, { analyst, provider });
   app.use((_req, res) => res.status(404).json({ error: 'NOT_FOUND' }));
   app.use((err, _req, res, _next) => {
     const code = err instanceof ServiceError ? err.code : err.type === 'entity.too.large' ? 'BODY_TOO_LARGE' : err.type === 'entity.parse.failed' ? 'INVALID_JSON' : 'INTERNAL_ERROR';
     const status = err instanceof ServiceError ? err.status : err.type === 'entity.too.large' ? 413 : err.type === 'entity.parse.failed' ? 400 : 500;
-    if (status === 429 || status === 503) res.set('Retry-After', '30');
+    if (status === 429 || status === 503) res.set('Retry-After', String(err.retryAfter || 30));
     res.status(status).json({ error: code });
   });
   return app;
