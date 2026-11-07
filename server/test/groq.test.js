@@ -22,6 +22,7 @@ test('every identical question fetches fresh provider data and a new Groq answer
     assert.match(b.messages[0].content, /If evidence\.events is empty, do not emit any event-\*/);
     assert.match(b.messages[0].content, /never expected, predicted or current formation/);
     assert.match(b.messages[0].content, /Recent club matches may span competitions/);
+    assert.match(b.messages[0].content, /Never combine a direction claim with an unknown-direction caveat/);
     assert.equal(JSON.parse(b.messages[1].content).evidence.fetchedAt, upstream);
     return success();
   } });

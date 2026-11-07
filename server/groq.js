@@ -2,7 +2,7 @@
 const { timingSafeEqual } = require('node:crypto');
 const { ServiceError } = require('./provider');
 const { prepareEvidence } = require('./analyst-evidence');
-const { validateEventTimes } = require('./analyst-validation');
+const { validateAnswer } = require('./analyst-validation');
 const MODEL = 'openai/gpt-oss-120b';
 const SYSTEM_PROMPT = [
   'You are FOTIQ football analyst. Reply in the language of the user question (Arabic or English).',
@@ -25,7 +25,7 @@ const SYSTEM_PROMPT = [
   'Use event sourceId citations for goals, assists, cards and substitutions. Only scoring.assists or goalAssist is an assist; passing.keyPasses means key passes (Arabic: تمريرات مفتاحية), never assists (Arabic: تمريرات حاسمة).',
   'Cite only sourceId values that are literally present in evidence.events. If evidence.events is empty, do not emit any event-* citation or invent a citation label for club, season or statistic evidence.',
   'passing.accuracyProviderValue has an unverified unit: do not append a percent sign, calculate an accuracy percentage, or infer build-up involvement from it.',
-  'playerIn/playerOut are substitution roles and must never be described as assists. If substitution direction is null, explicitly say it is unknown.',
+  'playerIn/playerOut are substitution roles and must never be described as assists. If directionBasis and both roles are present, the direction is verified: say playerIn entered for playerOut and never call it unknown. If either role is null, name participants only and do not say entered, replaced, came on or went off. Never combine a direction claim with an unknown-direction caveat.',
   'Copy retrievedAtUTC exactly without converting it; kickoffUTC is separate. Do not claim a current formation from startingFormation.',
   'Restate goal-time bands literally and never relabel 46-60 as first half. Surface evidence warnings and conflicting aggregates.',
   'Recent club matches may span competitions. Never label them league form or group them under one competition unless every cited match has that same league name; keep season aggregates scoped to the supplied season.league.',
@@ -75,7 +75,7 @@ class GroqAnalyst {
       const body = await r.json();
       const choice = body.choices?.[0], answer = choice?.message?.content;
       if (choice?.finish_reason !== 'stop' || typeof answer !== 'string' || !answer.trim()) throw new ServiceError('AI_INCOMPLETE_RESPONSE', 502);
-      validateEventTimes(answer, evidence);
+      validateAnswer(answer, evidence);
       return { answer, model: MODEL, fetchedAt: evidence.fetchedAt, generatedAt: this.now(),
         source: 'API-Football', evaluationOnly: true, usage: body.usage || null,
         quota: { remainingRequests: r.headers.get('x-ratelimit-remaining-requests'),
