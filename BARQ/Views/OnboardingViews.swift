@@ -1,5 +1,6 @@
 import SwiftUI
 import os
+import UIKit
 
 /// Splash diagnostics (subsystem ae.barq.splash): per-frame progress, time-to-first-frame, main-thread hangs.
 enum SplashDiag {
@@ -185,29 +186,7 @@ struct SplashView: View {
         return CGRect(x: center.x - width / 2, y: center.y - height / 2, width: width, height: height)
     }
     var body: some View {
-        TimelineView(.animation(paused: Self.held != nil)) { _ in
-            let elapsed = clock.tick(active: SplashClock.nextReady)
-            let t = Self.held ?? (cinematic && !reduceMotion ? min(1, max(0, (elapsed - Self.hold) / Self.push)) : 0)
-            Canvas(rendersAsynchronously: true) { context, size in
-                let bounds = CGRect(origin: .zero, size: size)
-                if t > 0 && Self.aperture(t: t, size: size).contains(bounds) { return }
-                var cover = Path(bounds)
-                if t > 0 { cover.addRect(Self.aperture(t: t, size: size)) }
-                // Clip BOTH the navy and original bitmap. The old bitmap's opaque navy
-                // otherwise hid the destination even when the backdrop had a hole.
-                context.clip(to: cover, style: FillStyle(eoFill: true))
-                context.fill(Path(bounds), with: .color(Color("LaunchBackground").opacity(0.995)))
-                let side = size.width * Self.visibleWidth / 0.442
-                let s = Self.scale(t), k = Self.travel(t)
-                let focus = CGPoint(x: (size.width - side) / 2 + Self.target.x * side,
-                                    y: (size.height - side) / 2 + Self.target.y * side)
-                let center = CGPoint(x: focus.x + (size.width / 2 - focus.x) * k,
-                                     y: focus.y + (size.height / 2 - focus.y) * k)
-                let rect = CGRect(x: center.x - Self.target.x * side * s,
-                                  y: center.y - Self.target.y * side * s, width: side * s, height: side * s)
-                context.draw(context.resolve(Image("SplashMark")), in: rect)
-            }
-        }
+        PortalSurface(cinematic: cinematic && !reduceMotion, clock: clock, held: Self.held)
         .ignoresSafeArea().opacity(fade)
         .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
         .task {
@@ -227,6 +206,94 @@ struct SplashView: View {
             SplashDiag.log.notice("FINISH cinematic=\(cinematic, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public)")
             onFinish()
         }
+    }
+}
+
+/// The original bitmap and its aperture share one compositor timeline. SwiftUI
+/// never resolves/draws the bitmap on each camera frame. Display-link measurements
+/// remain main-thread measurements; the recording is the visual acceptance evidence.
+private struct PortalSurface: UIViewRepresentable {
+    let cinematic: Bool
+    let clock: SplashClock
+    let held: Double?
+    func makeUIView(context: Context) -> PortalLayerView { PortalLayerView(cinematic: cinematic, clock: clock, held: held) }
+    func updateUIView(_ view: PortalLayerView, context: Context) {}
+    static func dismantleUIView(_ view: PortalLayerView, coordinator: ()) { view.stop() }
+}
+
+private final class PortalLayerView: UIView {
+    private let cover = CALayer(), mark = CALayer()
+    private let aperture = CAShapeLayer()
+    private let cinematic: Bool
+    private let clock: SplashClock
+    private let held: Double?
+    private var link: CADisplayLink?
+    private var started = false
+    private var prepared = false
+    init(cinematic: Bool, clock: SplashClock, held: Double?) {
+        self.cinematic = cinematic; self.clock = clock; self.held = held
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        cover.backgroundColor = UIColor(named: "LaunchBackground")!.cgColor
+        mark.contents = UIImage(named: "SplashMark")?.cgImage
+        mark.contentsGravity = .resize
+        mark.minificationFilter = .trilinear
+        aperture.fillRule = .evenOdd
+        aperture.fillColor = UIColor.black.cgColor
+        cover.mask = aperture; cover.addSublayer(mark); layer.addSublayer(cover)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard !prepared, bounds.width > 0 else { return }
+        prepared = true
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        cover.frame = bounds; aperture.frame = bounds
+        let r = logoRect(held ?? 0)
+        mark.bounds = CGRect(origin: .zero, size: r.size); mark.position = CGPoint(x: r.midX, y: r.midY)
+        aperture.path = maskPath(held ?? 0)
+        CATransaction.commit()
+        let dl = CADisplayLink(target: self, selector: #selector(frameTick))
+        dl.add(to: .main, forMode: .common); link = dl
+    }
+    func stop() { link?.invalidate(); link = nil }
+    private func logoRect(_ t: Double) -> CGRect {
+        let side = bounds.width * SplashView.visibleWidth / 0.442
+        let focus = CGPoint(x: (bounds.width-side)/2 + SplashView.target.x*side,
+                            y: (bounds.height-side)/2 + SplashView.target.y*side)
+        let k = SplashView.travel(t), scale = SplashView.scale(t)
+        let center = CGPoint(x: focus.x + (bounds.midX-focus.x)*k, y: focus.y + (bounds.midY-focus.y)*k)
+        return CGRect(x: center.x-SplashView.target.x*side*scale, y: center.y-SplashView.target.y*side*scale, width: side*scale, height: side*scale)
+    }
+    private func maskPath(_ t: Double) -> CGPath {
+        let path = CGMutablePath(); path.addRect(bounds)
+        // Constant path topology, including the initially zero-size aperture.
+        path.addRect(SplashView.aperture(t: t, size: bounds.size))
+        return path
+    }
+    @objc private func frameTick(_ dl: CADisplayLink) {
+        _ = clock.tick(active: SplashClock.nextReady)
+        guard held == nil, cinematic, SplashClock.nextReady, !started else { return }
+        started = true
+        let duration = SplashView.hold + SplashView.push
+        let times = (0...180).map { Double($0)/180 }
+        let progress = times.map { min(1, max(0, ($0*duration-SplashView.hold)/SplashView.push)) }
+        let rects = progress.map { logoRect($0) }
+        let begin = CACurrentMediaTime()
+        func animate(_ key: String, _ values: [Any], _ target: CALayer) {
+            let a = CAKeyframeAnimation(keyPath: key)
+            a.values = values; a.keyTimes = times.map { NSNumber(value: $0) }
+            a.duration = duration; a.beginTime = begin; a.calculationMode = .linear
+            target.add(a, forKey: key)
+        }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        let end = logoRect(1)
+        mark.bounds = CGRect(origin: .zero, size: end.size); mark.position = CGPoint(x: end.midX,y: end.midY)
+        aperture.path = maskPath(1)
+        animate("bounds", rects.map { NSValue(cgRect: CGRect(origin: .zero, size: $0.size)) }, mark)
+        animate("position", rects.map { NSValue(cgPoint: CGPoint(x: $0.midX,y: $0.midY)) }, mark)
+        animate("path", progress.map { maskPath($0) }, aperture)
+        CATransaction.commit()
     }
 }
 
@@ -501,7 +568,7 @@ struct PickTile: View, Equatable {
     var body: some View {
         Button { if !on { Haptics.favoriteAdded() }; toggle() } label: {
             VStack(spacing: 8) {
-                RemoteImage(url: logo, size: 52)
+                RemoteImage(url: logo, size: 52, waitForLaunch: true)
                 Text(name).font(.footnote.weight(.semibold)).lineLimit(2).multilineTextAlignment(.center).frame(height: 34)
                 Image(systemName: on ? "star.fill" : "star").font(.title3)
                     .foregroundStyle(on ? Color("BrandGreen") : .secondary)
@@ -521,6 +588,7 @@ struct PickTile: View, Equatable {
 /// Wraps the app: splash on every launch, onboarding on first launch only, then the unchanged app.
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
+    @State private var destinationMounted = false
     @State private var splash = true
     @State private var onboarded = Onboarding.isDone()
     @State private var cinematic = Onboarding.needsCinema()
@@ -531,9 +599,12 @@ struct LaunchFlow<Content: View>: View {
             // iOS keeps the matching static launch screen visible while this initial work
             // completes, and LaunchGate still prevents network work until the reveal ends.
             Group {
+                if destinationMounted {
                 if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
+                }
             }
-            .onAppear {
+            .onChange(of: destinationMounted) {
+                guard destinationMounted else { return }
                 SplashDiag.log.notice("NEXT page appear +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
                 // next runloop turn = after its first layout/draw commit
                 DispatchQueue.main.async {
@@ -551,6 +622,15 @@ struct LaunchFlow<Content: View>: View {
                         LaunchGate.open = true
                     }
                 }.zIndex(1)
+                .task {
+                    // Commit the lightweight original F first, then prewarm the
+                    // destination while the matching mark remains visible.
+                    while !SplashClock.sawFirstFrame && !Task.isCancelled {
+                        try? await Task.sleep(for: .milliseconds(8))
+                    }
+                    guard !Task.isCancelled else { return }
+                    destinationMounted = true
+                }
             }
         }
     }

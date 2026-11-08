@@ -9,15 +9,21 @@ if [[ "$MODE" == first ]]; then
   xcrun simctl uninstall "$UDID" ae.barq.football 2>/dev/null || true
 fi
 xcrun simctl install "$UDID" "$APP"
-if [[ "$MODE" == first ]]; then
-  xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
-fi
+xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > "out/$MODE-timing.log" 2>&1 &
 LOG=$!
 xcrun simctl io "$UDID" recordVideo --codec=h264 --force "out/$MODE-launch-uncut.mp4" > "out/$MODE-recording.log" 2>&1 &
 REC=$!
 cleanup() { kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true; }
 trap cleanup EXIT
+# Do not launch while simctl is still preparing its video encoder. A fixed
+# two-second sleep produced a 0.995 s file containing only the destination.
+for i in $(seq 1 90); do
+  kill -0 "$REC" || exit 1
+  if grep -q 'Recording started' "out/$MODE-recording.log"; then break; fi
+  sleep 1
+done
+grep -q 'Recording started' "out/$MODE-recording.log"
 sleep 2
 if [[ "$MODE" == quick ]]; then
   # XCTest can terminate its app on completion. Bring the completed user's home
@@ -48,3 +54,8 @@ sleep 4
 xcrun simctl io "$UDID" screenshot "out/$MODE-destination.png"
 grep -q 'FINISH cinematic=' "out/$MODE-timing.log"
 # No cutting, encoding, scaling, speed changes or frame replacement.
+
+cleanup
+trap - EXIT
+# Reject recordings that missed startup instead of accepting log success alone.
+ffprobe -v error -show_entries format=duration -of csv=p=0 "out/$MODE-launch-uncut.mp4" | python3 -c 'import sys; d=float(sys.stdin.read()); assert d >= 5, f"Recording missed launch: {d}s"'
