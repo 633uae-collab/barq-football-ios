@@ -27,7 +27,7 @@ enum SplashDiag {
 
 /// Network/data work of the first screen waits until the splash is gone. Evidence (run 41687787714, splash-diag.log):
 /// mounting onboarding mid-push blocked the main thread 967 + 2187 + 1237 ms (data arrival -> grid of glass tiles +
-/// logo decoding), freezing the camera push. The screen is still built (empty) under the splash; only its loading waits.
+/// logo decoding), blocking the launch transition. The screen is still built (empty) under the splash; only its loading waits.
 /// DIAGNOSTIC ONLY (env FOTIQ_DIAG_NOGLASS=1, set only by the splash-video workflow): onboarding glass -> flat fill,
 /// to measure whether first-draw of Liquid Glass causes the reveal hang. Users never get this.
 extension View {

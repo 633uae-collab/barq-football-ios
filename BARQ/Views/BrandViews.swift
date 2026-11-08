@@ -132,6 +132,11 @@ struct AnalystTabBarEmblemInstaller: UIViewRepresentable {
             guard host == nil else { return }
             installTask?.cancel()
             installTask = Task { @MainActor [weak self, weak probe] in
+                // Do not construct a second hosting hierarchy or start its TimelineView
+                // while the launch compositor is fading. The system tab bar itself is
+                // already laid out; install its animated emblem after launch completes.
+                await LaunchGate.wait()
+                guard !Task.isCancelled else { return }
                 // The system creates UITabBar after the TabView hierarchy appears.
                 // This bounded wait runs only at installation, never per animation frame.
                 for _ in 0..<30 where !Task.isCancelled {
