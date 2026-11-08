@@ -144,7 +144,7 @@ final class SplashClock {
 
 /// One fixed original mark for every launch. Only opacity changes.
 enum LaunchPresentation {
-    static let visibleWidth: CGFloat = 0.24
+    static let visibleWidth: CGFloat = 0.20
     static let hold = 0.5, fade = 0.3
     static let duration = hold + fade
     static func opacity(at elapsed: Double) -> Double {
