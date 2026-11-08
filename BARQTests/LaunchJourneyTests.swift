@@ -2,14 +2,14 @@ import XCTest
 @testable import BARQ
 
 final class LaunchJourneyTests: XCTestCase {
-    func testFreshInstallThenInterruptedSelectionUsesQuickResume() {
+    func testFreshInstallThenInterruptedSelectionStillNeedsOnboarding() {
         let name = "journey-\(UUID())"
         let d = UserDefaults(suiteName: name)!
         defer { d.removePersistentDomain(forName: name) }
-        XCTAssertTrue(Onboarding.needsCinema(d))
-        d.set(true, forKey: Onboarding.cinematicKey)
-        XCTAssertFalse(Onboarding.needsCinema(d))
         XCTAssertFalse(Onboarding.isDone(d))
+        d.set(true, forKey: "onboardingCinematicSeen") // Legacy flag must not control navigation.
+        XCTAssertFalse(Onboarding.isDone(d))
+        XCTAssertEqual(Onboarding.loadDraft(d).step, 0)
     }
     func testDraftRestoresStepAndAllSelectionsAcrossInstances() {
         let name = "journey-\(UUID())"
@@ -22,15 +22,15 @@ final class LaunchJourneyTests: XCTestCase {
         XCTAssertEqual(restored.leagues, [39])
         XCTAssertEqual(restored.cups, [2])
         Onboarding.markDone(d)
-        XCTAssertFalse(Onboarding.needsCinema(d))
+        XCTAssertTrue(Onboarding.isDone(d))
         XCTAssertNil(d.data(forKey: Onboarding.draftKey))
     }
-    func testExistingCompletedUsersNeverReplayCinema() {
+    func testExistingCompletedUsersOpenHome() {
         let name = "journey-\(UUID())"
         let d = UserDefaults(suiteName: name)!
         defer { d.removePersistentDomain(forName: name) }
         d.set(true, forKey: Onboarding.doneKey)
-        XCTAssertFalse(Onboarding.needsCinema(d))
+        XCTAssertTrue(Onboarding.isDone(d))
     }
     func testCorruptDraftAndInvalidStepRecoverSafely() {
         let name = "journey-\(UUID())"
@@ -40,10 +40,10 @@ final class LaunchJourneyTests: XCTestCase {
         XCTAssertEqual(Onboarding.loadDraft(d).step, 0)
         Onboarding.saveDraft(.init(step: 99), d)
         XCTAssertEqual(Onboarding.loadDraft(d).step, 0)
-        d.set(true, forKey: Onboarding.cinematicKey)
+        d.set(true, forKey: "onboardingCinematicSeen") // Legacy flag must not control navigation.
         d.set(true, forKey: "resetOnboarding")
         Onboarding.resetIfRequested(d)
-        XCTAssertTrue(Onboarding.needsCinema(d))
+        XCTAssertFalse(Onboarding.isDone(d))
         XCTAssertNil(d.data(forKey: Onboarding.draftKey))
     }
 }

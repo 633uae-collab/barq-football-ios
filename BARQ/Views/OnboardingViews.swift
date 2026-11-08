@@ -47,16 +47,12 @@ extension View {
 /// First-launch flag + applying choices to the EXISTING favorites system (AppStore.favTeams / favLeagues).
 enum Onboarding {
     static let doneKey = "onboardingDone"
-    static let cinematicKey = "onboardingCinematicSeen"
     static let draftKey = "onboardingDraft.v1"
     struct Draft: Codable {
         var step = 0
         var clubs: [TeamRef] = []
         var leagues: Set<Int> = []
         var cups: Set<Int> = []
-    }
-    static func needsCinema(_ d: UserDefaults = .standard) -> Bool {
-        !isDone(d) && !d.bool(forKey: cinematicKey)
     }
     static func loadDraft(_ d: UserDefaults = .standard) -> Draft {
         guard let data = d.data(forKey: draftKey), var draft = try? JSONDecoder().decode(Draft.self, from: data) else { return Draft() }
@@ -77,7 +73,7 @@ enum Onboarding {
     /// `-resetOnboarding YES` (UI tests / recording): fresh first-launch state.
     static func resetIfRequested(_ d: UserDefaults = .standard) {
         guard d.bool(forKey: "resetOnboarding") else { return }
-        for k in [doneKey, cinematicKey, draftKey, "favTeams", "favLeagues", "favTeams.backup", "favLeagues.backup", PreferencesOutbox.key] { d.removeObject(forKey: k) }
+        for k in [doneKey, "onboardingCinematicSeen", draftKey, "favTeams", "favLeagues", "favTeams.backup", "favLeagues.backup", PreferencesOutbox.key] { d.removeObject(forKey: k) }
     }
     /// Clubs are merged into favorites (keeps any existing ones, no duplicates).
     /// Leagues + cups replace the default league list only when the user picked at least one; skipping keeps defaults.
@@ -109,7 +105,7 @@ enum Onboarding {
     }
 }
 
-// MARK: - Cinematic portal
+// MARK: - Static launch
 
 /// A monotonic wall-time clock. Dropped frames never lengthen the animation.
 final class SplashClock {
@@ -126,10 +122,7 @@ final class SplashClock {
             Self.sawFirstFrame = true
             SplashDiag.log.notice("FIRST splash frame +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         }
-        // Keep the original F perfectly still while SwiftUI compiles and commits the
-        // destination's first frame. Starting the camera clock before that commit used
-        // to consume most of the 1.75 s transition inside a main-thread layout stall,
-        // which looked like a normal cut instead of a fly-through.
+        // Prewarm the destination before the fixed hold-and-fade timeline starts.
         guard active else {
             start = nil
             previous = nil
@@ -140,7 +133,7 @@ final class SplashClock {
         if start == nil {
             start = now
             previous = now
-            SplashDiag.log.notice("START camera +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
+            SplashDiag.log.notice("START launch +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         }
         if let previous { largestFrameGap = max(largestFrameGap, now - previous) }
         previous = now
@@ -149,98 +142,62 @@ final class SplashClock {
     }
 }
 
-struct SplashView: View {
-    var cinematic = true
-    var onRevealStart: () -> Void = {}
-    var onFinish: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var clock = SplashClock()
-    @State private var fade = 1.0
-    // Measured from the existing 1024px asset: clear space x414..622, y377..471.
-    // The aperture stays INSIDE that space, never erasing part of the white F.
-    static let gap = CGRect(x: 0.410, y: 0.372, width: 0.190, height: 0.084)
-    static let target = UnitPoint(x: gap.midX, y: gap.midY)
+/// One fixed original mark for every launch. Only opacity changes.
+enum LaunchPresentation {
     static let visibleWidth: CGFloat = 0.24
-    static let hold = 0.30, push = 1.45, maxScale: CGFloat = 60
-    static var held: Double? {
-        switch UserDefaults.standard.string(forKey: "splashHold") {
-        case "start": 0; case "zoom": 0.55; case "reveal": 0.86; default: nil
-        }
+    static let hold = 0.5, fade = 0.3
+    static let duration = hold + fade
+    static func opacity(at elapsed: Double) -> Double {
+        let t = min(1, max(0, (elapsed - hold) / fade))
+        return 1 - t * t * (3 - 2 * t)
     }
-    static func ease(_ t: Double) -> Double { let x = min(1, max(0, t)); return x * x * x * (x * (x * 6 - 15) + 10) }
-    /// Pinhole projection: moving the camera toward the logo plane changes its apparent size.
-    static func scale(_ t: Double) -> CGFloat {
-        let distance = exp(-log(Double(maxScale)) * ease(t))
-        return CGFloat(1 / distance)
+    static func logoRect(in size: CGSize) -> CGRect {
+        let side = size.width * visibleWidth / 0.442
+        return CGRect(x: (size.width-side)/2, y: (size.height-side)/2, width: side, height: side)
     }
-    static func travel(_ t: Double) -> CGFloat { CGFloat(ease(min(1, t / 0.8))) }
-    static func hole(_ t: Double) -> CGFloat { CGFloat(ease(t / 0.28)) }
-    static func aperture(t: Double, size: CGSize) -> CGRect {
-        let side = size.width * Self.visibleWidth / 0.442
-        let focus = CGPoint(x: (size.width - side) / 2 + target.x * side,
-                            y: (size.height - side) / 2 + target.y * side)
-        let k = travel(t), scale = scale(t), open = hole(t)
-        let center = CGPoint(x: focus.x + (size.width / 2 - focus.x) * k,
-                             y: focus.y + (size.height / 2 - focus.y) * k)
-        let width = gap.width * side * scale * open, height = gap.height * side * scale * open
-        return CGRect(x: center.x - width / 2, y: center.y - height / 2, width: width, height: height)
-    }
+}
+
+struct SplashView: View {
+    var firstLaunch: Bool
+    var onFinish: () -> Void
+    @State private var clock = SplashClock()
     var body: some View {
-        PortalSurface(cinematic: cinematic && !reduceMotion, clock: clock, held: Self.held)
-        .ignoresSafeArea().opacity(fade)
-        .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
-        .task {
-            guard Self.held == nil else { onRevealStart(); return }
-            let duration = cinematic && !reduceMotion ? Self.hold + Self.push : 0.40
-            while clock.elapsed < duration && !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(8))
+        StaticLaunchSurface(clock: clock)
+            .ignoresSafeArea()
+            .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
+            .task {
+                guard UserDefaults.standard.string(forKey: "splashHold") == nil else { return }
+                while clock.elapsed < LaunchPresentation.duration && !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(8))
+                }
+                guard !Task.isCancelled else { return }
+                SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public)")
+                onFinish()
             }
-            guard !Task.isCancelled else { return }
-            onRevealStart()
-            if !cinematic || reduceMotion {
-                withAnimation(.easeOut(duration: 0.20)) { fade = 0 }
-                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
-            }
-            // Cinematic removal has NO opacity transition: the aperture already covers
-            // the viewport. Its last rendered frame and the uncovered page are identical.
-            SplashDiag.log.notice("FINISH cinematic=\(cinematic, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public)")
-            onFinish()
-        }
     }
 }
 
-/// The original bitmap and its aperture share one compositor timeline. SwiftUI
-/// never resolves/draws the bitmap on each camera frame. Display-link measurements
-/// remain main-thread measurements; the recording is the visual acceptance evidence.
-private struct PortalSurface: UIViewRepresentable {
-    let cinematic: Bool
+/// The opacity compositor runs without a SwiftUI redraw per animation frame.
+/// The opaque navy under the fixed mark fades with it to reveal the prepared page.
+private struct StaticLaunchSurface: UIViewRepresentable {
     let clock: SplashClock
-    let held: Double?
-    func makeUIView(context: Context) -> PortalLayerView { PortalLayerView(cinematic: cinematic, clock: clock, held: held) }
-    func updateUIView(_ view: PortalLayerView, context: Context) {}
-    static func dismantleUIView(_ view: PortalLayerView, coordinator: ()) { view.stop() }
+    func makeUIView(context: Context) -> StaticLaunchLayer { StaticLaunchLayer(clock: clock) }
+    func updateUIView(_ view: StaticLaunchLayer, context: Context) {}
+    static func dismantleUIView(_ view: StaticLaunchLayer, coordinator: ()) { view.stop() }
 }
-
-private final class PortalLayerView: UIView {
+private final class StaticLaunchLayer: UIView {
     private let cover = CALayer(), mark = CALayer()
-    private let aperture = CAShapeLayer()
-    private let cinematic: Bool
     private let clock: SplashClock
-    private let held: Double?
     private var link: CADisplayLink?
-    private var started = false
-    private var prepared = false
-    init(cinematic: Bool, clock: SplashClock, held: Double?) {
-        self.cinematic = cinematic; self.clock = clock; self.held = held
+    private var prepared = false, started = false
+    init(clock: SplashClock) {
+        self.clock = clock
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         cover.backgroundColor = UIColor(named: "LaunchBackground")!.cgColor
         mark.contents = UIImage(named: "SplashMark")?.cgImage
-        mark.contentsGravity = .resize
-        mark.minificationFilter = .trilinear
-        aperture.fillRule = .evenOdd
-        aperture.fillColor = UIColor.black.cgColor
-        cover.mask = aperture; cover.addSublayer(mark); layer.addSublayer(cover)
+        mark.contentsGravity = .resizeAspect
+        cover.addSublayer(mark); layer.addSublayer(cover)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func layoutSubviews() {
@@ -248,51 +205,30 @@ private final class PortalLayerView: UIView {
         guard !prepared, bounds.width > 0 else { return }
         prepared = true
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        cover.frame = bounds; aperture.frame = bounds
-        let r = logoRect(held ?? 0)
-        mark.bounds = CGRect(origin: .zero, size: r.size); mark.position = CGPoint(x: r.midX, y: r.midY)
-        aperture.path = maskPath(held ?? 0)
+        cover.frame = bounds; mark.frame = LaunchPresentation.logoRect(in: bounds.size)
         CATransaction.commit()
         let dl = CADisplayLink(target: self, selector: #selector(frameTick))
         dl.add(to: .main, forMode: .common); link = dl
     }
     func stop() { link?.invalidate(); link = nil }
-    private func logoRect(_ t: Double) -> CGRect {
-        let side = bounds.width * SplashView.visibleWidth / 0.442
-        let focus = CGPoint(x: (bounds.width-side)/2 + SplashView.target.x*side,
-                            y: (bounds.height-side)/2 + SplashView.target.y*side)
-        let k = SplashView.travel(t), scale = SplashView.scale(t)
-        let center = CGPoint(x: focus.x + (bounds.midX-focus.x)*k, y: focus.y + (bounds.midY-focus.y)*k)
-        return CGRect(x: center.x-SplashView.target.x*side*scale, y: center.y-SplashView.target.y*side*scale, width: side*scale, height: side*scale)
-    }
-    private func maskPath(_ t: Double) -> CGPath {
-        let path = CGMutablePath(); path.addRect(bounds)
-        // Constant path topology, including the initially zero-size aperture.
-        path.addRect(SplashView.aperture(t: t, size: bounds.size))
-        return path
-    }
     @objc private func frameTick(_ dl: CADisplayLink) {
         _ = clock.tick(active: SplashClock.nextReady)
-        guard held == nil, cinematic, SplashClock.nextReady, !started else { return }
+        guard SplashClock.nextReady, !started else { return }
         started = true
-        let duration = SplashView.hold + SplashView.push
-        let times = (0...180).map { Double($0)/180 }
-        let progress = times.map { min(1, max(0, ($0*duration-SplashView.hold)/SplashView.push)) }
-        let rects = progress.map { logoRect($0) }
-        let begin = CACurrentMediaTime()
-        func animate(_ key: String, _ values: [Any], _ target: CALayer) {
-            let a = CAKeyframeAnimation(keyPath: key)
-            a.values = values; a.keyTimes = times.map { NSNumber(value: $0) }
-            a.duration = duration; a.beginTime = begin; a.calculationMode = .linear
-            target.add(a, forKey: key)
+        if let held = UserDefaults.standard.string(forKey: "splashHold") {
+            let elapsed = held == "start" ? 0 : (held == "fade" ? 0.65 : 0.8)
+            cover.opacity = Float(LaunchPresentation.opacity(at: elapsed))
+            return
         }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        let end = logoRect(1)
-        mark.bounds = CGRect(origin: .zero, size: end.size); mark.position = CGPoint(x: end.midX,y: end.midY)
-        aperture.path = maskPath(1)
-        animate("bounds", rects.map { NSValue(cgRect: CGRect(origin: .zero, size: $0.size)) }, mark)
-        animate("position", rects.map { NSValue(cgPoint: CGPoint(x: $0.midX,y: $0.midY)) }, mark)
-        animate("path", progress.map { maskPath($0) }, aperture)
+        cover.opacity = 0
+        let animation = CAKeyframeAnimation(keyPath: "opacity")
+        let times = (0...80).map { Double($0)/80 }
+        animation.keyTimes = times.map { NSNumber(value: $0) }
+        animation.values = times.map { LaunchPresentation.opacity(at: $0 * LaunchPresentation.duration) }
+        animation.duration = LaunchPresentation.duration
+        animation.calculationMode = .linear
+        cover.add(animation, forKey: "launchFade")
         CATransaction.commit()
     }
 }
@@ -591,7 +527,7 @@ struct LaunchFlow<Content: View>: View {
     @State private var destinationMounted = false
     @State private var splash = true
     @State private var onboarded = Onboarding.isDone()
-    @State private var cinematic = Onboarding.needsCinema()
+    @State private var firstLaunch = !Onboarding.isDone()
     var body: some View {
         ZStack {
             Color("LaunchBackground").ignoresSafeArea()
@@ -613,8 +549,7 @@ struct LaunchFlow<Content: View>: View {
                 }
             }
             if splash {
-                SplashView(cinematic: cinematic, onRevealStart: {}) {
-                    UserDefaults.standard.set(true, forKey: Onboarding.cinematicKey)
+                SplashView(firstLaunch: firstLaunch) {
                     splash = false
                     // Yield a frame so the uncovered interface appears before starting data work.
                     Task { @MainActor in

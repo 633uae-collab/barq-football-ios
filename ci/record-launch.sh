@@ -30,10 +30,10 @@ if [[ "$MODE" == quick ]]; then
   # onscreen before recording the subsequent close/reopen, without changing prefs.
   xcrun simctl launch "$UDID" ae.barq.football -lang ar
   for i in $(seq 1 45); do
-    if grep -q 'FINISH cinematic=false' "out/$MODE-timing.log"; then break; fi
+    if grep -q 'FINISH firstLaunch=false' "out/$MODE-timing.log"; then break; fi
     sleep 1
   done
-  grep -q 'FINISH cinematic=false' "out/$MODE-timing.log"
+  grep -q 'FINISH firstLaunch=false' "out/$MODE-timing.log"
   sleep 2
   : > "out/$MODE-timing.log"
 fi
@@ -47,12 +47,12 @@ else
   xcrun simctl launch "$UDID" ae.barq.football -lang ar -resetOnboarding YES
 fi
 for i in $(seq 1 45); do
-  if grep -q 'FINISH cinematic=' "out/$MODE-timing.log"; then break; fi
+  if grep -q 'FINISH firstLaunch=' "out/$MODE-timing.log"; then break; fi
   sleep 1
 done
 sleep 4
 xcrun simctl io "$UDID" screenshot "out/$MODE-destination.png"
-grep -q 'FINISH cinematic=' "out/$MODE-timing.log"
+grep -q 'FINISH firstLaunch=' "out/$MODE-timing.log"
 # No cutting, encoding, scaling, speed changes or frame replacement.
 
 cleanup

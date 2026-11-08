@@ -77,7 +77,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
-      - name: Enforce measured cinematic and quick-launch budgets
+      - name: Enforce measured static first and quick-launch budgets
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
           cat out/first-timing.log out/quick-timing.log out/launch-timing.log > out/all-launch-timing.log
