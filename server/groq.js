@@ -106,7 +106,7 @@ class GroqAnalyst {
       if (choice?.finish_reason !== 'stop' || typeof answer !== 'string' || !answer.trim()) throw new ServiceError('AI_INCOMPLETE_RESPONSE', 502);
       validateAnswer(answer, evidence);
       return { answer, model: MODEL, fetchedAt: evidence.fetchedAt, generatedAt: this.now(),
-        source: 'API-Football', evaluationOnly: true, usage: body.usage || null,
+        source: evidence.schema === 'fotiq-licensed-history-v1' ? 'Wikidata' : 'API-Football', evaluationOnly: true, usage: body.usage || null,
         quota: { remainingRequests: r.headers.get('x-ratelimit-remaining-requests'),
           remainingTokens: r.headers.get('x-ratelimit-remaining-tokens'),
           resetRequests: r.headers.get('x-ratelimit-reset-requests'),

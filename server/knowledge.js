@@ -8,7 +8,9 @@ class HistoricalKnowledge {
     this.fetch = fetchImpl; this.now = now; this.cache = new Map(); this.blockedUntil = 0;
   }
   async collect(question) {
-    if (!/history|historical|founded|foundation|تاريخ|تأسيس|تاسيس|تأسس|تاسس/i.test(question)) return null;
+    const foundation = /founded|foundation|تأسيس|تاسيس|تأسس|تاسس/i.test(question);
+    const history = /\bhistory\b|\bhistorical\b|تاريخ/i.test(question) && !/fixture|match|kickoff|season|مباراة|مباراه|المباراة|الموسم/i.test(question);
+    if (!foundation && !history) return null;
     const club = CLUBS.find(([pattern]) => pattern.test(question));
     const empty = { schema: 'fotiq-licensed-history-v1', events: [], sources: [], missing: [], facts: [] };
     if (!club) return { ...empty, missing: ['No verified historical entity mapping is available for this club.'] };

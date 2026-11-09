@@ -7,7 +7,9 @@ const response = e => new Response(JSON.stringify({ entities: { Q7156: e } }));
 test('history routes selectively, caches facts not answers, preserves source and revision', async () => {
   let calls = 0, now = 100000;
   const k = new HistoricalKnowledge({ now: () => now, fetchImpl: async (url, options) => { calls++; assert.equal(new URL(url).hostname, 'www.wikidata.org'); assert.match(options.headers['User-Agent'], /FOTIQ/); return response(entity); } });
-  assert.equal(await k.collect('Barcelona live score'), null); assert.equal(calls, 0);
+  assert.equal(await k.collect('Barcelona live score'), null);
+  assert.equal(await k.collect('ما تاريخ مباراة برشلونة القادمة؟'), null);
+  assert.equal(await k.collect('Barcelona match history this season'), null); assert.equal(calls, 0);
   const a = await k.collect('تاريخ تأسيس برشلونة');
   assert.equal(a.facts[0].value, '1899-11-29'); assert.equal(a.sources[0].license, 'CC0'); assert.equal(a.sources[0].revision, 42);
   a.facts[0].value = 'tampered';
