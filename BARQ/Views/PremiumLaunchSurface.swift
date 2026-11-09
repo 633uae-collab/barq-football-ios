@@ -79,6 +79,13 @@ final class PremiumLaunchLayer: UIView {
     private let reduceMotion: Bool
     private var link: CADisplayLink?
     private var prepared = false, started = false
+    private var depthLayers: [CALayer] = []
+    private var opacityAnimation: CAKeyframeAnimation?
+    private var transformAnimation: CAKeyframeAnimation?
+    private var positionAnimation: CAKeyframeAnimation?
+    private var revealAnimation: CAKeyframeAnimation?
+    private var finalPose: PremiumLaunchTrack.Pose?
+    private var finalMaskPath: CGPath?
     init(clock: SplashClock, reduceMotion: Bool) {
         self.clock = clock
         self.reduceMotion = reduceMotion
@@ -107,6 +114,7 @@ final class PremiumLaunchLayer: UIView {
         plane.position = PremiumLaunchTrack.pose(at: 0, in: bounds.size).center
         mark.frame = plane.bounds
         apertureMask.frame = bounds
+        prepareAnimations()
         CATransaction.commit()
         let dl = CADisplayLink(target: self, selector: #selector(frameTick))
         dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
@@ -136,9 +144,52 @@ final class PremiumLaunchLayer: UIView {
         animation.calculationMode = .linear
         return animation
     }
+    private func prepareAnimations() {
+        // Allocate the geometry, texture and keyframes while the original mark
+        // is still held. Starting the clock before this work shortened the
+        // visible track and could remove the cover before its reveal finished.
+        if reduceMotion {
+            let duration = LaunchPresentation.duration
+            opacityAnimation = keyframes("opacity", values: (0...96).map {
+                LaunchPresentation.opacity(at: Double($0) / 96 * duration)
+            }, duration: duration)
+            return
+        }
+        let image = TransparentBrandMark.image.cgImage
+        for slice in 1...6 {
+            let depth = CALayer()
+            depth.frame = plane.bounds
+            depth.contents = image
+            depth.opacity = 0.35
+            depth.zPosition = -CGFloat(slice) * 0.45
+            depth.isHidden = true
+            plane.insertSublayer(depth, below: mark)
+            depthLayers.append(depth)
+        }
+        let duration = PremiumLaunchTrack.duration
+        let times = (0...168).map { Double($0) / 168 * duration }
+        let poses = times.map { PremiumLaunchTrack.pose(at: $0, in: bounds.size) }
+        finalPose = poses.last
+        finalMaskPath = maskPath(at: duration)
+        transformAnimation = keyframes("transform", values: poses.map {
+            NSValue(caTransform3D: PremiumLaunchTrack.transform($0))
+        }, duration: duration)
+        positionAnimation = keyframes("position", values: poses.map {
+            NSValue(cgPoint: $0.center)
+        }, duration: duration)
+        revealAnimation = keyframes("path", values: times.map { maskPath(at: $0) }, duration: duration)
+    }
+    private func add(_ animation: CAAnimation?, to layer: CALayer, key: String, startingAt time: CFTimeInterval) {
+        guard let animation else { return }
+        // All tracks and the measured clock share one explicit start time.
+        animation.beginTime = layer.convertTime(time, from: nil)
+        layer.add(animation, forKey: key)
+    }
     @objc private func frameTick(_ dl: CADisplayLink) {
-        _ = clock.tick(active: SplashClock.nextReady)
-        guard SplashClock.nextReady, !started else { return }
+        guard SplashClock.nextReady, !started else {
+            _ = clock.tick(active: SplashClock.nextReady)
+            return
+        }
         started = true
         CATransaction.begin(); CATransaction.setDisableActions(true)
         if let held = UserDefaults.standard.string(forKey: "splashHold") {
@@ -160,32 +211,25 @@ final class PremiumLaunchLayer: UIView {
             stop()
             return
         }
+        let startTime = CACurrentMediaTime()
+        _ = clock.tick(startTime)
         if reduceMotion {
-            let duration = LaunchPresentation.duration
             cover.opacity = 0
-            cover.add(keyframes("opacity", values: (0...96).map { LaunchPresentation.opacity(at: Double($0) / 96 * duration) }, duration: duration), forKey: "reducedLaunch")
+            add(opacityAnimation, to: cover, key: "reducedLaunch", startingAt: startTime)
         } else {
             mark.contents = TransparentBrandMark.image.cgImage
             // Six shallow slices give the original silhouette real perspective
             // thickness; the original alpha channel preserves both F and dot.
-            for slice in 1...6 {
-                let depth = CALayer()
-                depth.frame = plane.bounds
-                depth.contents = mark.contents
-                depth.opacity = 0.35
-                depth.zPosition = -CGFloat(slice) * 0.45
-                plane.insertSublayer(depth, below: mark)
+            depthLayers.forEach { $0.isHidden = false }
+            if let finalPose {
+                plane.transform = PremiumLaunchTrack.transform(finalPose)
+                plane.position = finalPose.center
             }
-            let duration = PremiumLaunchTrack.duration
-            let times = (0...168).map { Double($0) / 168 * duration }
-            let poses = times.map { PremiumLaunchTrack.pose(at: $0, in: bounds.size) }
-            plane.transform = PremiumLaunchTrack.transform(poses.last!)
-            plane.position = poses.last!.center
-            plane.add(keyframes("transform", values: poses.map { NSValue(caTransform3D: PremiumLaunchTrack.transform($0)) }, duration: duration), forKey: "cameraPerspective")
-            plane.add(keyframes("position", values: poses.map { NSValue(cgPoint: $0.center) }, duration: duration), forKey: "cameraPath")
+            add(transformAnimation, to: plane, key: "cameraPerspective", startingAt: startTime)
+            add(positionAnimation, to: plane, key: "cameraPath", startingAt: startTime)
             cover.mask = apertureMask
-            apertureMask.path = maskPath(at: duration)
-            apertureMask.add(keyframes("path", values: times.map { maskPath(at: $0) }, duration: duration), forKey: "gapReveal")
+            apertureMask.path = finalMaskPath
+            add(revealAnimation, to: apertureMask, key: "gapReveal", startingAt: startTime)
         }
         CATransaction.commit()
     }

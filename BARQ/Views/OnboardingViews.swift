@@ -123,7 +123,7 @@ final class SplashClock {
     }
     private(set) var largestFrameGap: Double = 0
     private(set) var elapsed: Double = 0
-    func tick(_ now: TimeInterval = ProcessInfo.processInfo.systemUptime, active: Bool = true) -> Double {
+    func tick(_ now: TimeInterval = CACurrentMediaTime(), active: Bool = true) -> Double {
         if !loggedFirstVisualFrame {
             loggedFirstVisualFrame = true
             Self.sawFirstFrame = true
