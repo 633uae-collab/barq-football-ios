@@ -201,7 +201,12 @@ function createApp({ provider, storage, storageMode = 'persistent', observations
   app.use((err, _req, res, _next) => {
     const code = err instanceof ServiceError ? err.code : err.type === 'entity.too.large' ? 'BODY_TOO_LARGE' : err.type === 'entity.parse.failed' ? 'INVALID_JSON' : 'INTERNAL_ERROR';
     const status = err instanceof ServiceError ? err.status : err.type === 'entity.too.large' ? 413 : err.type === 'entity.parse.failed' ? 400 : 500;
-    if (status === 429 || status === 503) res.set('Retry-After', String(err.retryAfter || 30));
+    // An unknown AI quota reset must remain unknown at the HTTP boundary.
+    if (status === 429 || status === 503) {
+      const retry = Number(err.retryAfter);
+      if (Number.isFinite(retry) && retry > 0) res.set('Retry-After', String(Math.ceil(retry)));
+      else if (code !== 'AI_FREE_QUOTA_REACHED') res.set('Retry-After', '30');
+    }
     res.status(status).json({ error: code });
   });
   return app;

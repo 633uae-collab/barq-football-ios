@@ -21,7 +21,9 @@ function mountChat(app, { analyst, provider }) {
     if (active) throw new ServiceError('AI_BUSY', 429);
     if (count >= 20 || now < nextAt || now < analyst.blockedUntil) {
       const e = new ServiceError('AI_FREE_QUOTA_REACHED', 429);
-      if (count >= 20 || now < nextAt || analyst.quotaResetKnown) e.retryAfter = count >= 20 ? Math.ceil((Date.parse(today) + 86400000-now)/1000) : Math.max(1, Math.ceil((Math.max(nextAt, analyst.blockedUntil)-now)/1000));
+      // Local spacing is not evidence of the provider's unknown reset time.
+      const unknownProviderReset = now < analyst.blockedUntil && !analyst.quotaResetKnown;
+      if (!unknownProviderReset && (count >= 20 || now < nextAt || analyst.quotaResetKnown)) e.retryAfter = count >= 20 ? Math.ceil((Date.parse(today) + 86400000-now)/1000) : Math.max(1, Math.ceil((Math.max(nextAt, analyst.blockedUntil)-now)/1000));
       throw e;
     }
     active = true; count++; nextAt = now + 65000;

@@ -8,6 +8,11 @@ function validateAnswer(answer, evidence) {
   const normalized = answer.replace(/[٠-٩]/g, d => String(d.charCodeAt(0)-1632)).replace(/[‐‑–—]/g, '-');
   if (evidence.seasonOnlyComparison && /(?<![\d-])\d{1,2}\s*-\s*\d{1,2}(?![\d-])/.test(normalized))
     throw new ServiceError('AI_FACT_CHECK_FAILED', 502);
+  // Missing assist metadata is never evidence for a solo goal or defensive error.
+  // Fail closed on the observed inference, including qualified 'may'/'speculation'.
+  const missingAssist = (evidence.events || []).some(e => String(e.type).toLowerCase() === 'goal' && e.goalAssist == null);
+  if (missingAssist && /(?:solo (?:goal|run|effort|attack)|individual effort|defensive (?:error|mistake)|(?:هجوم|مجهود|جهد|عمل) فردي|خطأ دفاعي|أخطاء دفاعية)/iu.test(normalized))
+    throw new ServiceError('AI_FACT_CHECK_FAILED', 502);
   for (const line of normalized.split('\n')) {
     const refs = [...line.matchAll(/event-(\d+)/g)].map(m => `event-${m[1]}`);
     if (refs.some(id => !events.has(id))) throw new ServiceError('AI_FACT_CHECK_FAILED', 502);

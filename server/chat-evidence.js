@@ -1,4 +1,5 @@
 'use strict';
+const { historicalKnowledge } = require('./knowledge');
 const { prepareEvidence } = require('./analyst-evidence');
 // Entity aliases resolve identifiers only; every football fact comes from a fresh provider response.
 const aliases = [[529, /barcelona|برشلونة|برشلونه/i], [541, /real madrid|ريال مدريد/i], [40, /liverpool|ليفربول/i], [50, /manchester city|مانشستر سيتي/i]];
@@ -52,6 +53,18 @@ function relevantVenueSeason(stats, role) {
   };
 }
 async function collectEvidence(provider, question, context = {}, history = []) {
+  // Current announcements require an announcement source, not unrelated fixtures.
+  if (/\b(?:transfer|transfers|injury|injuries|injured|news|trend|trending)\b|انتقال|صفقة|اصابة|إصابة|إصابات|اصابات|أخبار|اخبار|ترند/i.test(question)) {
+    const fetchedAt = Date.now();
+    return { schema: 'fotiq-unavailable-announcement-v1', fetchedAt, retrievedAtUTC: new Date(fetchedAt).toISOString(),
+      events: [], sources: [], facts: [], missing: ['No licensed and verified current announcement source is connected for transfers, injuries, news or trends. State this limitation. Do not use model memory, past chat claims, or fixture data as confirmation.'] };
+  }
+  const historical = await historicalKnowledge.collect(question);
+  if (historical) {
+    historical.fetchedAt ??= Date.now();
+    historical.retrievedAtUTC ??= new Date(historical.fetchedAt).toISOString();
+    return historical;
+  }
   const sources = [], missing = [];
   const load = async (path, params) => {
     const r = await provider.load(path + '?' + new URLSearchParams(params));
@@ -94,11 +107,11 @@ async function collectEvidence(provider, question, context = {}, history = []) {
         recentScope: 'Latest fixtures across competitions as returned by API-Football; inspect each match league before making competition-specific claims.',
         matches: fixtures.map(summary), recentResultsNewestFirst: upcoming ? [] : clubResults(fixtures, team) };
       let league = fixtures[0]?.league;
-      if (seasonComparison) {
+      if (teamIds.length === 2) {
         const leagues = await load('/leagues', { team, current: 'true', type: 'league' });
         const domestic = leagues.find(l => l.league?.type === 'League' && l.seasons?.some(s => s.current));
         league = domestic ? { ...domestic.league, season: domestic.seasons.find(s => s.current).year } : undefined;
-        delete club.matches; delete club.recentResultsNewestFirst; delete club.recentScope;
+        if (seasonComparison) { delete club.matches; delete club.recentResultsNewestFirst; delete club.recentScope; }
         if (!league) missing.push(`Current domestic league season unavailable for club ${team}; no alternative competition inferred.`);
       }
       if (league?.id && league?.season) {
