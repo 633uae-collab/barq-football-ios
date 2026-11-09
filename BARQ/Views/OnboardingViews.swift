@@ -105,7 +105,7 @@ enum Onboarding {
     }
 }
 
-// MARK: - Static launch
+// MARK: - Launch timing and accessible fallback
 
 /// A monotonic wall-time clock. Dropped frames never lengthen the animation.
 final class SplashClock {
@@ -142,7 +142,7 @@ final class SplashClock {
     }
 }
 
-/// One fixed original mark for every launch. Only opacity changes.
+/// Fixed original mark and opacity-only fallback for Reduce Motion.
 enum LaunchPresentation {
     static let visibleWidth: CGFloat = 0.15
     static let hold = 0.5, fade = 0.3
@@ -161,75 +161,20 @@ struct SplashView: View {
     var firstLaunch: Bool
     var onFinish: () -> Void
     @State private var clock = SplashClock()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        StaticLaunchSurface(clock: clock)
+        PremiumLaunchSurface(clock: clock, reduceMotion: reduceMotion)
             .ignoresSafeArea()
             .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
             .task {
                 guard UserDefaults.standard.string(forKey: "splashHold") == nil else { return }
-                while clock.elapsed < LaunchPresentation.duration && !Task.isCancelled {
+                while clock.elapsed < (reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration) && !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(8))
                 }
                 guard !Task.isCancelled else { return }
-                SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public)")
+                SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public) mode=\(reduceMotion ? "reduced" : "premium", privacy: .public)")
                 onFinish()
             }
-    }
-}
-
-/// The opacity compositor runs without a SwiftUI redraw per animation frame.
-/// The opaque navy under the fixed mark fades with it to reveal the prepared page.
-private struct StaticLaunchSurface: UIViewRepresentable {
-    let clock: SplashClock
-    func makeUIView(context: Context) -> StaticLaunchLayer { StaticLaunchLayer(clock: clock) }
-    func updateUIView(_ view: StaticLaunchLayer, context: Context) {}
-    static func dismantleUIView(_ view: StaticLaunchLayer, coordinator: ()) { view.stop() }
-}
-private final class StaticLaunchLayer: UIView {
-    private let cover = CALayer(), mark = CALayer()
-    private let clock: SplashClock
-    private var link: CADisplayLink?
-    private var prepared = false, started = false
-    init(clock: SplashClock) {
-        self.clock = clock
-        super.init(frame: .zero)
-        isUserInteractionEnabled = false
-        cover.backgroundColor = UIColor(named: "LaunchBackground")!.cgColor
-        mark.contents = UIImage(named: "SplashMark")?.cgImage
-        mark.contentsGravity = .resizeAspect
-        cover.addSublayer(mark); layer.addSublayer(cover)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        guard !prepared, bounds.width > 0 else { return }
-        prepared = true
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        cover.frame = bounds; mark.frame = LaunchPresentation.logoRect(in: bounds.size)
-        CATransaction.commit()
-        let dl = CADisplayLink(target: self, selector: #selector(frameTick))
-        dl.add(to: .main, forMode: .common); link = dl
-    }
-    func stop() { link?.invalidate(); link = nil }
-    @objc private func frameTick(_ dl: CADisplayLink) {
-        _ = clock.tick(active: SplashClock.nextReady)
-        guard SplashClock.nextReady, !started else { return }
-        started = true
-        if let held = UserDefaults.standard.string(forKey: "splashHold") {
-            let elapsed = held == "start" ? 0 : (held == "fade" ? 0.65 : 0.8)
-            cover.opacity = Float(LaunchPresentation.opacity(at: elapsed))
-            return
-        }
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        cover.opacity = 0
-        let animation = CAKeyframeAnimation(keyPath: "opacity")
-        let times = (0...80).map { Double($0)/80 }
-        animation.keyTimes = times.map { NSNumber(value: $0) }
-        animation.values = times.map { LaunchPresentation.opacity(at: $0 * LaunchPresentation.duration) }
-        animation.duration = LaunchPresentation.duration
-        animation.calculationMode = .linear
-        cover.add(animation, forKey: "launchFade")
-        CATransaction.commit()
     }
 }
 
@@ -547,14 +492,8 @@ struct LaunchFlow<Content: View>: View {
                 if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
                 }
             }
-            .onChange(of: destinationMounted) {
-                guard destinationMounted else { return }
-                SplashDiag.log.notice("NEXT page appear +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
-                // next runloop turn = after its first layout/draw commit
-                DispatchQueue.main.async {
-                    SplashDiag.log.notice("NEXT page drawn +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
-                    SplashClock.nextReady = true
-                }
+            .background {
+                if destinationMounted { LaunchDestinationReadiness() }
             }
             if splash {
                 SplashView(firstLaunch: firstLaunch) {

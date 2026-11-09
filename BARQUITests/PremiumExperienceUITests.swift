@@ -56,6 +56,26 @@ final class PremiumExperienceUITests: XCTestCase {
         XCTAssertNotEqual(firstTab, secondTab, "The compact analyst emblem must keep rotating in the native tab bar")
         XCTAssertEqual(app.tabBars.buttons.count, 5, "The emblem must not change the approved tab-bar layout")
     }
+    func testBackgroundResumeDoesNotRestartLaunchOrOnboarding() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication.fotiq()
+        app.launchArguments = ["-lang", "ar", "-startTab", "home", "-apiOverride", "https://127.0.0.1:9"]
+        app.launch()
+        XCTAssertTrue(app.buttons["home-notifications"].waitForExistence(timeout: 30))
+        XCTAssertFalse(app.otherElements["splash"].exists)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.buttons["home-notifications"].exists)
+        XCTAssertFalse(app.otherElements["splash"].exists, "Background return must retain the active interface")
+        XCTAssertFalse(app.staticTexts["ob-title"].exists)
+        XCTAssertEqual(app.tabBars.buttons.count, 5)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["home-notifications"].waitForExistence(timeout: 30))
+        XCTAssertFalse(app.staticTexts["ob-title"].exists)
+        XCTAssertEqual(app.tabBars.buttons.count, 5)
+    }
+
     func testRealDynamicWelcomeCaptureWithoutSending() throws {
         let app = XCUIApplication.fotiq()
         app.launchArguments = ["-lang", "ar", "-startTab", "ai", "-apiOverride", "https://barq-football-ios.onrender.com"]

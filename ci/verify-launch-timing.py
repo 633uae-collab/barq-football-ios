@@ -8,7 +8,7 @@ import sys
 
 FINISH = re.compile(
     r"FINISH firstLaunch=(true|false) elapsed=([0-9.]+) "
-    r"ready=(true|false) maxFrameGap=([0-9.]+)"
+    r"ready=(true|false) maxFrameGap=([0-9.]+)(?: mode=(premium|reduced))?"
 )
 
 
@@ -26,6 +26,7 @@ rows = [
         "elapsed": float(match.group(2)),
         "ready": match.group(3) == "true",
         "gap": float(match.group(4)),
+        "mode": match.group(5) or "reduced",
     }
     for match in FINISH.finditer(text)
 ]
@@ -43,8 +44,9 @@ for row in rows:
         fail(f"{kind} exposed a destination that was not ready")
     if row["gap"] > 0.25:
         fail(f"{kind} maxFrameGap {row['gap']:.3f}s exceeds 0.250s")
-    if not 0.8 <= row["elapsed"] < 1.0:
-        fail(f"{kind} duration {row['elapsed']:.3f}s is outside 0.80-1.00s")
+    low, high = (1.4, 1.6) if row["mode"] == "premium" else (0.8, 1.0)
+    if not low <= row["elapsed"] < high:
+        fail(f"{kind} {row['mode']} duration {row['elapsed']:.3f}s is outside {low:.2f}-{high:.2f}s")
 
 print(
     "launch timing verified: "

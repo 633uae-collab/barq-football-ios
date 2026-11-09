@@ -42,6 +42,39 @@ final class PremiumExperienceTests: XCTestCase {
         XCTAssertEqual(LaunchPresentation.duration, 0.8, accuracy: 0.001)
         XCTAssertLessThan(LaunchPresentation.duration, 1)
     }
+    func testPremiumTrackStartsAtTheOriginalMarkAndEndsBeyondEveryScreenEdge() {
+        for size in [CGSize(width: 375, height: 812), CGSize(width: 440, height: 956)] {
+            let rect = LaunchPresentation.logoRect(in: size)
+            let initial = PremiumLaunchTrack.pose(at: 0, in: size)
+            XCTAssertEqual(initial.scale, 1)
+            XCTAssertEqual(initial.pitch, 0)
+            XCTAssertEqual(initial.yaw, 0)
+            XCTAssertFalse(initial.opens)
+            XCTAssertEqual(initial.center.x - rect.width * PremiumLaunchTrack.aperture.midX, rect.minX, accuracy: 0.001)
+            XCTAssertEqual(initial.center.y - rect.height * PremiumLaunchTrack.aperture.midY, rect.minY, accuracy: 0.001)
+            let corners = PremiumLaunchTrack.apertureCorners(at: PremiumLaunchTrack.duration, in: size)
+            XCTAssertLessThan(corners[0].x, 0)
+            XCTAssertLessThan(corners[0].y, 0)
+            XCTAssertGreaterThan(corners[2].x, size.width)
+            XCTAssertGreaterThan(corners[2].y, size.height)
+            let orbit = PremiumLaunchTrack.pose(at: 0.4, in: size)
+            XCTAssertNotEqual(orbit.pitch, 0, "Premium launch includes perspective, not scale alone")
+            XCTAssertNotEqual(orbit.yaw, 0)
+        }
+        XCTAssertEqual(PremiumLaunchTrack.duration, 1.4)
+    }
+    func testRevealApertureIsInsideTheTransparentGapOfTheActualLogo() throws {
+        let cg = try XCTUnwrap(TransparentBrandMark.image.cgImage)
+        let bytes = try XCTUnwrap(cg.dataProvider?.data) as Data
+        let gap = PremiumLaunchTrack.aperture
+        for row in 0...10 {
+            for column in 0...10 {
+                let x = Int((gap.minX + gap.width * CGFloat(column) / 10) * CGFloat(cg.width))
+                let y = Int((gap.minY + gap.height * CGFloat(row) / 10) * CGFloat(cg.height))
+                XCTAssertEqual(bytes[y * cg.bytesPerRow + x * 4 + 3], 0, "Reveal must originate in the original F gap")
+            }
+        }
+    }
     func meta(_ id: Int, kind: String, active: Bool = true) -> LeagueMeta {
         LeagueMeta(id: id, name: "competition", ar: nil, logo: nil, country: nil, countryAr: nil, continent: nil, group: nil, season: nil, type: kind, active: active)
     }

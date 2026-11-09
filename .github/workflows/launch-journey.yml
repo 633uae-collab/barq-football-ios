@@ -5,6 +5,7 @@ on:
     branches: [codex/fotiq-development, codex/backend-rebuild, codex/premium-cinematic]
     paths:
       - .github/workflows/launch-journey.yml
+      - BARQ/Views/PremiumLaunchSurface.swift
       - BARQ/Views/OnboardingViews.swift
       - BARQ/Views/BrandViews.swift
       - BARQ/Views/AnalystChatView.swift
@@ -86,7 +87,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
-      - name: Enforce measured static first and quick-launch budgets
+      - name: Enforce measured premium and Reduce Motion launch budgets
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
           cat out/first-timing.log out/quick-timing.log out/launch-timing.log > out/all-launch-timing.log
