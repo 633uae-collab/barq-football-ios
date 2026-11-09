@@ -72,6 +72,8 @@ struct MatchCenterView: View {
             if let f = d?.match {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { store.toggleSaved(f.id) } label: { Image(systemName: store.savedMatches.contains(f.id) ? "bookmark.fill" : "bookmark") }
+                        .accessibilityIdentifier("match-save")
+                        .accessibilityValue(store.savedMatches.contains(f.id) ? "saved" : "unsaved")
                     Menu {
                         if f.isUpcoming { Button("أضف لتقويم الآيفون", systemImage: "calendar.badge.plus") { Task { do { try await CalendarService.add(f); msg = "تمت الإضافة للتقويم" } catch { msg = error.localizedDescription } } } }
                         if !f.isDone { Button("تابع على شاشة القفل", systemImage: "platter.filled.bottom.iphone") { do { if let detail = d { try LiveActivities.start(detail) } else { try LiveActivities.start(for: f) }; msg = "بدأت المتابعة المباشرة" } catch { msg = error.localizedDescription } } }
@@ -129,8 +131,8 @@ struct Scoreboard: View {
             HStack(alignment: .top) {
                 team(f.home)
                 VStack(spacing: 8) {
-                    Text(f.isUpcoming ? Fmt.time(f.kickoff) : f.scoreText).font(.system(size: 44, weight: .heavy, design: .rounded)).monospacedDigit()
-                        .environment(\.layoutDirection, .leftToRight).contentTransition(.numericText())
+                    FixtureScore(f: f).font(.system(size: 44, weight: .heavy, design: .rounded)).monospacedDigit()
+                        .contentTransition(.numericText())
                     StatusBadge(f: f)
                     Text(Fmt.dateLabel(f.kickoff)).font(.caption2).foregroundStyle(.secondary)
                 }
@@ -146,7 +148,7 @@ struct Scoreboard: View {
     }
     func team(_ t: TeamRef) -> some View {
         NavigationLink(value: Route.team(t.id)) {
-            VStack(spacing: 8) { RemoteImage(url: t.logo, size: 70); Text(t.name).font(.subheadline.bold()).multilineTextAlignment(.center) }.frame(maxWidth: .infinity)
+            VStack(spacing: 8) { RemoteImage(url: t.logo, size: 70); Text(t.name).accessibilityIdentifier("score-team-\(f.id)-\(t.id)").font(.subheadline.bold()).multilineTextAlignment(.center) }.frame(maxWidth: .infinity)
         }.buttonStyle(.plain)
     }
 }

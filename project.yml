@@ -5,6 +5,7 @@ options:
     iOS: "26.0"
   developmentLanguage: ar
   createIntermediateGroups: true
+  preGenCommand: xcrun swift ci/prepare-brand-mark.swift
 settings:
   base:
     FOTIQ_API_BASE: "https://barq-football-ios.onrender.com"
@@ -18,7 +19,10 @@ targets:
     type: application
     platform: iOS
     sources:
-      - BARQ
+      - path: BARQ
+        excludes: [Resources/PreparedBrandMark.rgba]
+      - path: BARQ/Resources/PreparedBrandMark.rgba
+        buildPhase: resources
       - Shared
     settings:
       base:

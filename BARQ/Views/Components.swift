@@ -1,3 +1,5 @@
+// Score children follow the SAME semantic direction as the surrounding team row.
+// Only each number is LTR; never force the home/away pair to LTR inside an RTL row.
 import SwiftUI
 
 /// Remote image with in-memory cache, shared disk URLCache and retry (AsyncImage gives up on the first
@@ -5,6 +7,8 @@ import SwiftUI
 final class ImageStore {
     static let shared = ImageStore()
     let mem = NSCache<NSString, UIImage>()
+    private let pendingLock = NSLock()
+    private var pending: [URL: Task<UIImage?, Never>] = [:]
     let session: URLSession = {
         let c = URLSessionConfiguration.default
         c.urlCache = URLCache(memoryCapacity: 24 << 20, diskCapacity: 200 << 20)
@@ -13,17 +17,51 @@ final class ImageStore {
         c.httpMaximumConnectionsPerHost = 6
         return URLSession(configuration: c)
     }()
+    /// Bounded parallel warm-up; never gates navigation or waits on the UI thread.
+    func preload(_ addresses: [String]) async {
+        var seen = Set<String>()
+        let urls = addresses.filter { seen.insert($0).inserted }.compactMap(URL.init(string:))
+        await withTaskGroup(of: Void.self) { group in
+            var next = 0
+            for _ in 0..<min(6, urls.count) {
+                let url = urls[next]; next += 1
+                group.addTask { _ = await self.image(url) }
+            }
+            while await group.next() != nil {
+                guard !Task.isCancelled else { group.cancelAll(); return }
+                if next < urls.count {
+                    let url = urls[next]; next += 1
+                    group.addTask { _ = await self.image(url) }
+                }
+            }
+        }
+    }
     func image(_ url: URL) async -> UIImage? {
         let key = url.absoluteString as NSString
         if let i = mem.object(forKey: key) { return i }
-        for attempt in 0..<3 {
-            if let (d, r) = try? await session.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200, let img = UIImage(data: d) {
-                mem.setObject(img, forKey: key); return img
+        // Coalesce prefetch and visible-tile requests. Decode off the main actor
+        // before publishing, so first drawing a downloaded logo does not decode it.
+        let task = pendingLock.withLock { () -> Task<UIImage?, Never> in
+            if let task = pending[url] { return task }
+            let task = Task.detached(priority: .userInitiated) { [self] () -> UIImage? in
+                defer { pendingLock.withLock { _ = pending.removeValue(forKey: url) } }
+                for attempt in 0..<3 {
+                    if let (data, response) = try? await session.data(from: url),
+                       (response as? HTTPURLResponse)?.statusCode == 200,
+                       let image = UIImage(data: data) {
+                        let decoded = image.preparingForDisplay() ?? image
+                        mem.setObject(decoded, forKey: key)
+                        return decoded
+                    }
+                    if Task.isCancelled { return nil }
+                    try? await Task.sleep(for: .milliseconds(400 * (attempt + 1)))
+                }
+                return nil
             }
-            if Task.isCancelled { return nil }
-            try? await Task.sleep(for: .milliseconds(400 * (attempt + 1)))
+            pending[url] = task
+            return task
         }
-        return nil
+        return await task.value
     }
 }
 
@@ -32,6 +70,7 @@ struct RemoteImage: View {
     var fallback: String = "shield"
     var size: CGFloat = 32
     var circle = false
+    var waitForLaunch = true
     @State private var img: UIImage?
     var body: some View {
         Group {
@@ -41,9 +80,15 @@ struct RemoteImage: View {
         .frame(width: size, height: size)
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(Rectangle()))
         .task(id: url) {
+            guard !Task.isCancelled else { return }
             guard let s = url, let u = URL(string: s) else { img = nil; return }
             if let c = ImageStore.shared.mem.object(forKey: s as NSString) { img = c; return }
             let r = await ImageStore.shared.image(u)
+            // Prefetch/decode may finish while the launch cover is animating.
+            // Hold publication until reveal so image arrival cannot invalidate
+            // the prepared glass grid in the middle of the camera track.
+            if waitForLaunch { await LaunchGate.wait() }
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { img = r }
         }
     }
@@ -151,7 +196,7 @@ struct MatchRow: View {
                 teamCol(f.home)
                 VStack(spacing: 4) {
                     if f.isUpcoming { Text(Fmt.time(f.kickoff)).font(.headline).monospacedDigit() }
-                    else { Text(f.scoreText).font(.title3.bold()).monospacedDigit().environment(\.layoutDirection, .leftToRight) }
+                    else { FixtureScore(f: f).font(.title3.bold()).monospacedDigit() }
                     StatusBadge(f: f)
                 }.frame(width: 92)
                 teamCol(f.away)
@@ -174,7 +219,7 @@ struct MatchRow: View {
     func teamCol(_ t: TeamRef) -> some View {
         VStack(spacing: 6) {
             RemoteImage(url: t.logo, size: 38)
-            Text(t.name).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            Text(t.name).accessibilityIdentifier("score-team-\(f.id)-\(t.id)").font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
         }.frame(maxWidth: .infinity)
     }
 }
@@ -186,7 +231,7 @@ struct MatchPreview: View {
             HStack { RemoteImage(url: f.league.logo, fallback: "trophy", size: 20); Text(f.league.name).font(.caption); Spacer(); StatusBadge(f: f) }
             HStack {
                 VStack { RemoteImage(url: f.home.logo, size: 56); Text(f.home.name).font(.subheadline.bold()) }.frame(maxWidth: .infinity)
-                Text(f.isUpcoming ? Fmt.time(f.kickoff) : f.scoreText).font(.largeTitle.bold()).monospacedDigit()
+                FixtureScore(f: f).font(.largeTitle.bold()).monospacedDigit()
                 VStack { RemoteImage(url: f.away.logo, size: 56); Text(f.away.name).font(.subheadline.bold()) }.frame(maxWidth: .infinity)
             }
             if let v = f.venue { Label(v, systemImage: "sportscourt").font(.caption).foregroundStyle(.secondary) }
@@ -221,3 +266,25 @@ extension View {
     }
 }
 
+
+
+struct FixtureScore: View {
+    let f: Fixture
+    var body: some View {
+        Group {
+            if f.isUpcoming {
+                Text(Fmt.time(f.kickoff)).environment(\.layoutDirection, .leftToRight)
+            } else {
+                HStack(spacing: 5) {
+                    Text(f.goals.home.map(String.init) ?? "–")
+                        .environment(\.layoutDirection, .leftToRight)
+                        .accessibilityIdentifier("score-home-\(f.id)")
+                    Text("-").accessibilityHidden(true)
+                    Text(f.goals.away.map(String.init) ?? "–")
+                        .environment(\.layoutDirection, .leftToRight)
+                        .accessibilityIdentifier("score-away-\(f.id)")
+                }
+            }
+        }.monospacedDigit()
+    }
+}

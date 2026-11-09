@@ -87,15 +87,15 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Liverpool"].waitForExistence(timeout: 15))
     }
 
-    /// Real frames of the splash animation (held via -splashHold): small logo at start, then mid-zoom.
+    /// Real frames of the splash animation (held via -splashHold): fixed logo at start, halfway through its fade, then revealed.
     func testSplashFrames() {
-        for (hold, name) in [("start", "00-splash-start"), ("zoom", "01-splash-zoom"), ("reveal", "01b-splash-reveal")] {
+        for (hold, name) in [("start", "00-splash-start"), ("fade", "01-splash-fade"), ("reveal", "01b-splash-reveal")] {
             let a = XCUIApplication(); a.launchEnvironment["FOTIQ_UI_TEST"] = "1"; a.launchArguments = ["-lang", "ar", "-splashHold", hold]; a.launch()
             XCTAssertTrue(a.descendants(matching: .any)["splash"].firstMatch.waitForExistence(timeout: 15), "splash shown")
             sleep(2); shot(name); a.terminate()
         }
         // relaunch splash (onboarding already done in this state or not, splash always on top)
-        let a = XCUIApplication.fotiq(); a.launchArguments = ["-lang", "ar", "-splashHold", "zoom"]; a.launch()
+        let a = XCUIApplication.fotiq(); a.launchArguments = ["-lang", "ar", "-splashHold", "fade"]; a.launch()
         XCTAssertTrue(a.descendants(matching: .any)["splash"].firstMatch.waitForExistence(timeout: 15))
         sleep(1); shot("10-relaunch-splash"); a.terminate()
     }

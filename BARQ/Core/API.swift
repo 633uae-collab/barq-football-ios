@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Talks to the FOTIQ Node backend. The API-SPORTS key never lives in the app.
 /// Base URL resolves like the web app: published config.json -> {"api": "..."}; overridable in Settings.
@@ -103,18 +104,38 @@ actor API {
         return v
     }
 
+    func analystWelcome(language: String) async throws -> AnalystWelcome {
+        let b = try await resolveBase()
+        guard let url = URL(string: b + "/api/analyst/welcome?lang=" + (language == "en" ? "en" : "ar")) else { throw APIError.bad }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await analystSession.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw APIError.offline }
+        return try JSONDecoder().decode(AnalystWelcome.self, from: data)
+    }
+
     /// One POST per deliberate send. Never retry or cache a generated answer.
-    func askAnalyst(_ question: String, context: AnalystContext = AnalystContext()) async throws -> AnalystReply {
+    func askAnalyst(_ question: String, context: AnalystContext = AnalystContext(), history: [AnalystHistoryMessage] = []) async throws -> AnalystReply {
         let b = try await resolveBase()
         guard let url = URL(string: b + "/api/analyst/chat") else { throw APIError.bad }
-        struct Request: Encodable { let question: String; let context: AnalystContext }
+        struct Request: Encodable { let question: String; let context: AnalystContext; let history: [AnalystHistoryMessage] }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.httpBody = try JSONEncoder().encode(Request(question: question, context: context))
-        let (data, response) = try await analystSession.data(for: request)
+        request.httpBody = try JSONEncoder().encode(Request(question: question, context: context, history: history))
+        let data: Data, response: URLResponse
+        do { (data, response) = try await analystSession.data(for: request) }
+        catch {
+            // Diagnostic codes only: never log URL, question, headers, userInfo,
+            // certificate contents, answer or credentials. TLS validation stays on.
+            let error = error as NSError
+            let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError
+            Logger(subsystem: "ae.barq.transport", category: "analyst").error("POST transport failure code=\(error.code, privacy: .public) underlyingCode=\(underlying?.code ?? 0, privacy: .public)")
+            throw error
+        }
         guard let http = response as? HTTPURLResponse else { throw APIError.offline }
         guard (200..<300).contains(http.statusCode) else {
             let code = (try? JSONDecoder().decode(ServerError.self, from: data))?.error ?? "AI_UPSTREAM_UNAVAILABLE"

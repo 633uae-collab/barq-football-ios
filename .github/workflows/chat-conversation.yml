@@ -1,0 +1,122 @@
+name: Native AI conversation acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/premium-cinematic]
+    paths:
+      - .github/workflows/chat-conversation.yml
+      - BARQ/Views/OnboardingViews.swift
+      - BARQ/Views/BrandViews.swift
+      - BARQ/Views/AnalystChatView.swift
+      - BARQ/Core/AnalystConversations.swift
+      - BARQ/Core/AnalystChat.swift
+      - BARQ/Core/API.swift
+      - BARQUITests/AnalystConversationUITests.swift
+      - BARQ/Core/CompetitionOrder.swift
+      - BARQTests/PremiumExperienceTests.swift
+      - BARQUITests/PremiumExperienceUITests.swift
+      - BARQ/Core/Store.swift
+      - BARQTests/LaunchJourneyTests.swift
+      - BARQUITests/LaunchJourneyUITests.swift
+      - ci/verify-launch-timing.py
+permissions:
+  contents: read
+jobs:
+  launch-journey:
+    concurrency:
+      group: fotiq-live-provider-review
+      cancel-in-progress: false
+    # The macos-26 jobs were cancelled before any steps in both attempts.
+    # Use the Xcode 26 Intel runner that completed native validation 42687173166.
+    # Assertions, provider spacing and timeouts remain unchanged.
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"; xcodebuild -version
+      - run: brew install xcodegen ffmpeg && xcodegen generate
+      - name: Pick simulator, enable touch indicators, boot
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys;d=json.load(sys.stdin)['devices']
+          c=[x for k,v in sorted(d.items(),reverse=True) if 'iOS-26' in k for x in v if 'iPhone' in x['name']]
+          p=[x for x in c if 'Pro' in x['name'] and 'Max' not in x['name']] or c
+          print(p[0]['udid'])")
+          echo "UDID=$UDID" >> $GITHUB_ENV
+          defaults write com.apple.iphonesimulator ShowSingleTouches 1
+          defaults write com.apple.iphonesimulator ShowPinches 1
+          xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance dark
+          open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+      - name: All unit tests
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -resultBundlePath unit.xcresult 2>&1 | tee unit.log
+      - name: Build UI tests
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
+      - name: Verify simulator resource signature before launch
+        run: |
+          # iOS 26 SplashBoard rejected unsealed launch resources with -67056
+          # (run42614519822). Xcode now signs locally without a paid identity.
+          APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
+          test -n "$APP"
+          test -f "$APP/_CodeSignature/CodeResources"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+      - name: Real welcome does not send a chat message
+        run: |
+          set -o pipefail
+          mkdir -p out
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testLiveWelcomeRemainsOutsideTheConversation -resultBundlePath welcome.xcresult 2>&1 | tee out/welcome.log
+      - name: Real conversation, follow-ups and restoration
+        run: |
+          set -o pipefail
+          mkdir -p out
+          xcrun simctl io "$UDID" recordVideo --codec=h264 out/fotiq-complete-journey.mp4 >out/recording.log 2>&1 &
+          RECORD_PID=$!
+          xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.transport"' >out/transport-codes.log 2>&1 &
+          TRANSPORT_LOG_PID=$!
+          # Sample the actual app only when XCTest is retrying a stalled query.
+          # Diagnostic only: do not use sampled intervals as performance acceptance.
+          (
+            for attempt in $(seq 1 900); do
+              if grep -q 'retry 1' out/conversation.log 2>/dev/null; then
+                PID=$(pgrep -x BARQ | head -1 || true)
+                date -u > out/query-stall-sample-time.txt
+                echo "APP_PID=$PID" >> out/query-stall-sample-time.txt
+                if [[ -n "$PID" ]]; then
+                  /usr/bin/sample "$PID" 8 1 -file out/query-stall-app-sample.txt || true
+                fi
+                exit 0
+              fi
+              sleep 1
+            done
+          ) &
+          DIAGNOSTIC_PID=$!
+          stop_recording() { kill -INT "$RECORD_PID" 2>/dev/null || true; wait "$RECORD_PID" || true; kill "$TRANSPORT_LOG_PID" 2>/dev/null || true; kill "$DIAGNOSTIC_PID" 2>/dev/null || true; wait "$DIAGNOSTIC_PID" 2>/dev/null || true; }
+          trap stop_recording EXIT
+          for attempt in $(seq 1 90); do
+            if grep -q 'Recording started' out/recording.log; then break; fi
+            sleep 1
+          done
+          grep -q 'Recording started' out/recording.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testRealBilingualFollowUpsAndConversationRestoration -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
+      - name: Collect actual evidence
+        if: always()
+        run: |
+          mkdir -p out/screenshots
+          cp /tmp/fotiq-conversation-shots/* out/screenshots/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-conversation-evidence
+          path: |
+            out/
+            unit.log
+            build-ui.log
+            conversation.xcresult
+            welcome.xcresult
+          retention-days: 14

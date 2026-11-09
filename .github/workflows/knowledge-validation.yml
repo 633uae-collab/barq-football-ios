@@ -1,0 +1,38 @@
+name: Licensed knowledge source validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/premium-cinematic]
+    paths: ['server/**', '.github/workflows/knowledge-validation.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix server --ignore-scripts
+      - run: npm test --prefix server
+      - name: Retrieve licensed public source without Groq or credentials
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const assert = require('node:assert/strict');
+          const { HistoricalKnowledge } = require('./server/knowledge');
+          (async () => {
+            const data = await new HistoricalKnowledge().collect('When was FC Barcelona founded?');
+            fs.writeFileSync('knowledge-observed.json', JSON.stringify(data, null, 2));
+            assert.equal(data.facts.length, 1, 'Real source unavailable: inspect missing, do not claim success');
+            assert.equal(data.sources[0].name, 'Wikidata');
+            assert.equal(data.facts[0].value, '1899-11-29');
+          })().catch(e => { console.error(e.message); process.exitCode = 1; });
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: licensed-source-observation
+          path: knowledge-observed.json

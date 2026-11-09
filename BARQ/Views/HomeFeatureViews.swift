@@ -19,7 +19,10 @@ struct FavoritesHero: View {
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 0) {
                         ForEach(matches) { f in
-                            FavoriteHeroCard(f: f, lineupsReady: lineupsReady.contains(f.id))
+                            FavoriteHeroCard(f: f, lineupsReady: lineupsReady.contains(f.id), hasPager: matches.count > 1)
+                                .overlay(alignment: .bottom) {
+                                    if matches.count > 1 { pager.padding(.bottom, 8) }
+                                }
                                 .containerRelativeFrame(.horizontal)
                                 .id(f.id)
                         }
@@ -31,26 +34,26 @@ struct FavoritesHero: View {
                 .frame(height: heroHeight)
                 .accessibilityIdentifier("home-hero")
                 .accessibilityValue(Text(verbatim: "\(selected ?? matches[0].id)"))
-                GlassEffectContainer(spacing: 6) {
-                    HStack(spacing: 8) {
-                        ForEach(matches) { f in
-                            let on = f.id == (selected ?? matches.first?.id)
-                            Button { withAnimation(.smooth) { selected = f.id } } label: {
-                                Circle().fill(on ? Color.accentColor : Color.secondary.opacity(0.4))
-                                    .frame(width: on ? 10 : 7, height: on ? 10 : 7)
-                            }
-                            .accessibilityLabel(Text(verbatim: "\(f.home.name) - \(f.away.name)"))
-                        }
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 7)
-                    .glassEffect(.regular, in: .capsule)
-                }
-                .accessibilityIdentifier("hero-dots")
+
             }
         }
         .onAppear { selected = HomeFeed.keepSelection(selected, in: matches.map(\.id)) }
         .onChange(of: matches.map(\.id)) { _, ids in selected = HomeFeed.keepSelection(selected, in: ids) }
     }
+    var pager: some View {
+        HStack(spacing: 6) {
+            ForEach(matches) { f in
+                let on = f.id == (selected ?? matches.first?.id)
+                Button { withAnimation(.smooth) { selected = f.id } } label: {
+                    Capsule().fill(on ? Color.accentColor : Color.white.opacity(0.25))
+                        .frame(width: on ? 14 : 5, height: 5)
+                        .frame(minWidth: 24, minHeight: 24)
+                }.buttonStyle(.plain)
+                    .accessibilityLabel(Text(verbatim: "\(f.home.name) - \(f.away.name)"))
+            }
+        }.accessibilityIdentifier("hero-dots")
+    }
+
 }
 
 private struct HeroBackground: ViewModifier {
@@ -91,6 +94,7 @@ struct HeroEmpty: View {
 struct FavoriteHeroCard: View {
     let f: Fixture
     let lineupsReady: Bool
+    var hasPager = false
     var body: some View {
         VStack(spacing: 8) {
             NavigationLink(value: Route.match(f.id)) {
@@ -129,6 +133,7 @@ struct FavoriteHeroCard: View {
                 }
             }
         }
+        .padding(.bottom, hasPager ? 24 : 0)
         .modifier(HeroBackground())
     }
 
@@ -143,8 +148,7 @@ struct FavoriteHeroCard: View {
     @ViewBuilder var center: some View {
         if f.isLive {
             VStack(spacing: 6) {
-                Text(f.scoreText).font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
-                    .environment(\.layoutDirection, .leftToRight)
+                FixtureScore(f: f).font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
                     .accessibilityIdentifier("hero-score")
                 LivePill(minute: f.status.elapsed, extra: f.status.extra, status: f.status.short)
             }
@@ -177,7 +181,7 @@ struct StarsCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "star.circle.fill").foregroundStyle(Color.accentColor)
-                Text(verbatim: "نجوم الملاعب | FOTIQ STARS").font(.headline)
+                BrandHeading(title: "نجوم الملاعب")
                 Spacer()
             }
             if let p = players, !p.isEmpty {
