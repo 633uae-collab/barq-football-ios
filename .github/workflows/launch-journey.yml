@@ -139,12 +139,24 @@ jobs:
       - name: Record Reduce Motion using the system accessibility preference
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
+          # Preserve the normal reopen clip even if the accessibility capture
+          # fails. Always restore the system preference before profiling.
+          restore_normal_capture() {
+            xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool NO || true
+            [[ ! -f out/normal-quick-launch-uncut.mp4 ]] || mv out/normal-quick-launch-uncut.mp4 out/quick-launch-uncut.mp4
+            [[ ! -f out/normal-quick-timing.log ]] || mv out/normal-quick-timing.log out/quick-timing.log
+          }
+          trap restore_normal_capture EXIT
+          [[ ! -f out/quick-launch-uncut.mp4 ]] || mv out/quick-launch-uncut.mp4 out/normal-quick-launch-uncut.mp4
+          [[ ! -f out/quick-timing.log ]] || mv out/quick-timing.log out/normal-quick-timing.log
           xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool YES
-          bash ci/record-launch.sh quick
-          mv out/quick-launch-uncut.mp4 out/reduced-motion-uncut.mp4
-          mv out/quick-timing.log out/reduced-timing.log
-          xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool NO
-          bash ci/record-launch.sh quick
+          result=0
+          bash ci/record-launch.sh quick || result=$?
+          [[ ! -f out/quick-launch-uncut.mp4 ]] || mv out/quick-launch-uncut.mp4 out/reduced-motion-uncut.mp4
+          [[ ! -f out/quick-timing.log ]] || mv out/quick-timing.log out/reduced-timing.log
+          restore_normal_capture
+          trap - EXIT
+          exit "$result"
       - name: Instruments Time Profiler and Animation Hitches
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         timeout-minutes: 4

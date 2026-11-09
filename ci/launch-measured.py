@@ -27,6 +27,8 @@ while time.monotonic() - start < 60:
             f.write(json.dumps(result) + '\n')
         print(json.dumps(result))
         p.communicate(timeout=10)
+        if label != 'first' and result['firstLaunch']:
+            raise SystemExit('Reopen recording requires completed real onboarding; observed firstLaunch=true')
         break
     time.sleep(0.01)
 else:
