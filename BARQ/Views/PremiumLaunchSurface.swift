@@ -29,14 +29,16 @@ enum PremiumLaunchTrack {
         // Fixed topology permits compositor interpolation. Alternating erasure
         // breaks the silhouette into short strokes without moving the logo.
         for row in 0..<8 {
-            let start = 0.42 + Double(row % 3) * 0.035
-            let erased = progress(time, from: start, to: start + 0.29)
-            let width = size.width * (1 - erased)
+            let width = size.width * markWidth(at: time, row: row)
             path.addRect(CGRect(x: row.isMultiple(of: 2) ? 0 : size.width - width,
                                 y: size.height * CGFloat(row) / 8,
                                 width: width, height: size.height / 8))
         }
         return path
+    }
+    static func markWidth(at time: Double, row: Int) -> CGFloat {
+        let start = 0.42 + Double(row % 3) * 0.035
+        return 1 - progress(time, from: start, to: start + 0.29)
     }
     static func pulseRadius(at time: Double, in size: CGSize) -> CGFloat {
         let full = hypot(size.width, size.height) / 2
@@ -62,7 +64,8 @@ struct PremiumLaunchSurface: UIViewRepresentable {
 
 final class PremiumLaunchLayer: UIView {
     private let cover = CAShapeLayer(), pulse = CAShapeLayer(), mark = CALayer()
-    private let markMask = CAShapeLayer()
+    private let markMask = CALayer()
+    private let markBands = (0..<8).map { _ in CALayer() }
     private let clock: SplashClock
     private let reduceMotion: Bool
     private var link: CADisplayLink?
@@ -85,7 +88,10 @@ final class PremiumLaunchLayer: UIView {
         pulse.opacity = 0
         mark.contents = TransparentBrandMark.image.cgImage
         mark.contentsGravity = .resizeAspect
-        markMask.fillColor = UIColor.black.cgColor
+        for band in markBands {
+            band.backgroundColor = UIColor.black.cgColor
+            markMask.addSublayer(band)
+        }
         layer.addSublayer(pulse)
         layer.addSublayer(cover)
         layer.addSublayer(mark)
@@ -117,6 +123,18 @@ final class PremiumLaunchLayer: UIView {
         mark.frame = LaunchPresentation.logoRect(in: bounds.size)
         markMask.frame = mark.bounds
         mark.mask = markMask
+        for (row, band) in markBands.enumerated() {
+            band.bounds = CGRect(x: 0, y: 0, width: mark.bounds.width, height: mark.bounds.height / 8)
+            band.anchorPoint = CGPoint(x: row.isMultiple(of: 2) ? 0 : 1, y: 0.5)
+            band.position = CGPoint(x: row.isMultiple(of: 2) ? 0 : mark.bounds.width,
+                                    y: mark.bounds.height * (CGFloat(row) + 0.5) / 8)
+        }
+        // Keep geometry static: changing shape paths can require fresh
+        // rasterization. The e83 recording skipped most of the reveal despite
+        // a small main-thread gap; transforms remove that possible source of
+        // render-server work without treating display-link cadence as proof.
+        cover.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size), in: bounds.size)
+        pulse.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size), in: bounds.size)
         applyState(at: 0)
         prepareAnimations()
         CATransaction.commit()
@@ -126,13 +144,18 @@ final class PremiumLaunchLayer: UIView {
     }
     func stop() { link?.invalidate(); link = nil }
     private func applyState(at time: Double) {
-        cover.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.coverRadius(at: reduceMotion ? 0 : time, in: bounds.size), in: bounds.size)
-        markMask.path = PremiumLaunchTrack.markPath(at: reduceMotion ? 0 : time, in: mark.bounds.size)
+        let motionTime = reduceMotion ? 0 : time
+        let coverScale = PremiumLaunchTrack.coverRadius(at: motionTime, in: bounds.size) / PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size)
+        cover.transform = CATransform3DMakeScale(coverScale, coverScale, 1)
+        for (row, band) in markBands.enumerated() {
+            band.transform = CATransform3DMakeScale(PremiumLaunchTrack.markWidth(at: motionTime, row: row), 1, 1)
+        }
         if reduceMotion {
             let opacity = Float(LaunchPresentation.opacity(at: time))
             cover.opacity = opacity; mark.opacity = opacity; pulse.opacity = 0
         } else {
-            pulse.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.pulseRadius(at: time, in: bounds.size), in: bounds.size)
+            let scale = PremiumLaunchTrack.pulseRadius(at: time, in: bounds.size) / PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size)
+            pulse.transform = CATransform3DMakeScale(scale, scale, 1)
             pulse.opacity = PremiumLaunchTrack.pulseOpacity(at: time)
         }
     }
@@ -152,9 +175,13 @@ final class PremiumLaunchLayer: UIView {
             track(cover, "opacity", values, duration: duration)
             track(mark, "opacity", values, duration: duration)
         } else {
-            track(cover, "path", times.map { PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.coverRadius(at: $0, in: bounds.size), in: bounds.size) }, duration: duration)
-            track(markMask, "path", times.map { PremiumLaunchTrack.markPath(at: $0, in: mark.bounds.size) }, duration: duration)
-            track(pulse, "path", times.map { PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.pulseRadius(at: $0, in: bounds.size), in: bounds.size) }, duration: duration)
+            let coverRadius = PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size)
+            let pulseRadius = PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size)
+            track(cover, "transform.scale", times.map { PremiumLaunchTrack.coverRadius(at: $0, in: bounds.size) / coverRadius }, duration: duration)
+            for (row, band) in markBands.enumerated() {
+                track(band, "transform.scale.x", times.map { PremiumLaunchTrack.markWidth(at: $0, row: row) }, duration: duration)
+            }
+            track(pulse, "transform.scale", times.map { PremiumLaunchTrack.pulseRadius(at: $0, in: bounds.size) / pulseRadius }, duration: duration)
             track(pulse, "opacity", times.map { PremiumLaunchTrack.pulseOpacity(at: $0) }, duration: duration)
         }
     }
