@@ -3,6 +3,8 @@ set -euo pipefail
 # Five real process restarts, in one original recording, with saved onboarding
 # and normal networking. No reinstallation, test bypass, cuts or speed changes.
 mkdir -p out
+open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+caffeinate -d -i -u -t 180 </dev/null >/tmp/fotiq-capture-awake.log 2>&1 &
 xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > out/repeated-timing.log 2>&1 &
 LOG=$!

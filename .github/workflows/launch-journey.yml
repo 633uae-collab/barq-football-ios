@@ -37,9 +37,9 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Use a standard public-repository Apple Silicon runner, not a paid larger
-    # runner. Optimized native builds are used for both tests and recordings.
-    runs-on: macos-15
+    # The standard ARM pool did not allocate run 42713555479. Use the working
+    # standard Intel pool; no paid larger runner. Record optimized builds.
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +47,8 @@ jobs:
         run: |
           X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"; xcodebuild -version
       - run: brew install xcodegen ffmpeg && xcodegen generate
+      - name: Keep the capture display awake
+        run: caffeinate -d -i -u -t 3600 </dev/null >/tmp/fotiq-capture-awake.log 2>&1 &
       - name: Pick simulator, enable touch indicators, boot
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "
@@ -148,6 +150,11 @@ jobs:
             xcrun xctrace record --template "$TEMPLATE" --device "$UDID" --time-limit 12s --output "out/trace/$NAME.trace" --launch -- "$APP" -lang ar > "out/trace/$NAME.log" 2>&1 || true
             if [[ -d "out/trace/$NAME.trace" ]]; then
               xcrun xctrace export --input "out/trace/$NAME.trace" --toc > "out/trace/$NAME-toc.xml" 2>&1 || true
+              if [[ "$NAME" == TimeProfiler ]]; then
+                for SCHEMA in time-profile potential-hangs; do
+                  xcrun xctrace export --input "out/trace/$NAME.trace" --xpath "/trace-toc/run[@number='1']/data/table[@schema='$SCHEMA']" > "out/trace/$SCHEMA.xml" 2>&1 || true
+                done
+              fi
             fi
           done
       - name: Enforce measured premium and Reduce Motion launch budgets

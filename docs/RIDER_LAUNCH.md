@@ -33,7 +33,7 @@ Animation geometry is prepared once, and Core Animation interpolates layer trans
 
 The measured-reference timeline replaces the old 1.4 s target with 1.8 s. CI duration bounds are 1.8–2.0 s (0.8–1.0 s Reduce Motion). Cadence acceptance is stricter than the inherited 250 ms gap: maximum 50 ms, mean callback rate >=58 Hz, p95 <=20 ms. A passing callback check alone does not imply a visually smooth 60 fps result.
 
-Native capture uses an optimized Release build (testability enabled) on a standard Apple Silicon runner. Earlier Debug/Intel recordings are diagnostic evidence only and cannot substitute for the newest commit. First-launch and repeated-launch clips are also published before the remaining profiling steps finish. Unrelated live score-association UI tests are not run for this dedicated launch branch.
+Native capture uses an optimized Release build (testability enabled) on a standard Intel runner. The standard Apple Silicon pool did not allocate the requested runner; no paid larger runner was enabled. Earlier Debug recordings are diagnostic evidence only and cannot substitute for the newest commit. First-launch and repeated-launch clips are also published before the remaining profiling steps finish. The capture display is kept awake and Simulator is foregrounded before recording. Unrelated live score-association UI tests are not run for this dedicated launch branch.
 
 ## Native evidence required before approval
 

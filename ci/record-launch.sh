@@ -3,6 +3,8 @@ set -euo pipefail
 MODE=${1:?first or quick}
 [[ "$MODE" == first || "$MODE" == quick ]]
 mkdir -p out
+open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+caffeinate -d -i -u -t 180 </dev/null >/tmp/fotiq-capture-awake.log 2>&1 &
 APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
 if [[ "$MODE" == first ]]; then
   # A fresh simulator install also clears the OS launch-screen snapshot cache.
@@ -10,7 +12,8 @@ if [[ "$MODE" == first ]]; then
 fi
 xcrun simctl install "$UDID" "$APP"
 xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
-xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > "out/$MODE-timing.log" 2>&1 &
+: > "out/$MODE-timing.log"
+xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' >> "out/$MODE-timing.log" 2>&1 &
 LOG=$!
 xcrun simctl io "$UDID" recordVideo --codec=h264 --force "out/$MODE-launch-uncut.mp4" > "out/$MODE-recording.log" 2>&1 &
 REC=$!

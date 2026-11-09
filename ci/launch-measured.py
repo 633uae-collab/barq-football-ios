@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Measure simctl launch request -> observed app completion without changing app timing."""
-import json, os, subprocess, sys, time
+import json, os, re, subprocess, sys, time
 from pathlib import Path
 log = Path(sys.argv[1])
 label = sys.argv[2]
@@ -16,10 +16,12 @@ while time.monotonic() - start < 60:
             raise SystemExit(p.stdout.read())
     with log.open(errors='replace') as f:
         f.seek(offset)
-        completed = 'FINISH firstLaunch=' in f.read()
+        observed = f.read()
+        completed = re.search(r'BARQ\[(\d+):.*FINISH firstLaunch=(true|false).*mode=(premium|reduced)', observed)
     if completed:
         elapsed = time.monotonic() - start
-        result = {'label': label, 'launchRequestToObservedFinishSeconds': elapsed,
+        result = {'label': label, 'pid': int(completed[1]), 'firstLaunch': completed[2] == 'true', 'mode': completed[3],
+                  'launchRequestToObservedFinishSeconds': elapsed,
                   'simctlReturnSeconds': returned, 'pollUncertaintySeconds': 0.01}
         with Path('out/startup-measurements.jsonl').open('a') as f:
             f.write(json.dumps(result) + '\n')
