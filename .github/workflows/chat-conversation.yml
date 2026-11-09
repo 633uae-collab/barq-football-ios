@@ -26,10 +26,10 @@ jobs:
     concurrency:
       group: fotiq-live-provider-review
       cancel-in-progress: false
-    # The same journey passed on Apple Silicon in run 42289806720. The Intel
-    # recording run exceeded the first-launch UI deadline.
-    # Keep the assertions/timeouts intact and record on the validated architecture.
-    runs-on: macos-26
+    # The macos-26 jobs were cancelled before any steps in both attempts.
+    # Use the Xcode 26 Intel runner that completed native validation 42687173166.
+    # Assertions, provider spacing and timeouts remain unchanged.
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
