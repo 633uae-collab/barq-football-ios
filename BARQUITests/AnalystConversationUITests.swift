@@ -25,9 +25,26 @@ final class AnalystConversationUITests: XCTestCase {
 
     func testRealBilingualFollowUpsAndConversationRestoration() throws {
         continueAfterFailure = true
-        let app = XCUIApplication.fotiq()
-        app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
+        let app = XCUIApplication()
+        app.launchEnvironment["FOTIQ_UI_TEST"] = "1"
+        app.launchArguments = ["-lang", "ar", "-resetOnboarding", "YES"]
         app.launch()
+        func element(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
+        XCTAssertTrue(element("ob-club-40").waitForExistence(timeout: 40))
+        XCTAssertFalse(element("ob-next").isEnabled)
+        XCTAssertFalse(element("ob-skip").isEnabled)
+        element("ob-club-40").tap()
+        XCTAssertTrue(element("ob-next").isEnabled)
+        element("ob-next").tap()
+        XCTAssertTrue(element("ob-back").waitForExistence(timeout: 10))
+        element("ob-skip").tap()
+        XCTAssertTrue(element("ob-start").waitForExistence(timeout: 10))
+        element("ob-skip").tap()
+        XCTAssertTrue(element("home-notifications").waitForExistence(timeout: 30))
+        let analystTab = app.tabBars.buttons["المحلل"]
+        XCTAssertTrue(analystTab.waitForExistence(timeout: 10)); analystTab.tap()
+        // Reopening later must use saved onboarding, not a test bypass/reset.
+        app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
         let newChat = app.buttons["analyst-new-chat"]
         XCTAssertTrue(newChat.waitForExistence(timeout: 40)); newChat.tap()
         let directory = URL(fileURLWithPath: "/tmp/fotiq-conversation-shots", isDirectory: true)

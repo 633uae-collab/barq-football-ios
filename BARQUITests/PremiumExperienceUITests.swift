@@ -1,7 +1,7 @@
 import XCTest
 
 final class PremiumExperienceUITests: XCTestCase {
-    func testFooterPhysicalPositionsAndSkippedClubsResume() throws {
+    func testFooterPhysicalPositionsAndMandatoryClubsResume() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchEnvironment["FOTIQ_UI_TEST"] = "1"
@@ -11,11 +11,18 @@ final class PremiumExperienceUITests: XCTestCase {
         func el(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
         XCTAssertTrue(el("ob-skip").waitForExistence(timeout: 30))
         XCTAssertLessThan(el("ob-skip").frame.midX, el("ob-next").frame.midX)
-        el("ob-skip").tap()
+        XCTAssertFalse(el("ob-skip").isEnabled)
+        XCTAssertFalse(el("ob-next").isEnabled)
         app.terminate()
         app.launchArguments = base
         app.launch()
-        XCTAssertTrue(el("ob-back").waitForExistence(timeout: 15), "Skipping clubs must resume leagues")
+        XCTAssertTrue(el("ob-club-40").waitForExistence(timeout: 30))
+        XCTAssertFalse(el("ob-back").exists, "Relaunch must not bypass mandatory clubs")
+        XCTAssertFalse(el("ob-next").isEnabled)
+        el("ob-club-40").tap()
+        XCTAssertTrue(el("ob-next").isEnabled)
+        el("ob-next").tap()
+        XCTAssertTrue(el("ob-back").waitForExistence(timeout: 15))
         XCTAssertLessThan(el("ob-skip").frame.midX, el("ob-next").frame.midX)
         el("ob-skip").tap()
         XCTAssertTrue(el("ob-start").waitForExistence(timeout: 10))

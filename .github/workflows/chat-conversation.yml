@@ -62,6 +62,15 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p out
+          xcrun simctl io "$UDID" recordVideo --codec=h264 out/fotiq-complete-journey.mp4 >out/recording.log 2>&1 &
+          RECORD_PID=$!
+          stop_recording() { kill -INT "$RECORD_PID" 2>/dev/null || true; wait "$RECORD_PID" || true; }
+          trap stop_recording EXIT
+          for attempt in $(seq 1 90); do
+            if grep -q 'Recording started' out/recording.log; then break; fi
+            sleep 1
+          done
+          grep -q 'Recording started' out/recording.log
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/AnalystConversationUITests -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
       - name: Collect actual evidence
         if: always()

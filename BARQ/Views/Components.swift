@@ -15,6 +15,24 @@ final class ImageStore {
         c.httpMaximumConnectionsPerHost = 6
         return URLSession(configuration: c)
     }()
+    /// Bounded parallel warm-up; never gates navigation or waits on the UI thread.
+    func preload(_ addresses: [String]) async {
+        let urls = Array(Set(addresses)).compactMap(URL.init(string:))
+        await withTaskGroup(of: Void.self) { group in
+            var next = 0
+            for _ in 0..<min(6, urls.count) {
+                let url = urls[next]; next += 1
+                group.addTask { _ = await self.image(url) }
+            }
+            while await group.next() != nil {
+                guard !Task.isCancelled else { group.cancelAll(); return }
+                if next < urls.count {
+                    let url = urls[next]; next += 1
+                    group.addTask { _ = await self.image(url) }
+                }
+            }
+        }
+    }
     func image(_ url: URL) async -> UIImage? {
         let key = url.absoluteString as NSString
         if let i = mem.object(forKey: key) { return i }

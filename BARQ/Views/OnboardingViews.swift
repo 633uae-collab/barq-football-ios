@@ -56,7 +56,7 @@ enum Onboarding {
     }
     static func loadDraft(_ d: UserDefaults = .standard) -> Draft {
         guard let data = d.data(forKey: draftKey), var draft = try? JSONDecoder().decode(Draft.self, from: data) else { return Draft() }
-        draft.step = (0...2).contains(draft.step) ? draft.step : 0
+        draft.step = !draft.clubs.isEmpty && (0...2).contains(draft.step) ? draft.step : 0
         return draft
     }
     static func saveDraft(_ draft: Draft, _ d: UserDefaults = .standard) {
@@ -144,7 +144,7 @@ final class SplashClock {
 
 /// One fixed original mark for every launch. Only opacity changes.
 enum LaunchPresentation {
-    static let visibleWidth: CGFloat = 0.20
+    static let visibleWidth: CGFloat = 0.15
     static let hold = 0.5, fade = 0.3
     static let duration = hold + fade
     static func opacity(at elapsed: Double) -> Double {
@@ -326,11 +326,13 @@ struct OnboardingView: View {
         HStack(spacing: 12) {
             Group {
                 Button { advance() } label: { Text("تخطي").frame(maxWidth: .infinity) }
-                    .buttonStyle(.glass).controlSize(.large).disabled(editing && !compsReady).accessibilityIdentifier("ob-skip")
+                    .buttonStyle(.glass).controlSize(.large).disabled((editing && !compsReady) || (!editing && step == 0)).accessibilityIdentifier("ob-skip")
             }
             Button { advance() } label: {
-                Label(step == 2 ? "ابدأ الآن" : "التالي", systemImage: step == 2 ? "checkmark" : "chevron.forward")
-                    .labelStyle(.titleAndIcon).frame(maxWidth: .infinity)
+                HStack(spacing: 8) {
+                    Image(systemName: step == 2 ? "checkmark" : "chevron.left")
+                    Text(step == 2 ? "ابدأ الآن" : "التالي")
+                }.frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent).tint(Color("BrandGreen")).controlSize(.large)
             .disabled((editing && !compsReady) || (step == 0 && clubs.isEmpty))
@@ -341,10 +343,12 @@ struct OnboardingView: View {
     }
 
     func advance() {
+        guard editing || !clubs.isEmpty else { return }
         if step < 2 { withAnimation(.snappy) { step += 1 }; return }
         finish()
     }
     func finish() {
+        guard editing || !clubs.isEmpty else { return }
         // Skip on a step = no choices from it; selections made then skipped are still honored only if made before skip.
         if editing {
             store.favTeams = clubs.map { TeamRef(id: $0.id, name: $0.name, logo: $0.logo) }
@@ -415,11 +419,15 @@ struct ClubPickStep: View {
             }
             .scrollDismissesKeyboard(.immediately)
         }
+        .task {
+            await ImageStore.shared.preload(model.popular.compactMap(\.logo))
+        }
         .task(id: popularRetry) {
             await LaunchGate.wait()
             guard !Task.isCancelled else { return }
             directoryReady = true
             await model.loadPopular()
+            await ImageStore.shared.preload(model.popular.compactMap(\.logo))
         }
         .task(id: "\(q)|\(searchRetry)") {
             do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
@@ -504,7 +512,7 @@ struct PickTile: View, Equatable {
     var body: some View {
         Button { if !on { Haptics.favoriteAdded() }; toggle() } label: {
             VStack(spacing: 8) {
-                RemoteImage(url: logo, size: 52, waitForLaunch: true)
+                RemoteImage(url: logo, size: 52, waitForLaunch: false)
                 Text(name).font(.footnote.weight(.semibold)).lineLimit(2).multilineTextAlignment(.center).frame(height: 34)
                 Image(systemName: on ? "star.fill" : "star").font(.title3)
                     .foregroundStyle(on ? Color("BrandGreen") : .secondary)

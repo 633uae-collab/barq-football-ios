@@ -25,6 +25,19 @@ final class LaunchJourneyTests: XCTestCase {
         XCTAssertTrue(Onboarding.isDone(d))
         XCTAssertNil(d.data(forKey: Onboarding.draftKey))
     }
+    func testDraftCannotRestorePastClubsWithoutASelection() {
+        let name = "mandatory-clubs-\(UUID())"
+        let d = UserDefaults(suiteName: name)!
+        defer { d.removePersistentDomain(forName: name) }
+        for step in [1, 2] {
+            Onboarding.saveDraft(.init(step: step, clubs: [], leagues: [39], cups: [2]), d)
+            let draft = Onboarding.loadDraft(d)
+            XCTAssertEqual(draft.step, 0)
+            XCTAssertEqual(draft.leagues, [39])
+            XCTAssertEqual(draft.cups, [2])
+            XCTAssertFalse(Onboarding.isDone(d))
+        }
+    }
     func testExistingCompletedUsersOpenHome() {
         let name = "journey-\(UUID())"
         let d = UserDefaults(suiteName: name)!
