@@ -82,7 +82,6 @@ final class PremiumLaunchLayer: UIView {
     private let reduceMotion: Bool
     private var link: CADisplayLink?
     private var prepared = false, started = false
-    private var depthLayers: [CALayer] = []
     private var opacityAnimation: CAKeyframeAnimation?
     private var transformAnimation: CAKeyframeAnimation?
     private var positionAnimation: CAKeyframeAnimation?
@@ -104,8 +103,8 @@ final class PremiumLaunchLayer: UIView {
         accessibilityViewIsModal = true
         cover.backgroundColor = UIColor(named: "LaunchBackground")!.cgColor
         // The original texture is used initially, matching LaunchScreen exactly.
-        // Its matte is exchanged for the existing transparent variant while still
-        // stationary, before perspective could expose the rectangular bitmap.
+        // Initial layout installs the transparent texture and depth stack while
+        // stationary, before the foreground readiness wait and timed track.
         mark.contents = UIImage(named: "SplashMark")?.cgImage
         mark.contentsGravity = .resizeAspect
         plane.addSublayer(mark); cover.addSublayer(plane); layer.addSublayer(cover)
@@ -190,15 +189,18 @@ final class PremiumLaunchLayer: UIView {
             return
         }
         let image = TransparentBrandMark.image.cgImage
+        // Commit the actual moving texture and visible depth stack in the
+        // initial stationary frame. Hidden layers are not a render warm-up:
+        // unhiding them at start can defer texture upload/compositing until
+        // after the timed animation has begun.
+        mark.contents = image
         for slice in 1...6 {
             let depth = CALayer()
             depth.frame = plane.bounds
             depth.contents = image
             depth.opacity = 0.35
             depth.zPosition = -CGFloat(slice) * 0.45
-            depth.isHidden = true
             plane.insertSublayer(depth, below: mark)
-            depthLayers.append(depth)
         }
         let duration = PremiumLaunchTrack.duration
         let times = (0...168).map { Double($0) / 168 * duration }
@@ -262,10 +264,8 @@ final class PremiumLaunchLayer: UIView {
             cover.opacity = 0
             add(opacityAnimation, to: cover, key: "reducedLaunch")
         } else {
-            mark.contents = TransparentBrandMark.image.cgImage
             // Six shallow slices give the original silhouette real perspective
             // thickness; the original alpha channel preserves both F and dot.
-            depthLayers.forEach { $0.isHidden = false }
             if let finalPose {
                 plane.transform = PremiumLaunchTrack.transform(finalPose)
                 plane.position = finalPose.center
