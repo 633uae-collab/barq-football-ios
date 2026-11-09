@@ -10,7 +10,7 @@ on:
       - ci/**
       - .github/workflows/launch-journey.yml
   push:
-    branches: [codex/fotiq-development, codex/backend-rebuild, codex/premium-cinematic, codex/fotiq-rider-reference]
+    branches: [codex/fotiq-development, codex/backend-rebuild, codex/premium-cinematic]
     paths:
       - .github/workflows/launch-journey.yml
       - BARQ/Views/PremiumLaunchSurface.swift

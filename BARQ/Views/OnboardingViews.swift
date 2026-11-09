@@ -114,6 +114,8 @@ final class SplashClock {
     private var loggedFirstVisualFrame = false
     private var start: TimeInterval?
     private var previous: TimeInterval?
+    private var startupPrevious: TimeInterval?
+    private(set) var startupLargestFrameGap: Double = 0
     private var frameGaps: [Double] = []
     var sampledFrames: Int { frameGaps.count }
     var meanFrameGap: Double { frameGaps.isEmpty ? 0 : frameGaps.reduce(0, +) / Double(frameGaps.count) }
@@ -125,6 +127,10 @@ final class SplashClock {
     private(set) var elapsed: Double = 0
     var animationCompleted = false
     func tick(_ now: TimeInterval = CACurrentMediaTime(), active: Bool = true) -> Double {
+        if let startupPrevious, now > startupPrevious {
+            startupLargestFrameGap = max(startupLargestFrameGap, now - startupPrevious)
+        }
+        startupPrevious = now
         if !loggedFirstVisualFrame {
             loggedFirstVisualFrame = true
             Self.sawFirstFrame = true
@@ -190,7 +196,7 @@ struct SplashView: View {
                 }
                 guard !Task.isCancelled else { return }
                 SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public) mode=\(reduceMotion ? "reduced" : "premium", privacy: .public)")
-                SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public)")
+                SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public) maxCallbackGapIncludingPreparation=\(clock.startupLargestFrameGap, privacy: .public)")
                 SplashDiag.log.notice("FRAME_STATS samples=\(clock.sampledFrames, privacy: .public) mean=\(clock.meanFrameGap, privacy: .public) p95=\(clock.percentile95Gap, privacy: .public)")
                 onFinish()
             }

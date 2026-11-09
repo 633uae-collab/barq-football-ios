@@ -179,6 +179,7 @@ final class PremiumLaunchLayer: UIView {
         animation.values = values
         animation.keyTimes = values.indices.map { NSNumber(value: Double($0) / Double(values.count - 1)) }
         animation.duration = duration
+        animation.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         animation.calculationMode = .linear
         tracks.append((target, animation))
     }
