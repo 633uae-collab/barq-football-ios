@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import os
 
 /// A single 1.4-second camera track, independent of refresh rate. Coordinates
 /// describe the existing bitmap; the aperture stays inside the F's actual gap.
@@ -140,6 +141,25 @@ final class PremiumLaunchLayer: UIView {
         guard SplashClock.nextReady, !started else { return }
         started = true
         CATransaction.begin(); CATransaction.setDisableActions(true)
+        if let held = UserDefaults.standard.string(forKey: "splashHold") {
+            // Preserve the existing real-frame capture harness. A held frame
+            // renders the same track state, without starting an animation.
+            if reduceMotion {
+                let time = held == "start" ? 0 : (held == "fade" ? 0.65 : LaunchPresentation.duration)
+                cover.opacity = Float(LaunchPresentation.opacity(at: time))
+            } else {
+                let time = held == "start" ? 0 : (held == "fade" ? 1.0 : PremiumLaunchTrack.duration)
+                let pose = PremiumLaunchTrack.pose(at: time, in: bounds.size)
+                mark.contents = TransparentBrandMark.image.cgImage
+                plane.transform = PremiumLaunchTrack.transform(pose)
+                plane.position = pose.center
+                cover.mask = apertureMask
+                apertureMask.path = maskPath(at: time)
+            }
+            CATransaction.commit()
+            stop()
+            return
+        }
         if reduceMotion {
             let duration = LaunchPresentation.duration
             cover.opacity = 0
