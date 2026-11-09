@@ -11,6 +11,29 @@ struct AnalystReply: Codable {
     var fetchedAt: Double
     var generatedAt: Double
     var context: AnalystContext?
+    var sources: [AnalystSource]?
+    var sourceNames: String? {
+        let names = (sources ?? []).compactMap(\.displayName)
+        var seen = Set<String>()
+        let unique = names.filter { seen.insert($0).inserted }
+        return unique.isEmpty ? nil : unique.joined(separator: " · ")
+    }
+}
+struct AnalystSource: Codable {
+    var name: String?
+    var path: String?
+    var url: String?
+    var revision: Int?
+    var modifiedAt: String?
+    var fetchedAt: Double?
+    var displayName: String? {
+        if let name, !name.isEmpty { return name }
+        return path?.hasPrefix("/") == true ? "API-Football" : nil
+    }
+    var link: URL? {
+        guard let url, let value = URL(string: url), value.scheme == "https", value.host != nil else { return nil }
+        return value
+    }
 }
 struct AnalystChatError: LocalizedError {
     let code: String

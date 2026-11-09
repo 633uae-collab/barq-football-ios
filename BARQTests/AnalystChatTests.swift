@@ -1,6 +1,20 @@
 import XCTest
 @testable import BARQ
 final class AnalystChatTests: XCTestCase {
+    func testSourcesSurviveArchiveAndDoNotMisattributeHistoricalFacts() throws {
+        let body = #"{"answer":"Founded 1899-11-29","model":"openai/gpt-oss-120b","fetchedAt":1000,"generatedAt":2000,"sources":[{"name":"Wikidata","url":"https://www.wikidata.org/wiki/Q7156","revision":2562671913,"modifiedAt":"2026-10-30T18:43:49Z"}]}"#
+        let reply = try JSONDecoder().decode(AnalystReply.self, from: Data(body.utf8))
+        let restored = try JSONDecoder().decode(AnalystReply.self, from: JSONEncoder().encode(reply))
+        XCTAssertEqual(restored.sourceNames, "Wikidata")
+        XCTAssertEqual(restored.sources?.first?.revision, 2562671913)
+        XCTAssertEqual(restored.sources?.first?.link?.host, "www.wikidata.org")
+        XCTAssertNil(AnalystSource(url: "javascript:alert(1)").link)
+        XCTAssertNil(AnalystSource(url: "http://example.org").link)
+        let api = try JSONDecoder().decode(AnalystReply.self, from: Data(#"{"answer":"a","model":"openai/gpt-oss-120b","fetchedAt":1,"generatedAt":2,"sources":[{"path":"/fixtures"},{"path":"/players"}]}"#.utf8))
+        XCTAssertEqual(api.sourceNames, "API-Football")
+        let legacy = try JSONDecoder().decode(AnalystReply.self, from: Data(#"{"answer":"a","model":"openai/gpt-oss-120b","fetchedAt":1,"generatedAt":2}"#.utf8))
+        XCTAssertNil(legacy.sourceNames)
+    }
     func testWelcomeExpiresToGenericWithoutBecomingAChatTurn() throws {
         let value = try JSONDecoder().decode(AnalystWelcome.self, from: Data(#"{"text":"What about this match?","dynamic":true,"expiresAt":2000}"#.utf8))
         XCTAssertEqual(value.displayText(at: Date(timeIntervalSince1970: 1), english: true), "What about this match?")

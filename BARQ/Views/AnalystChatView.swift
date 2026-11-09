@@ -35,8 +35,14 @@ struct AnalystChatView: View {
                                     .environment(\.layoutDirection, reply.answer.range(of: "[\\u0600-\\u06FF]", options: .regularExpression) == nil ? .leftToRight : .rightToLeft)
                                     .textSelection(.enabled).accessibilityIdentifier(message.id == archive.current.turns.last?.id ? "analyst-answer" : "analyst-previous-answer")
                                     .contextMenu { Button(en ? "Copy" : "نسخ", systemImage: "doc.on.doc") { UIPasteboard.general.string = reply.answer } }
-                                Text("API-Football · " + (en ? "Data retrieved: " : "وقت جلب البيانات: ") + Date(timeIntervalSince1970: reply.fetchedAt / 1000).formatted(date: .abbreviated, time: .standard))
+                                Text((reply.sourceNames ?? (en ? "Source details unavailable" : "تفاصيل المصدر غير متوفرة")) + " · " + (en ? "Data retrieved: " : "وقت جلب البيانات: ") + Date(timeIntervalSince1970: reply.fetchedAt / 1000).formatted(date: .abbreviated, time: .standard))
                                     .font(.caption2).foregroundStyle(.secondary)
+                                ForEach(Array((reply.sources ?? []).enumerated()), id: \.offset) { _, source in
+                                    if let link = source.link {
+                                        Link(source.displayName ?? link.host ?? "Source", destination: link)
+                                            .font(.caption).accessibilityIdentifier("analyst-source-link")
+                                    }
+                                }
                             } else if let error = message.error {
                                 Text(error).foregroundStyle(.red).accessibilityIdentifier(message.id == archive.current.turns.last?.id ? "analyst-error" : "analyst-previous-error")
                             } else if sending {
