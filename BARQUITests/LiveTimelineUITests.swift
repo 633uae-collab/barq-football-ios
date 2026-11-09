@@ -8,11 +8,21 @@ final class LiveTimelineUITests: XCTestCase {
     let env = ProcessInfo.processInfo.environment
 
     func keys(_ app: XCUIApplication) -> [String] {
-        // A row can surface twice in the accessibility tree (container + child); identity uniqueness of the data itself is unit tested.
-        var seen = Set<String>()
-        return app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'tl-'")).allElementsBoundByIndex
-            .sorted { $0.frame.minY < $1.frame.minY }   // visual order (tree order can lag during insert animations)
-            .map(\.identifier).filter { seen.insert($0).inserted }
+        // Read identifiers and frames from ONE immutable accessibility snapshot. Reading
+        // live XCUIElement proxies separately can mix layouts across a replay refresh.
+        do {
+            let snapshot = try app.snapshot()
+            func rows(_ node: XCUIElementSnapshot) -> [XCUIElementSnapshot] {
+                (node.identifier.hasPrefix("tl-") ? [node] : []) + node.children.flatMap { rows($0) }
+            }
+            var seen = Set<String>()
+            return rows(snapshot).enumerated().sorted {
+                $0.element.frame.minY == $1.element.frame.minY ? $0.offset < $1.offset : $0.element.frame.minY < $1.element.frame.minY
+            }.map { $0.element.identifier }.filter { seen.insert($0).inserted }
+        } catch {
+            XCTFail("Could not snapshot timeline: \(error)")
+            return []
+        }
     }
     func save(_ name: String) {
         try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/fotiq-\(name).png"))

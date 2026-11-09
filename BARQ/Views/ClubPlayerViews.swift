@@ -9,7 +9,9 @@ struct ClubView: View {
     var body: some View {
         ScrollView {
             LoadState(value: t, error: error, retry: { await load() }) { t in
-                VStack(spacing: 16) {
+                // Instantiate match rows and glass surfaces only as they approach the viewport.
+                // Eager layout of the full club history blocks accessibility snapshots on iOS 26.
+                LazyVStack(spacing: 16) {
                     VStack(spacing: 10) {
                         RemoteImage(url: t.team?.logo, size: 96)
                         Text(t.team?.name ?? "").font(.title.bold())

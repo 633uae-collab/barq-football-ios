@@ -7,6 +7,7 @@ actor API {
     private var base: String?
     private var fixed: String?
     private let session: URLSession
+    private let analystSession: URLSession
     private let retryDelay: Double
     /// `protocolClasses` lets unit tests inject a URLProtocol stub (offline / server error / missing data).
     init(protocolClasses: [AnyClass]? = nil, fixedBase: String? = nil, retryDelay: Double = 1) {
@@ -16,6 +17,12 @@ actor API {
         c.timeoutIntervalForResource = 15
         if let p = protocolClasses { c.protocolClasses = p; c.urlCache = nil }
         session = URLSession(configuration: c)
+        let ai = URLSessionConfiguration.ephemeral
+        ai.timeoutIntervalForRequest = 150
+        ai.timeoutIntervalForResource = 180
+        ai.urlCache = nil
+        if let p = protocolClasses { ai.protocolClasses = p }
+        analystSession = URLSession(configuration: ai)
         base = fixedBase; fixed = fixedBase
         self.retryDelay = retryDelay
     }
@@ -38,7 +45,7 @@ actor API {
     func resolveBase() async throws -> String {
         if let b = base { return b }
         if let o = UserDefaults.standard.string(forKey: "apiOverride"), !o.isEmpty { return try checkedBase(o) }
-        // Optional build-time base (xcodebuild FOTIQ_API_BASE=... from a CI secret); empty in the repo, never committed.
+        // Public deployment URL from build settings; API credentials remain server-side.
         if let o = Bundle.main.object(forInfoDictionaryKey: "FOTIQAPIBase") as? String, o.hasPrefix("http") { return try checkedBase(o) }
         guard let url = URL(string: Self.configURL + "?t=\(Int(Date().timeIntervalSince1970))") else { throw APIError.offline }
         let (d, response) = try await session.data(from: url)
@@ -94,6 +101,29 @@ actor API {
         if mem.count >= 128, let oldest = mem.min(by: { $0.value.0 < $1.value.0 })?.key { mem.removeValue(forKey: oldest) }
         mem[path] = (Date(), data)
         return v
+    }
+
+    /// One POST per deliberate send. Never retry or cache a generated answer.
+    func askAnalyst(_ question: String, context: AnalystContext = AnalystContext()) async throws -> AnalystReply {
+        let b = try await resolveBase()
+        guard let url = URL(string: b + "/api/analyst/chat") else { throw APIError.bad }
+        struct Request: Encodable { let question: String; let context: AnalystContext }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try JSONEncoder().encode(Request(question: question, context: context))
+        let (data, response) = try await analystSession.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.offline }
+        guard (200..<300).contains(http.statusCode) else {
+            let code = (try? JSONDecoder().decode(ServerError.self, from: data))?.error ?? "AI_UPSTREAM_UNAVAILABLE"
+            throw AnalystChatError(code: code, retryAfter: Int(http.value(forHTTPHeaderField: "Retry-After") ?? ""))
+        }
+        let reply = try JSONDecoder().decode(AnalystReply.self, from: data)
+        guard !reply.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              reply.model == "openai/gpt-oss-120b" else { throw APIError.badResponse }
+        return reply
     }
 
     func send(_ method: String, _ path: String, body: Encodable) async throws {

@@ -4,21 +4,28 @@ on:
   workflow_dispatch:
     inputs:
       runner: { description: "macOS runner label (macos-26-intel if arm queue is stuck)", required: false, default: "macos-26" }
-      api_base: { description: "Optional FOTIQ backend base URL (else secret FOTIQ_API_BASE, else koora-ae.surge.sh/config.json)", required: false, default: "" }
+      api_base: { description: "Optional FOTIQ backend base URL (else secret FOTIQ_API_BASE, else Render preview)", required: false, default: "" }
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: cd server && node --test test/
+        with: { node-version: 24 }
+      - run: npm ci --prefix server
+      - run: npm test --prefix server
 
   simulator:
+    concurrency:
+      group: fotiq-live-provider-review
+      cancel-in-progress: false
     runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 140
     env:
-      FOTIQ_API_BASE: ${{ inputs.api_base || secrets.FOTIQ_API_BASE }}
+      FOTIQ_API_BASE: ${{ inputs.api_base || secrets.FOTIQ_API_BASE || 'https://barq-football-ios.onrender.com' }}
     steps:
       - uses: actions/checkout@v4
       - name: Select newest Xcode with iOS 26 SDK
@@ -39,6 +46,7 @@ jobs:
           print(p[0]['udid']); print(p[0]['name'],file=sys.stderr)")
           echo "UDID=$UDID" >> $GITHUB_ENV
       - name: Build
+        id: build
         run: |
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log | grep -E "error:|warning:|BUILD" || true
@@ -68,7 +76,9 @@ jobs:
             N=$(echo "$T" | tr -d ' ')
             ( xcrun xctrace record --template "$T" --device "$UDID" --time-limit 20s --output "diag/trace/$N.trace" \
               --env FOTIQ_UI_TEST=1 --launch -- "$APP" -lang ar -resetOnboarding YES > "diag/trace/$N.out" 2>&1 ) &
-            XP=$!; sleep 45; kill -INT $XP 2>/dev/null; sleep 15; kill -9 $XP 2>/dev/null; pkill -9 -f "xctrace record" || true
+            XP=$!; sleep 45; kill -INT $XP 2>/dev/null || true
+            sleep 15; kill -9 $XP 2>/dev/null || true
+            pkill -9 -f "xctrace record" || true
             xcrun simctl io "$UDID" screenshot "diag/trace/$N-end.png" || true
             xcrun simctl terminate "$UDID" ae.barq.football || true
           done
@@ -78,26 +88,42 @@ jobs:
           xcrun xctrace export --input diag/trace/AnimationHitches.trace --toc > diag/trace/ah-toc.xml 2>&1 || true
           ls -la diag/trace; du -sh diag/trace
       - name: UI tests (real backend data)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         timeout-minutes: 50
         run: |
           set -o pipefail
           xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > ui-app-timing.log 2>&1 &
           LGP=$!
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -resultBundlePath ui.xcresult -skip-testing:BARQUITests/LiveTimelineUITests -skip-testing:BARQUITests/HomeReviewUITests 2>&1 | tee uitest.log | grep -E "Test Case|HOMEV8|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -resultBundlePath ui.xcresult -skip-testing:BARQUITests/LiveTimelineUITests -skip-testing:BARQUITests/HomeReviewUITests 2>&1 | tee uitest.log | grep -E "Test Case|CHAT_RESULT|HOMEV8|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
           mkdir -p shots/onboarding; cp /tmp/onb-*.png shots/onboarding/ || true
+          cp /tmp/fotiq-chat-results.txt shots/ || true
+          cp /tmp/v7-chat-*.png shots/ || true
           kill $LGP || true; mkdir -p diag; cp ui-app-timing.log diag/ || true
           grep -q "TEST SUCCEEDED" uitest.log
           mkdir -p shots; cp /tmp/v7-*.png shots/ || true; cp /tmp/fotiq-springboard.png shots/v4-00-home-screen-icon.png || echo "no springboard capture"
+      - name: Upload native chat evidence immediately after UI tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-chat-evidence
+          path: |
+            shots/fotiq-chat-results.txt
+            shots/v7-chat-*.png
+            uitest.log
+          if-no-files-found: error
       - name: Home design review captures (screenshots only)
-        continue-on-error: true
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -only-testing:BARQUITests/HomeReviewUITests 2>&1 | tee review.log | grep -E "Test Case|HOME_REVIEW|HOME_FULL|error:" || true
           mkdir -p shots/review; cp /tmp/review-home-*.png shots/review/ || true
+          cp /tmp/review-home-extra-*-coverage.txt shots/review/ || true
+          grep -q "TEST SUCCEEDED" review.log
       - name: Live timeline tests (live match now + replay of recorded real snapshots)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
-          API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
+          API=$(node ci/resolve-api-base.mjs) || exit 1
           H="X-Pinggy-No-Screen: 1"
-          get() { for i in 1 2 3 4; do API=$(curl -s -m 20 https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])" || true); curl -sf -m 90 -H "$H" "$API$1" -o "$2" && return 0; sleep 15; done; return 1; }
+          get() { for i in 1 2 3 4; do API=$(node ci/resolve-api-base.mjs) || return 1; curl -sf -m 90 -H "$H" "$API$1" -o "$2" && return 0; sleep 15; done; return 1; }
           get /api/fixtures fx.json || echo '{"fixtures":[]}' > fx.json
           get /api/replay rp.json || echo '[]' > rp.json
           LIVE=$(python3 -c "
@@ -111,6 +137,7 @@ jobs:
           mkdir -p shots; for f in /tmp/fotiq-*.png; do cp "$f" "shots/v6-$(basename $f .png | sed 's/fotiq-//').png"; done; cp live-ids.txt shots/
           grep -q "TEST SUCCEEDED" livetest.log
       - name: Screenshots of all 17 screens (real API-SPORTS data via backend)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
           APP=$(find dd/Build/Products -name BARQ.app -path "*iphonesimulator*" | head -1)
@@ -119,7 +146,7 @@ jobs:
           mkdir -p shots
           xcrun simctl status_bar "$UDID" override --time 9:41 || true
           mkdir -p shots
-          API=$(curl -s https://koora-ae.surge.sh/config.json | python3 -c "import json,sys;print(json.load(sys.stdin)['api'])")
+          API=$(node ci/resolve-api-base.mjs) || exit 1
           H="X-Pinggy-No-Screen: 1"
           MID=$(curl -s -H "$H" "$API/api/fixtures" | python3 -c "import json,sys;f=json.load(sys.stdin)['fixtures'];L={'1H','2H','HT','ET'};f=sorted(f,key=lambda x:(x['status']['short'] not in L,-(x.get('imp') or 0)));print(f[0]['id'])")
           TEAM=$(curl -s -H "$H" "$API/api/match/$MID" | python3 -c "import json,sys;print(json.load(sys.stdin)['match']['home']['id'])")
@@ -155,8 +182,10 @@ jobs:
           xcrun simctl ui "$UDID" appearance dark
           echo "MID=$MID" >> $GITHUB_ENV
       - name: Live Activity + Dynamic Island + notification on simulator
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         continue-on-error: true
         run: |
+          set +e
           set -x
           xcrun simctl privacy "$UDID" grant notifications ae.barq.football || echo "privacy grant notifications unsupported"
           xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
@@ -167,10 +196,10 @@ jobs:
           xcrun simctl launch "$UDID" com.apple.Preferences; sleep 6
           xcrun simctl io "$UDID" screenshot shots/v4-22-dynamic-island.png
           # Live Activity update via simulated push (Xcode 26 simctl) - outcome recorded, not assumed
-          xcrun simctl push "$UDID" ae.barq.football.push-type.liveactivity BARQTests/Payloads/live-update.json > shots/la-push.txt 2>&1 || true; echo "exit=$?" >> shots/la-push.txt
+          xcrun simctl push "$UDID" ae.barq.football.push-type.liveactivity BARQTests/Payloads/live-update.json > shots/la-push.txt 2>&1; PUSH_RC=$?; echo "exit=$PUSH_RC" >> shots/la-push.txt
           sleep 5; xcrun simctl io "$UDID" screenshot shots/v4-23-dynamic-island-after-push.png
           # Regular APNs alert payload (from push.js) via simctl push
-          xcrun simctl push "$UDID" ae.barq.football BARQTests/Payloads/alert.apns > shots/alert-push.txt 2>&1 || true; echo "exit=$?" >> shots/alert-push.txt
+          xcrun simctl push "$UDID" ae.barq.football BARQTests/Payloads/alert.apns > shots/alert-push.txt 2>&1; PUSH_RC=$?; echo "exit=$PUSH_RC" >> shots/alert-push.txt
           sleep 3; xcrun simctl io "$UDID" screenshot shots/v4-24-notification-banner.png
           kill %1 2>/dev/null || true
           cat shots/la-console.txt shots/la-push.txt shots/alert-push.txt
@@ -190,6 +219,7 @@ jobs:
         if: always()
         with: { name: ui-diagnostics, path: diag, if-no-files-found: ignore, retention-days: 7 }
       - name: Zip unsigned app
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: cd dd/Build/Products/Debug-iphonesimulator && zip -qr ../../../../BARQ-sim.zip BARQ.app
       - uses: actions/upload-artifact@v4
         with: { name: BARQ-simulator-app, path: BARQ-sim.zip }
@@ -202,6 +232,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     env:
+      FOTIQ_API_BASE: ${{ inputs.api_base || secrets.FOTIQ_API_BASE || 'https://barq-football-ios.onrender.com' }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
@@ -226,6 +257,6 @@ jobs:
           AUTH="-allowProvisioningUpdates -authenticationKeyPath $KEY -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID"
           xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -configuration Release -destination generic/platform=iOS \
             -archivePath build/BARQ.xcarchive archive DEVELOPMENT_TEAM=$APPLE_TEAM_ID CODE_SIGN_STYLE=Automatic \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }} $AUTH | tail -30
+            FOTIQ_API_BASE="$FOTIQ_API_BASE" CURRENT_PROJECT_VERSION=${{ github.run_number }} $AUTH | tail -30
           xcodebuild -exportArchive -archivePath build/BARQ.xcarchive -exportOptionsPlist ci/ExportOptions.plist -exportPath build/export $AUTH | tail -30
           rm -f "$KEY"
