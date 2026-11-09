@@ -44,38 +44,30 @@ final class PremiumExperienceTests: XCTestCase {
         XCTAssertEqual(LaunchPresentation.duration, 0.8, accuracy: 0.001)
         XCTAssertLessThan(LaunchPresentation.duration, 1)
     }
-    func testPremiumTrackStartsAtTheOriginalMarkAndEndsBeyondEveryScreenEdge() {
+    func testRiderRevealCoversAllCornersThenContractsMonotonically() {
         for size in [CGSize(width: 375, height: 812), CGSize(width: 440, height: 956)] {
-            let rect = LaunchPresentation.logoRect(in: size)
-            let initial = PremiumLaunchTrack.pose(at: 0, in: size)
-            XCTAssertEqual(initial.scale, 1)
-            XCTAssertEqual(initial.pitch, 0)
-            XCTAssertEqual(initial.yaw, 0)
-            XCTAssertFalse(initial.opens)
-            XCTAssertEqual(initial.center.x - rect.width * PremiumLaunchTrack.aperture.midX, rect.minX, accuracy: 0.001)
-            XCTAssertEqual(initial.center.y - rect.height * PremiumLaunchTrack.aperture.midY, rect.minY, accuracy: 0.001)
-            let corners = PremiumLaunchTrack.apertureCorners(at: PremiumLaunchTrack.duration, in: size)
-            XCTAssertLessThan(corners[0].x, 0)
-            XCTAssertLessThan(corners[0].y, 0)
-            XCTAssertGreaterThan(corners[2].x, size.width)
-            XCTAssertGreaterThan(corners[2].y, size.height)
-            let orbit = PremiumLaunchTrack.pose(at: 0.4, in: size)
-            XCTAssertNotEqual(orbit.pitch, 0, "Premium launch includes perspective, not scale alone")
-            XCTAssertNotEqual(orbit.yaw, 0)
+            let radius = PremiumLaunchTrack.coverRadius(at: 0, in: size)
+            XCTAssertGreaterThan(radius, hypot(size.width, size.height) / 2)
+            XCTAssertEqual(PremiumLaunchTrack.coverRadius(at: 0.8, in: size), radius)
+            var previous = radius
+            for step in 0...140 {
+                let next = PremiumLaunchTrack.coverRadius(at: Double(step) / 100, in: size)
+                XCTAssertGreaterThanOrEqual(next, 0)
+                XCTAssertLessThanOrEqual(next, previous)
+                previous = next
+            }
+            XCTAssertEqual(previous, 0)
         }
         XCTAssertEqual(PremiumLaunchTrack.duration, 1.4)
     }
-    func testRevealApertureIsInsideTheTransparentGapOfTheActualLogo() throws {
-        let cg = try XCTUnwrap(TransparentBrandMark.image.cgImage)
-        let bytes = try XCTUnwrap(cg.dataProvider?.data) as Data
-        let gap = PremiumLaunchTrack.aperture
-        for row in 0...10 {
-            for column in 0...10 {
-                let x = Int((gap.minX + gap.width * CGFloat(column) / 10) * CGFloat(cg.width))
-                let y = Int((gap.minY + gap.height * CGFloat(row) / 10) * CGFloat(cg.height))
-                XCTAssertEqual(bytes[y * cg.bytesPerRow + x * 4 + 3], 0, "Reveal must originate in the original F gap")
-            }
-        }
+    func testRiderMarkErasesBeforeTheFieldContractsAndPulseClearsAtEnd() {
+        let size = CGSize(width: 140, height: 140)
+        let start = PremiumLaunchTrack.markPath(at: 0, in: size)
+        XCTAssertTrue(start.contains(CGPoint(x: 70, y: 70)))
+        XCTAssertFalse(PremiumLaunchTrack.markPath(at: 0.81, in: size).contains(CGPoint(x: 70, y: 70)))
+        XCTAssertEqual(PremiumLaunchTrack.pulseOpacity(at: 0), 0)
+        XCTAssertGreaterThan(PremiumLaunchTrack.pulseOpacity(at: 1.1), 0)
+        XCTAssertEqual(PremiumLaunchTrack.pulseOpacity(at: PremiumLaunchTrack.duration), 0)
     }
     func meta(_ id: Int, kind: String, active: Bool = true) -> LeagueMeta {
         LeagueMeta(id: id, name: "competition", ar: nil, logo: nil, country: nil, countryAr: nil, continent: nil, group: nil, season: nil, type: kind, active: active)
