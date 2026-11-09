@@ -24,6 +24,20 @@ import XCTest
         XCTAssertNil(restored.storageError)
         XCTAssertEqual(restored.current.turns.first?.question, "Question 0")
     }
+    func testArabicDiacriticsAndEmojiRespectServerUTF16LimitWithoutChangingSavedReply() {
+        let text = String(repeating: "سُؤال ⚽️ 👨‍👩‍👧‍👦 ", count: 200)
+        let turn = AnalystTurn(question: text, answer: AnalystReply(answer: text, model: "openai/gpt-oss-120b", fetchedAt: 1, generatedAt: 2))
+        let conversation = AnalystConversation(turns: [turn])
+        XCTAssertEqual(conversation.turns.first?.answer?.answer, text)
+        XCTAssertEqual(conversation.history.count, 2)
+        XCTAssertLessThanOrEqual(conversation.history[0].content.utf16.count, 500)
+        XCTAssertLessThanOrEqual(conversation.history[1].content.utf16.count, 1000)
+        for message in conversation.history {
+            XCTAssertFalse(message.content.isEmpty)
+            XCTAssertTrue(text.hasPrefix(message.content))
+            XCTAssertFalse(message.content.contains("�"))
+        }
+    }
     func testInterruptedAndFailedTurnsAreRetainedButNotSentAsAssistantHistory() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: url) }

@@ -13,12 +13,23 @@ struct AnalystConversation: Codable, Identifiable {
     var turns: [AnalystTurn] = []
     var context = AnalystContext()
     var title: String { turns.first?.question ?? (L.lang == "en" ? "New conversation" : "محادثة جديدة") }
+    /// The JSON server validates JavaScript string.length (UTF-16 units), not
+    /// Swift grapheme count. Keep whole characters without exceeding that limit.
+    static func boundedContext(_ text: String, utf16Limit: Int) -> String {
+        var result = "", used = 0
+        for character in text {
+            let length = String(character).utf16.count
+            guard used + length <= utf16Limit else { break }
+            result.append(character); used += length
+        }
+        return result
+    }
     var history: [AnalystHistoryMessage] {
         // Older messages remain readable locally. Only a bounded recent window is
         // transmitted; previous answers are context, never fresh football evidence.
         Array(turns.filter { $0.answer != nil }.suffix(4)).flatMap {
-            [AnalystHistoryMessage(role: "user", content: String($0.question.prefix(500))),
-             AnalystHistoryMessage(role: "assistant", content: String(($0.answer?.answer ?? "").prefix(1000)))]
+            [AnalystHistoryMessage(role: "user", content: Self.boundedContext($0.question, utf16Limit: 500)),
+             AnalystHistoryMessage(role: "assistant", content: Self.boundedContext($0.answer?.answer ?? "", utf16Limit: 1000))]
         }
     }
 }
