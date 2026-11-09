@@ -52,13 +52,13 @@ jobs:
         id: build
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log | grep -E "error:|warning:|BUILD" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build 2>&1 | tee build.log | grep -E "error:|warning:|BUILD" || true
           grep -q "BUILD SUCCEEDED" build.log
           echo "Swift warnings in our sources:"; grep -E "/(BARQ|BARQWidgets|Shared|BARQTests)/.*warning:" build.log | sort -u | tee warnings.txt || true
       - name: Unit tests
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test 2>&1 | tee test.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test 2>&1 | tee test.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
           grep -q "TEST SUCCEEDED" test.log
       - name: App bundle must not contain the API-SPORTS key or direct provider calls
         run: |
@@ -97,7 +97,7 @@ jobs:
           set -o pipefail
           xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > ui-app-timing.log 2>&1 &
           LGP=$!
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -resultBundlePath ui.xcresult -skip-testing:BARQUITests/LiveTimelineUITests -skip-testing:BARQUITests/HomeReviewUITests 2>&1 | tee uitest.log | grep -E "Test Case|CHAT_RESULT|HOMEV8|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -resultBundlePath ui.xcresult -skip-testing:BARQUITests/LiveTimelineUITests -skip-testing:BARQUITests/HomeReviewUITests 2>&1 | tee uitest.log | grep -E "Test Case|CHAT_RESULT|HOMEV8|Executed|TEST (SUCCEEDED|FAILED)|error:" || true
           mkdir -p shots/onboarding; cp /tmp/onb-*.png shots/onboarding/ || true
           cp /tmp/fotiq-chat-results.txt shots/ || true
           cp /tmp/v7-chat-*.png shots/ || true
@@ -117,7 +117,7 @@ jobs:
       - name: Home design review captures (screenshots only)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -only-testing:BARQUITests/HomeReviewUITests 2>&1 | tee review.log | grep -E "Test Case|HOME_REVIEW|HOME_FULL|error:" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -only-testing:BARQUITests/HomeReviewUITests 2>&1 | tee review.log | grep -E "Test Case|HOME_REVIEW|HOME_FULL|error:" || true
           mkdir -p shots/review; cp /tmp/review-home-*.png shots/review/ || true
           cp /tmp/review-home-extra-*-coverage.txt shots/review/ || true
           grep -q "TEST SUCCEEDED" review.log
@@ -136,7 +136,7 @@ jobs:
           echo "live=$LIVE replay=$REP" | tee live-ids.txt
           export TEST_RUNNER_LIVE_ID="$LIVE" TEST_RUNNER_LIVE_MINUTES=9 TEST_RUNNER_REPLAY_ID="${REP% *}" TEST_RUNNER_REPLAY_STEPS="${REP#* }" TEST_RUNNER_STOPPAGE_ID=1559185
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=NO test -only-testing:BARQUITests/LiveTimelineUITests 2>&1 | tee livetest.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:|REPLAY_LOG|LIVE_LOG|STOPPAGE_ORDER|new=|scroll anchor|start:" || true
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd FOTIQ_API_BASE="$FOTIQ_API_BASE" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -only-testing:BARQUITests/LiveTimelineUITests 2>&1 | tee livetest.log | grep -E "Test Case|Executed|TEST (SUCCEEDED|FAILED)|error:|REPLAY_LOG|LIVE_LOG|STOPPAGE_ORDER|new=|scroll anchor|start:" || true
           mkdir -p shots; for f in /tmp/fotiq-*.png; do cp "$f" "shots/v6-$(basename $f .png | sed 's/fotiq-//').png"; done; cp live-ids.txt shots/
           grep -q "TEST SUCCEEDED" livetest.log
       - name: Screenshots of all 17 screens (real API-SPORTS data via backend)
