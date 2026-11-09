@@ -25,9 +25,10 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Standard Apple Silicon fallback while macos-26 run42629086507 waits
-    # for a runner. This image includes Xcode26 + iOS26; all checks remain.
-    runs-on: macos-15
+    # Try the separate standard Intel pool after macOS 26 and 15 ARM jobs
+    # stalled provisioning. Public-repository runner; Xcode26/iOS26 and all
+    # original recording, unit, UI and performance checks remain unchanged.
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
