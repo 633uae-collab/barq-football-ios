@@ -88,13 +88,16 @@ final class PremiumLaunchLayer: UIView {
         self.clock = clock
         self.reduceMotion = reduceMotion
         super.init(frame: .zero)
+        // The contracting cover reveals the native view beneath this surface.
+        isOpaque = false
+        backgroundColor = .clear
         isUserInteractionEnabled = true
         isAccessibilityElement = true
         accessibilityIdentifier = "splash"
         accessibilityLabel = "FOTIQ"
         accessibilityViewIsModal = true
         clipsToBounds = true
-        cover.fillColor = UIColor(named: "LaunchBackground")!.cgColor
+        cover.fillColor = UIColor(named: "RiderLaunchBackground")!.cgColor
         pulse.fillColor = UIColor(red: 0, green: 196 / 255, blue: 106 / 255, alpha: 1).cgColor
         pulse.opacity = 0
         mark.contents = UIImage(named: "RiderLaunchMark")?.cgImage

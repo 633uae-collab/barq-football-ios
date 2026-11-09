@@ -508,7 +508,7 @@ struct LaunchFlow<Content: View>: View {
     @State private var firstLaunch = !Onboarding.isDone()
     var body: some View {
         ZStack {
-            Color("LaunchBackground").ignoresSafeArea()
+            Color("RiderLaunchBackground").ignoresSafeArea()
             // Build and lay out the destination before the first animated splash frame.
             // iOS keeps the matching static launch screen visible while this initial work
             // completes, and LaunchGate still prevents network work until the reveal ends.
