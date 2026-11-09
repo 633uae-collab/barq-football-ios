@@ -53,10 +53,13 @@ final class AnalystConversationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["analyst-welcome"].exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-entity-picker").firstMatch.exists)
         var report = ""
+        var lastVerifiedReply = ""
         let questions = ["حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة", "For the same match, explain the starting lineups and substitutions in English. Use updated data.", "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم", "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق"]
         for (index, question) in questions.enumerated() {
             let field = app.descendants(matching: .any).matching(identifier: "analyst-question").firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 15)); field.tap(); field.typeText(question)
+            // Opening the keyboard alone is not successful text entry.
+            XCTAssertEqual(field.value as? String, question, "The actual question must be present before sending")
             let began = Date(); app.buttons["analyst-send"].tap()
             XCTAssertFalse(app.staticTexts["analyst-welcome"].exists, "Welcome must disappear immediately after sending")
             XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-welcome-logo").firstMatch.exists)
@@ -68,6 +71,7 @@ final class AnalystConversationUITests: XCTestCase {
             try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
             try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("0\(index + 1)-conversation.png"))
             XCTAssertEqual(result, .completed); XCTAssertTrue(answer.exists, response); XCTAssertFalse(error.exists, response)
+            if answer.exists { lastVerifiedReply = response }
             if index == 3 {
                 let source = element("analyst-source-link")
                 XCTAssertTrue(source.waitForExistence(timeout: 10), "Historical answer must expose its real source")
@@ -86,6 +90,8 @@ final class AnalystConversationUITests: XCTestCase {
         XCTAssertTrue(saved.waitForExistence(timeout: 10)); saved.tap()
         let restored = app.staticTexts["analyst-answer"], restoredError = app.staticTexts["analyst-error"]
         XCTAssertTrue(restored.waitForExistence(timeout: 10) || restoredError.exists, "Stored response or failure must survive process termination")
+        XCTAssertFalse(lastVerifiedReply.isEmpty, "Restoration requires an actual received answer")
+        XCTAssertEqual(restored.label, lastVerifiedReply, "Restore the exact received answer after process termination")
         XCTAssertTrue(element("analyst-source-link").waitForExistence(timeout: 10), "Source must survive conversation restoration")
         XCTAssertEqual(element("analyst-source-link").value as? String, "https://www.wikidata.org/wiki/Q7156")
         try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("06-restored.png"))
