@@ -68,7 +68,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p out
-          xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.transport"' >out/transport-codes.log 2>&1 &
+          xcrun simctl spawn "$UDID" log stream --level debug --style compact --predicate 'subsystem == "ae.barq.transport" OR subsystem == "ae.barq.composer"' >out/transport-codes.log 2>&1 &
           TRANSPORT_LOG_PID=$!
           # Sample the actual app only when XCTest is retrying a stalled query.
           # Diagnostic only: do not use sampled intervals as performance acceptance.

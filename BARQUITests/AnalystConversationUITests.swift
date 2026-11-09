@@ -56,10 +56,11 @@ final class AnalystConversationUITests: XCTestCase {
         var lastVerifiedReply = ""
         let questions = ["حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة", "For the same match, explain the starting lineups and substitutions in English. Use updated data.", "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم", "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق"]
         for (index, question) in questions.enumerated() {
-            let field = app.descendants(matching: .any).matching(identifier: "analyst-question").firstMatch
+            let field = app.textFields["analyst-question"]
             XCTAssertTrue(field.waitForExistence(timeout: 15)); field.tap(); field.typeText(question)
             // Opening the keyboard alone is not successful text entry.
             XCTAssertEqual(field.value as? String, question, "The actual question must be present before sending")
+            XCTAssertTrue(app.buttons["analyst-send"].isEnabled, "Verified input must enable Send")
             let began = Date(); app.buttons["analyst-send"].tap()
             XCTAssertFalse(app.staticTexts["analyst-welcome"].exists, "Welcome must disappear immediately after sending")
             XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-welcome-logo").firstMatch.exists)
