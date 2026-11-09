@@ -123,6 +123,7 @@ final class SplashClock {
     }
     private(set) var largestFrameGap: Double = 0
     private(set) var elapsed: Double = 0
+    var animationCompleted = false
     func tick(_ now: TimeInterval = CACurrentMediaTime(), active: Bool = true) -> Double {
         if !loggedFirstVisualFrame {
             loggedFirstVisualFrame = true
@@ -180,7 +181,7 @@ struct SplashView: View {
             .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
             .task {
                 guard UserDefaults.standard.string(forKey: "splashHold") == nil else { return }
-                while clock.elapsed < (reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration) && !Task.isCancelled {
+                while (clock.elapsed < (reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration) || !clock.animationCompleted) && !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(8))
                 }
                 guard !Task.isCancelled else { return }

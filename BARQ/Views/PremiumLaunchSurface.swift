@@ -69,7 +69,10 @@ struct PremiumLaunchSurface: UIViewRepresentable {
     let reduceMotion: Bool
     func makeUIView(context: Context) -> PremiumLaunchLayer { PremiumLaunchLayer(clock: clock, reduceMotion: reduceMotion) }
     func updateUIView(_ view: PremiumLaunchLayer, context: Context) {}
-    static func dismantleUIView(_ view: PremiumLaunchLayer, coordinator: ()) { view.stop() }
+    static func dismantleUIView(_ view: PremiumLaunchLayer, coordinator: ()) {
+        view.stop()
+        view.restoreAccessibility()
+    }
 }
 
 final class PremiumLaunchLayer: UIView {
@@ -86,11 +89,19 @@ final class PremiumLaunchLayer: UIView {
     private var revealAnimation: CAKeyframeAnimation?
     private var finalPose: PremiumLaunchTrack.Pose?
     private var finalMaskPath: CGPath?
+    private weak var accessibilityWindow: UIWindow?
+    private var previousAccessibilityElements: [Any]?
     init(clock: SplashClock, reduceMotion: Bool) {
         self.clock = clock
         self.reduceMotion = reduceMotion
         super.init(frame: .zero)
-        isUserInteractionEnabled = false
+        // The cover owns touch and VoiceOver until the destination is revealed.
+        // SwiftUI's accessibilityHidden alone does not hide native nav/tab bars.
+        isUserInteractionEnabled = true
+        isAccessibilityElement = true
+        accessibilityIdentifier = "splash"
+        accessibilityLabel = "FOTIQ"
+        accessibilityViewIsModal = true
         cover.backgroundColor = UIColor(named: "LaunchBackground")!.cgColor
         // The original texture is used initially, matching LaunchScreen exactly.
         // Its matte is exchanged for the existing transparent variant while still
@@ -102,6 +113,23 @@ final class PremiumLaunchLayer: UIView {
         apertureMask.fillColor = UIColor.black.cgColor
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        restoreAccessibility()
+        guard let window else { return }
+        accessibilityWindow = window
+        previousAccessibilityElements = window.accessibilityElements
+        window.accessibilityElements = [self]
+    }
+    func restoreAccessibility() {
+        if let window = accessibilityWindow,
+           let elements = window.accessibilityElements,
+           elements.count == 1, let view = elements.first as? UIView, view === self {
+            window.accessibilityElements = previousAccessibilityElements
+        }
+        previousAccessibilityElements = nil
+        accessibilityWindow = nil
+    }
     override func layoutSubviews() {
         super.layoutSubviews()
         guard !prepared, bounds.width > 0 else { return }
@@ -179,10 +207,11 @@ final class PremiumLaunchLayer: UIView {
         }, duration: duration)
         revealAnimation = keyframes("path", values: times.map { maskPath(at: $0) }, duration: duration)
     }
-    private func add(_ animation: CAAnimation?, to layer: CALayer, key: String, startingAt time: CFTimeInterval) {
+    private func add(_ animation: CAAnimation?, to layer: CALayer, key: String) {
         guard let animation else { return }
-        // All tracks and the measured clock share one explicit start time.
-        animation.beginTime = layer.convertTime(time, from: nil)
+        // Let the same CA transaction resolve the start time for every track.
+        // An explicit process-clock timestamp left the simulator's presentation
+        // frozen until the cover was removed in run 42648693096.
         layer.add(animation, forKey: key)
     }
     @objc private func frameTick(_ dl: CADisplayLink) {
@@ -211,11 +240,12 @@ final class PremiumLaunchLayer: UIView {
             stop()
             return
         }
-        let startTime = CACurrentMediaTime()
-        _ = clock.tick(startTime)
+        CATransaction.setCompletionBlock { [weak self] in
+            self?.clock.animationCompleted = true
+        }
         if reduceMotion {
             cover.opacity = 0
-            add(opacityAnimation, to: cover, key: "reducedLaunch", startingAt: startTime)
+            add(opacityAnimation, to: cover, key: "reducedLaunch")
         } else {
             mark.contents = TransparentBrandMark.image.cgImage
             // Six shallow slices give the original silhouette real perspective
@@ -225,13 +255,14 @@ final class PremiumLaunchLayer: UIView {
                 plane.transform = PremiumLaunchTrack.transform(finalPose)
                 plane.position = finalPose.center
             }
-            add(transformAnimation, to: plane, key: "cameraPerspective", startingAt: startTime)
-            add(positionAnimation, to: plane, key: "cameraPath", startingAt: startTime)
+            add(transformAnimation, to: plane, key: "cameraPerspective")
+            add(positionAnimation, to: plane, key: "cameraPath")
             cover.mask = apertureMask
             apertureMask.path = finalMaskPath
-            add(revealAnimation, to: apertureMask, key: "gapReveal", startingAt: startTime)
+            add(revealAnimation, to: apertureMask, key: "gapReveal")
         }
         CATransaction.commit()
+        _ = clock.tick()
     }
 }
 

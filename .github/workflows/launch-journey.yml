@@ -84,6 +84,7 @@ jobs:
           sleep 2
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
       - name: Record unedited close and quick reopen separately
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: bash ci/record-launch.sh quick
       - name: Verify real score association in Arabic and English
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
@@ -93,8 +94,14 @@ jobs:
       - name: Enforce measured premium and Reduce Motion launch budgets
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
-          cat out/first-timing.log out/quick-timing.log out/launch-timing.log > out/all-launch-timing.log
-          python3 ci/verify-launch-timing.py out/all-launch-timing.log
+          result=0
+          : > out/all-launch-timing.log
+          for log in out/first-timing.log out/quick-timing.log out/launch-timing.log; do
+            if [[ -f "$log" ]]; then cat "$log" >> out/all-launch-timing.log
+            else echo "::error::Required timing evidence is missing: $log"; result=1; fi
+          done
+          python3 ci/verify-launch-timing.py out/all-launch-timing.log || result=1
+          exit "$result"
       - name: Reject sustained black viewport in original cold-launch recording
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: python3 ci/verify-launch-video.py out/first-launch-uncut.mp4
