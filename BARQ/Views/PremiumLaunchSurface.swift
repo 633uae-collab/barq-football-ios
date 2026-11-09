@@ -118,7 +118,10 @@ final class PremiumLaunchLayer: UIView {
         // A degenerate hole before reveal retains an identical CGPath topology
         // for interpolation, without showing the page early.
         let corners = PremiumLaunchTrack.apertureCorners(at: time, in: bounds.size)
-        let points = time < 0.72 ? Array(repeating: corners[0], count: 4) : corners
+        let center = PremiumLaunchTrack.pose(at: time, in: bounds.size).center
+        let opening = PremiumLaunchTrack.smooth((time - 0.72) / 0.08)
+        let points = corners.map { CGPoint(x: center.x + ($0.x - center.x) * opening,
+                                          y: center.y + ($0.y - center.y) * opening) }
         path.move(to: points[0])
         points.dropFirst().forEach { path.addLine(to: $0) }
         path.closeSubpath()

@@ -114,6 +114,13 @@ final class SplashClock {
     private var loggedFirstVisualFrame = false
     private var start: TimeInterval?
     private var previous: TimeInterval?
+    private var frameGaps: [Double] = []
+    var sampledFrames: Int { frameGaps.count }
+    var meanFrameGap: Double { frameGaps.isEmpty ? 0 : frameGaps.reduce(0, +) / Double(frameGaps.count) }
+    var percentile95Gap: Double {
+        let sorted = frameGaps.sorted()
+        return sorted.isEmpty ? 0 : sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * 0.95))]
+    }
     private(set) var largestFrameGap: Double = 0
     private(set) var elapsed: Double = 0
     func tick(_ now: TimeInterval = ProcessInfo.processInfo.systemUptime, active: Bool = true) -> Double {
@@ -127,6 +134,7 @@ final class SplashClock {
             start = nil
             previous = nil
             largestFrameGap = 0
+            frameGaps.removeAll(keepingCapacity: true)
             elapsed = 0
             return 0
         }
@@ -135,7 +143,11 @@ final class SplashClock {
             previous = now
             SplashDiag.log.notice("START launch +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         }
-        if let previous { largestFrameGap = max(largestFrameGap, now - previous) }
+        if let previous, now > previous {
+            let gap = now - previous
+            largestFrameGap = max(largestFrameGap, gap)
+            if frameGaps.count < 512 { frameGaps.append(gap) }
+        }
         previous = now
         elapsed = max(0, now - (start ?? now))
         return elapsed
@@ -173,6 +185,7 @@ struct SplashView: View {
                 }
                 guard !Task.isCancelled else { return }
                 SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public) mode=\(reduceMotion ? "reduced" : "premium", privacy: .public)")
+                SplashDiag.log.notice("FRAME_STATS samples=\(clock.sampledFrames, privacy: .public) mean=\(clock.meanFrameGap, privacy: .public) p95=\(clock.percentile95Gap, privacy: .public)")
                 onFinish()
             }
     }

@@ -35,6 +35,7 @@ if [[ "$MODE" == quick ]]; then
   done
   grep -q 'FINISH firstLaunch=false' "out/$MODE-timing.log"
   sleep 2
+  cp "out/$MODE-timing.log" out/quick-first-opening-timing.log
   : > "out/$MODE-timing.log"
 fi
 # Recorder starts before warm launch so it receives changed frames before the
