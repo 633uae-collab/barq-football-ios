@@ -15,6 +15,7 @@ on:
       - BARQTests/LaunchJourneyTests.swift
       - BARQUITests/LaunchJourneyUITests.swift
       - ci/verify-launch-timing.py
+      - ci/verify-launch-video.py
       - ci/record-launch.sh
       - BARQUITests/ScoreAssociationUITests.swift
       - BARQ/Views/Components.swift
@@ -90,6 +91,9 @@ jobs:
         run: |
           cat out/first-timing.log out/quick-timing.log out/launch-timing.log > out/all-launch-timing.log
           python3 ci/verify-launch-timing.py out/all-launch-timing.log
+      - name: Reject sustained black viewport in original cold-launch recording
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        run: python3 ci/verify-launch-video.py out/first-launch-uncut.mp4
       - name: Sample startup separately from timing acceptance
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
