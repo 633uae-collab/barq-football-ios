@@ -1,6 +1,19 @@
 import XCTest
 
 final class PremiumExperienceUITests: XCTestCase {
+    func testCoveredDestinationIsNotExposedToAccessibility() {
+        continueAfterFailure = false
+        let app = XCUIApplication.fotiq()
+        app.launchArguments = ["-lang", "ar", "-startTab", "home", "-apiOverride", "https://127.0.0.1:9", "-splashHold", "start"]
+        app.launch()
+        defer { app.terminate() }
+        let splash = app.descendants(matching: .any).matching(identifier: "splash").firstMatch
+        XCTAssertTrue(splash.waitForExistence(timeout: 30))
+        XCTAssertFalse(app.buttons["home-notifications"].exists, "Covered controls must not receive VoiceOver focus before reveal")
+        XCTAssertFalse(app.tabBars.firstMatch.exists, "Covered tabs must not be exposed before reveal")
+        XCTAssertFalse(app.buttons["ob-next"].exists)
+    }
+
     func testFooterPhysicalPositionsAndMandatoryClubsResume() throws {
         continueAfterFailure = false
         let app = XCUIApplication()

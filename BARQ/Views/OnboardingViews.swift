@@ -508,6 +508,10 @@ struct LaunchFlow<Content: View>: View {
             .background {
                 if destinationMounted { LaunchDestinationReadiness() }
             }
+            // Prewarm layout without exposing controls beneath the launch cover.
+            // VoiceOver and touch must enter the destination only after reveal.
+            .accessibilityHidden(splash)
+            .allowsHitTesting(!splash)
             if splash {
                 SplashView(firstLaunch: firstLaunch) {
                     splash = false
