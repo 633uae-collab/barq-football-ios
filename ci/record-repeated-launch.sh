@@ -20,7 +20,7 @@ for cycle in $(seq 1 5); do
   xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
   sleep 1
   printf 'REOPEN cycle=%s\n' "$cycle" >> out/repeated-cycles.log
-  xcrun simctl launch "$UDID" ae.barq.football -lang ar
+  python3 ci/launch-measured.py out/repeated-timing.log "repeat-$cycle" -lang ar
   for attempt in $(seq 1 45); do
     count=$(grep -c 'FINISH firstLaunch=false' out/repeated-timing.log || true)
     if [[ "$count" -ge "$cycle" ]]; then break; fi

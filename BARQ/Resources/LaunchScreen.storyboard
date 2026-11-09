@@ -5,15 +5,15 @@
     <scenes><scene sceneID="launch-scene"><objects>
         <viewController id="launch-controller" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launch-root">
             <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
-            <subviews><imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="SplashMark" translatesAutoresizingMaskIntoConstraints="NO" id="launch-logo"><rect key="frame" x="132.79" y="368.79" width="136.43" height="136.43"/></imageView></subviews>
+            <subviews><imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="RiderLaunchMark" translatesAutoresizingMaskIntoConstraints="NO" id="launch-logo"><rect key="frame" x="170.688" y="402.758" width="60.624" height="68.484"/></imageView></subviews>
             <color key="backgroundColor" name="LaunchBackground"/>
             <constraints>
                 <constraint firstItem="launch-logo" firstAttribute="centerX" secondItem="launch-root" secondAttribute="centerX" id="logo-center-x"/>
                 <constraint firstItem="launch-logo" firstAttribute="centerY" secondItem="launch-root" secondAttribute="centerY" id="logo-center-y"/>
-                <constraint firstItem="launch-logo" firstAttribute="width" secondItem="launch-root" secondAttribute="width" multiplier="0.3393665158" id="logo-width"/>
-                <constraint firstItem="launch-logo" firstAttribute="height" secondItem="launch-logo" secondAttribute="width" id="logo-square"/>
+                <constraint firstItem="launch-logo" firstAttribute="width" secondItem="launch-root" secondAttribute="width" multiplier="0.1508049242" id="logo-width"/>
+                <constraint firstItem="launch-logo" firstAttribute="height" secondItem="launch-logo" secondAttribute="width" multiplier="1.1296703297" id="logo-square"/>
             </constraints>
         </view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="launch-responder" sceneMemberID="firstResponder"/>
     </objects></scene></scenes>
-    <resources><image name="SplashMark" width="1024" height="1024"/><namedColor name="LaunchBackground"><color red="0.031" green="0.043" blue="0.071" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor></resources>
+    <resources><image name="RiderLaunchMark" width="455" height="514"/><namedColor name="LaunchBackground"><color red="0.0274509804" green="0.0431372549" blue="0.0666666667" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor></resources>
 </document>

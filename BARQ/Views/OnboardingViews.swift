@@ -157,7 +157,10 @@ final class SplashClock {
 
 /// Fixed original mark and opacity-only fallback for Reduce Motion.
 enum LaunchPresentation {
-    static let visibleWidth: CGFloat = 0.15
+    // Attached 1320x2868 screenshot: visible artwork y=1322..<1546 (224 px).
+    // Size comes from that measurement; the crop includes one AA pixel per edge.
+    static let referenceScreenWidth: CGFloat = 1320
+    static let referenceMarkHeight: CGFloat = 224
     static let hold = 0.5, fade = 0.3
     static let duration = hold + fade
     static func opacity(at elapsed: Double) -> Double {
@@ -165,8 +168,9 @@ enum LaunchPresentation {
         return 1 - t * t * (3 - 2 * t)
     }
     static func logoRect(in size: CGSize) -> CGRect {
-        let side = size.width * visibleWidth / 0.442
-        return CGRect(x: (size.width-side)/2, y: (size.height-side)/2, width: side, height: side)
+        let scale = size.width / referenceScreenWidth * referenceMarkHeight / 512
+        let width = 455 * scale, height = 514 * scale
+        return CGRect(x: (size.width-width)/2, y: (size.height-height)/2, width: width, height: height)
     }
 }
 
@@ -186,6 +190,7 @@ struct SplashView: View {
                 }
                 guard !Task.isCancelled else { return }
                 SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public) mode=\(reduceMotion ? "reduced" : "premium", privacy: .public)")
+                SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public)")
                 SplashDiag.log.notice("FRAME_STATS samples=\(clock.sampledFrames, privacy: .public) mean=\(clock.meanFrameGap, privacy: .public) p95=\(clock.percentile95Gap, privacy: .public)")
                 onFinish()
             }

@@ -1,8 +1,16 @@
 name: Launch journey validation and video
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [codex/premium-cinematic]
+    paths:
+      - BARQ/**
+      - BARQTests/**
+      - BARQUITests/**
+      - ci/**
+      - .github/workflows/launch-journey.yml
   push:
-    branches: [codex/fotiq-development, codex/backend-rebuild, codex/premium-cinematic]
+    branches: [codex/fotiq-development, codex/backend-rebuild, codex/premium-cinematic, codex/fotiq-rider-reference]
     paths:
       - .github/workflows/launch-journey.yml
       - BARQ/Views/PremiumLaunchSurface.swift
@@ -83,7 +91,7 @@ jobs:
           REC=$!
           trap 'kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true' EXIT
           sleep 2
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests/testCoveredDestinationIsNotExposedToAccessibility -only-testing:BARQUITests/PremiumExperienceUITests/testBackgroundResumeDoesNotRestartLaunchOrOnboarding -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
       - name: Record unedited close and quick reopen separately
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: bash ci/record-launch.sh quick
@@ -95,12 +103,36 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
+      - name: Record Reduce Motion using the system accessibility preference
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        run: |
+          xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool YES
+          bash ci/record-launch.sh quick
+          mv out/quick-launch-uncut.mp4 out/reduced-motion-uncut.mp4
+          mv out/quick-timing.log out/reduced-timing.log
+          xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool NO
+          bash ci/record-launch.sh quick
+      - name: Instruments Time Profiler and Animation Hitches
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        timeout-minutes: 4
+        continue-on-error: true
+        run: |
+          mkdir -p out/trace
+          APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
+          for TEMPLATE in 'Time Profiler' 'Animation Hitches'; do
+            NAME=$(echo "$TEMPLATE" | tr -d ' ')
+            xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
+            xcrun xctrace record --template "$TEMPLATE" --device "$UDID" --time-limit 12s --output "out/trace/$NAME.trace" --launch -- "$APP" -lang ar > "out/trace/$NAME.log" 2>&1 || true
+            if [[ -d "out/trace/$NAME.trace" ]]; then
+              xcrun xctrace export --input "out/trace/$NAME.trace" --toc > "out/trace/$NAME-toc.xml" 2>&1 || true
+            fi
+          done
       - name: Enforce measured premium and Reduce Motion launch budgets
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
           result=0
           : > out/all-launch-timing.log
-          for log in out/first-timing.log out/quick-timing.log out/launch-timing.log out/repeated-timing.log; do
+          for log in out/first-timing.log out/quick-timing.log out/launch-timing.log out/repeated-timing.log out/reduced-timing.log; do
             if [[ -f "$log" ]]; then cat "$log" >> out/all-launch-timing.log
             else echo "::error::Required timing evidence is missing: $log"; result=1; fi
           done

@@ -28,7 +28,7 @@ sleep 2
 if [[ "$MODE" == quick ]]; then
   # XCTest can terminate its app on completion. Bring the completed user's home
   # onscreen before recording the subsequent close/reopen, without changing prefs.
-  xcrun simctl launch "$UDID" ae.barq.football -lang ar
+  python3 ci/launch-measured.py "out/$MODE-timing.log" "$MODE" -lang ar
   for i in $(seq 1 45); do
     if grep -q 'FINISH firstLaunch=false' "out/$MODE-timing.log"; then break; fi
     sleep 1
@@ -43,9 +43,9 @@ fi
 if [[ "$MODE" == quick ]]; then
   xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
   sleep 1
-  xcrun simctl launch "$UDID" ae.barq.football -lang ar
+  python3 ci/launch-measured.py "out/$MODE-timing.log" "$MODE" -lang ar
 else
-  xcrun simctl launch "$UDID" ae.barq.football -lang ar -resetOnboarding YES
+  python3 ci/launch-measured.py "out/$MODE-timing.log" "$MODE" -lang ar -resetOnboarding YES
 fi
 for i in $(seq 1 45); do
   if grep -q 'FINISH firstLaunch=' "out/$MODE-timing.log"; then break; fi
