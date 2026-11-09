@@ -256,3 +256,26 @@ test('unconnected current news and medical announcements cannot be replaced by f
   }
   assert.equal(calls, 0);
 });
+
+test('last-five evidence excludes season cups and labels descending match chronology', async () => {
+  const paths = [];
+  const evidence = await collectEvidence({ load: async path => {
+    paths.push(path);
+    let data = [];
+    if (path.startsWith('/players/teams')) data = [{ team: { id: 50 }, seasons: [2026] }];
+    else if (path.startsWith('/players/squads')) data = [{ team: { id: 50 } }];
+    else if (path.startsWith('/fixtures?')) data = [1,2].map(id => ({fixture: {id,date:`2026-11-0${id}T12:00:00Z`},league:{id:39,name:'Premier League',season:2026},teams:{home:{id:50,name:'City'},away:{id:40,name:'Liverpool'}}}));
+    else if (path.startsWith('/fixtures/players')) data = [{players:[{player:{id:1100},statistics:[{games:{minutes:90},goals:{total:1,assists:null}}]}]}];
+    else if (path.startsWith('/players?')) data = [{statistics:[{league:{name:'Community Shield'}}]}];
+    return {fetchedAt:1,data};
+  } }, 'Analyze Haaland over the last five matches');
+  const p = evidence.playerProfiles[0];
+  assert.equal(p.statistics, undefined);
+  assert.ok(!paths.some(p => p.startsWith('/players?')));
+  assert.deepEqual(p.appearanceTimeline.map(x=>x.fixtureId),[2,1]);
+  assert.equal(p.appearanceTimeline[0].positionNewestFirst,1);
+  assert.equal(p.appearanceTimeline[0].competition.name,'Premier League');
+  assert.match(p.appearanceOrder,/first.*latest/);
+  assert.ok(evidence.missing.some(x=>x.includes('Only 2 appearances')));
+  assert.equal(p.lastFiveAppearances[0].player.statistics[0].scoring.assists,null);
+});

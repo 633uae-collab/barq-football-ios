@@ -185,7 +185,9 @@ async function collectEvidence(provider, question, context = {}, history = []) {
       const teams = await load('/players/teams', { player });
       const latest = teams.flatMap(t => (t.seasons || []).map(season => ({ team: t.team?.id, season }))).sort((a,b) => b.season-a.season)[0];
       if (!latest) { missing.push(`No season available for player ${player}.`); continue; }
-      const stats = await load('/players', { id: player, season: latest.season });
+      // Last-appearance analysis must not receive season rows (including cups
+      // outside the five appearances) as if they were additional match evidence.
+      const stats = lastFive ? [] : await load('/players', { id: player, season: latest.season });
       const item = { playerId: player, profile: profile?.player?.name, season: latest.season, statistics: stats.map(playerStats) };
       if (lastFive && latest.team) {
         const squads = await load('/players/squads', { player });
@@ -214,6 +216,13 @@ async function collectEvidence(provider, question, context = {}, history = []) {
         missing.push('Team fixtures may contain non-appearances; only lastFiveAppearances have verified positive minutes.');
         if (item.lastFiveAppearances.length < 5) missing.push(`Only ${item.lastFiveAppearances.length} appearances verified within at most 20 recent fixtures; do not invent the remaining matches.`);
         item.appearanceCoverage = { requested: 5, found: item.lastFiveAppearances.length, candidateFixtures: recent.length, maximumTeams: 2, maximumFixturesPerTeam: 10 };
+        delete item.statistics;
+        item.appearanceOrder = 'Newest first. Index 0 is the latest appearance; the final row is the oldest. Do not describe the last row as the latest or infer a chronological improvement from this order.';
+        item.appearanceTimeline = item.lastFiveAppearances.map((a, index) => ({
+          positionNewestFirst: index + 1, fixtureId: a.match.id,
+          kickoffUTC: a.match.kickoffUTC, competition: a.match.league,
+          teams: a.match.teams
+        }));
       }
       evidence.playerProfiles.push(item);
     }
