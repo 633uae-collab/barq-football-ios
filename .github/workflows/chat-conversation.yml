@@ -79,7 +79,24 @@ jobs:
           RECORD_PID=$!
           xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.transport"' >out/transport-codes.log 2>&1 &
           TRANSPORT_LOG_PID=$!
-          stop_recording() { kill -INT "$RECORD_PID" 2>/dev/null || true; wait "$RECORD_PID" || true; kill "$TRANSPORT_LOG_PID" 2>/dev/null || true; }
+          # Sample the actual app only when XCTest is retrying a stalled query.
+          # Diagnostic only: do not use sampled intervals as performance acceptance.
+          (
+            for attempt in $(seq 1 900); do
+              if grep -q 'retry 1' out/conversation.log 2>/dev/null; then
+                PID=$(pgrep -x BARQ | head -1 || true)
+                date -u > out/query-stall-sample-time.txt
+                echo "APP_PID=$PID" >> out/query-stall-sample-time.txt
+                if [[ -n "$PID" ]]; then
+                  /usr/bin/sample "$PID" 8 1 -file out/query-stall-app-sample.txt || true
+                fi
+                exit 0
+              fi
+              sleep 1
+            done
+          ) &
+          DIAGNOSTIC_PID=$!
+          stop_recording() { kill -INT "$RECORD_PID" 2>/dev/null || true; wait "$RECORD_PID" || true; kill "$TRANSPORT_LOG_PID" 2>/dev/null || true; kill "$DIAGNOSTIC_PID" 2>/dev/null || true; wait "$DIAGNOSTIC_PID" 2>/dev/null || true; }
           trap stop_recording EXIT
           for attempt in $(seq 1 90); do
             if grep -q 'Recording started' out/recording.log; then break; fi
