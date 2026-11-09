@@ -58,6 +58,11 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO build-for-testing 2>&1 | tee build-ui.log
+      - name: Real welcome does not send a chat message
+        run: |
+          set -o pipefail
+          mkdir -p out
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testLiveWelcomeRemainsOutsideTheConversation -resultBundlePath welcome.xcresult 2>&1 | tee out/welcome.log
       - name: Real conversation, follow-ups and restoration
         run: |
           set -o pipefail
@@ -71,7 +76,7 @@ jobs:
             sleep 1
           done
           grep -q 'Recording started' out/recording.log
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/AnalystConversationUITests -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testRealBilingualFollowUpsAndConversationRestoration -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
       - name: Collect actual evidence
         if: always()
         run: |
@@ -86,4 +91,5 @@ jobs:
             unit.log
             build-ui.log
             conversation.xcresult
+            welcome.xcresult
           retention-days: 14

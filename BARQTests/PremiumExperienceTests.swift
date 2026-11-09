@@ -53,11 +53,11 @@ final class PremiumExperienceTests: XCTestCase {
             XCTAssertEqual(output.last?.active, false)
         }
     }
-    func testSkippingClubsCanResumeCompetitionStepWithoutLosingPicks() {
+    func testEmptyClubDraftReturnsToClubsWithoutLosingCompetitionPicks() {
         let name = "premium-\(UUID())", d = UserDefaults(suiteName: "premium-test")!
         defer { d.removePersistentDomain(forName: "premium-test") }
         Onboarding.saveDraft(.init(step: 1, clubs: [], leagues: [39], cups: []), d)
-        XCTAssertEqual(Onboarding.loadDraft(d).step, 1, name)
+        XCTAssertEqual(Onboarding.loadDraft(d).step, 0, name)
         XCTAssertEqual(Onboarding.loadDraft(d).leagues, [39])
     }
 }
