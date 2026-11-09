@@ -86,9 +86,26 @@ jobs:
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
           xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
-          LAUNCH=$(xcrun simctl launch "$UDID" ae.barq.football -lang ar)
-          PID=${LAUNCH##*: }
-          /usr/bin/sample "$PID" 5 10 -file out/startup-main-thread-sample.txt || true
+          # Watch before launch: waiting for simctl's returned PID missed the
+          # first 1.4 seconds in run42610995143, including the startup stall.
+          (
+            for attempt in $(seq 1 200); do
+              PID=$(pgrep -x BARQ | head -1 || true)
+              if [[ -n "$PID" ]]; then
+                /usr/bin/sample "$PID" 8 1 -file out/startup-main-thread-sample.txt
+                exit $?
+              fi
+              sleep 0.01
+            done
+            exit 1
+          ) &
+          SAMPLER=$!
+          xcrun simctl launch "$UDID" ae.barq.football -lang ar
+          wait "$SAMPLER"
+          APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
+          plutil -p "$APP/Info.plist" > out/built-app-info.txt
+          find "$APP" -iname '*LaunchScreen*' > out/built-launch-resources.txt
+          xcrun simctl spawn "$UDID" log show --last 3m --style compact --predicate '(process == "SpringBoard" OR process == "BARQ") AND (eventMessage CONTAINS[c] "launch" OR eventMessage CONTAINS[c] "storyboard" OR eventMessage CONTAINS[c] "snapshot")' > out/system-launch-diagnostics.log
       - name: Collect new simulator screenshots
         if: always()
         run: |
