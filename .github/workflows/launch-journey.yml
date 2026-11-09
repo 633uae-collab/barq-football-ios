@@ -82,6 +82,13 @@ jobs:
         run: |
           cat out/first-timing.log out/quick-timing.log out/launch-timing.log > out/all-launch-timing.log
           python3 ci/verify-launch-timing.py out/all-launch-timing.log
+      - name: Sample startup separately from timing acceptance
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        run: |
+          xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
+          LAUNCH=$(xcrun simctl launch "$UDID" ae.barq.football -lang ar)
+          PID=${LAUNCH##*: }
+          /usr/bin/sample "$PID" 5 10 -file out/startup-main-thread-sample.txt || true
       - name: Collect new simulator screenshots
         if: always()
         run: |

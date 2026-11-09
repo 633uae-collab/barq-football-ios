@@ -1,4 +1,5 @@
 'use strict';
+const { historicalKnowledge } = require('./knowledge');
 const { prepareEvidence } = require('./analyst-evidence');
 // Entity aliases resolve identifiers only; every football fact comes from a fresh provider response.
 const aliases = [[529, /barcelona|برشلونة|برشلونه/i], [541, /real madrid|ريال مدريد/i], [40, /liverpool|ليفربول/i], [50, /manchester city|مانشستر سيتي/i]];
@@ -52,6 +53,12 @@ function relevantVenueSeason(stats, role) {
   };
 }
 async function collectEvidence(provider, question, context = {}, history = []) {
+  const historical = await historicalKnowledge.collect(question);
+  if (historical) {
+    historical.fetchedAt ??= Date.now();
+    historical.retrievedAtUTC ??= new Date(historical.fetchedAt).toISOString();
+    return historical;
+  }
   const sources = [], missing = [];
   const load = async (path, params) => {
     const r = await provider.load(path + '?' + new URLSearchParams(params));

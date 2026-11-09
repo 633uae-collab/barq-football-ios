@@ -7,6 +7,8 @@ import SwiftUI
 final class ImageStore {
     static let shared = ImageStore()
     let mem = NSCache<NSString, UIImage>()
+    private let pendingLock = NSLock()
+    private var pending: [URL: Task<UIImage?, Never>] = [:]
     let session: URLSession = {
         let c = URLSessionConfiguration.default
         c.urlCache = URLCache(memoryCapacity: 24 << 20, diskCapacity: 200 << 20)
@@ -17,7 +19,8 @@ final class ImageStore {
     }()
     /// Bounded parallel warm-up; never gates navigation or waits on the UI thread.
     func preload(_ addresses: [String]) async {
-        let urls = Array(Set(addresses)).compactMap(URL.init(string:))
+        var seen = Set<String>()
+        let urls = addresses.filter { seen.insert($0).inserted }.compactMap(URL.init(string:))
         await withTaskGroup(of: Void.self) { group in
             var next = 0
             for _ in 0..<min(6, urls.count) {
@@ -36,14 +39,29 @@ final class ImageStore {
     func image(_ url: URL) async -> UIImage? {
         let key = url.absoluteString as NSString
         if let i = mem.object(forKey: key) { return i }
-        for attempt in 0..<3 {
-            if let (d, r) = try? await session.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200, let img = UIImage(data: d) {
-                mem.setObject(img, forKey: key); return img
+        // Coalesce prefetch and visible-tile requests. Decode off the main actor
+        // before publishing, so first drawing a downloaded logo does not decode it.
+        let task = pendingLock.withLock { () -> Task<UIImage?, Never> in
+            if let task = pending[url] { return task }
+            let task = Task.detached(priority: .userInitiated) { [self] () -> UIImage? in
+                defer { pendingLock.withLock { _ = pending.removeValue(forKey: url) } }
+                for attempt in 0..<3 {
+                    if let (data, response) = try? await session.data(from: url),
+                       (response as? HTTPURLResponse)?.statusCode == 200,
+                       let image = UIImage(data: data) {
+                        let decoded = image.preparingForDisplay() ?? image
+                        mem.setObject(decoded, forKey: key)
+                        return decoded
+                    }
+                    if Task.isCancelled { return nil }
+                    try? await Task.sleep(for: .milliseconds(400 * (attempt + 1)))
+                }
+                return nil
             }
-            if Task.isCancelled { return nil }
-            try? await Task.sleep(for: .milliseconds(400 * (attempt + 1)))
+            pending[url] = task
+            return task
         }
-        return nil
+        return await task.value
     }
 }
 

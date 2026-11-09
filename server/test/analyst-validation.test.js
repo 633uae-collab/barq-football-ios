@@ -28,3 +28,11 @@ test('rejects contradictory or invented substitution direction in Arabic and Eng
   assert.doesNotThrow(() => validateEventTimes('18′ دخل Silvan Broker محل Mees Laros (event-1)', evidence));
   assert.doesNotThrow(() => validateEventTimes("30' Substitution involving A and B; direction is unknown (event-2)", evidence));
 });
+
+test('missing assist never justifies speculative goal causation in either language', () => {
+  const missing = { events: [{ type: 'Goal', sourceId: 'event-0', minute: 53, goalAssist: null }] };
+  for (const text of ['Missing assist may indicate a solo effort, only speculation.', 'قد يكون هجوم فردي أو خطأ دفاعي، مجرد تخمين.'])
+    assert.throws(() => validateEventTimes(text, missing), { code: 'AI_FACT_CHECK_FAILED' });
+  assert.doesNotThrow(() => validateEventTimes('Assist data unavailable. No conclusion about how the goal was created.', missing));
+  assert.doesNotThrow(() => validateEventTimes('بيانات صانع الهدف غير متوفرة ولا يمكن تحديد كيفية صنع الهدف.', missing));
+});
