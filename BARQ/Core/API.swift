@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Talks to the FOTIQ Node backend. The API-SPORTS key never lives in the app.
 /// Base URL resolves like the web app: published config.json -> {"api": "..."}; overridable in Settings.
@@ -125,7 +126,16 @@ actor API {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try JSONEncoder().encode(Request(question: question, context: context, history: history))
-        let (data, response) = try await analystSession.data(for: request)
+        let data: Data, response: URLResponse
+        do { (data, response) = try await analystSession.data(for: request) }
+        catch {
+            // Diagnostic codes only: never log URL, question, headers, userInfo,
+            // certificate contents, answer or credentials. TLS validation stays on.
+            let error = error as NSError
+            let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError
+            Logger(subsystem: "ae.barq.transport", category: "analyst").error("POST transport failure code=\(error.code, privacy: .public) underlyingCode=\(underlying?.code ?? 0, privacy: .public)")
+            throw error
+        }
         guard let http = response as? HTTPURLResponse else { throw APIError.offline }
         guard (200..<300).contains(http.statusCode) else {
             let code = (try? JSONDecoder().decode(ServerError.self, from: data))?.error ?? "AI_UPSTREAM_UNAVAILABLE"

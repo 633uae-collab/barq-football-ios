@@ -41,6 +41,7 @@ struct AnalystChatView: View {
                                     if let link = source.link {
                                         Link(source.displayName ?? link.host ?? "Source", destination: link)
                                             .font(.caption).accessibilityIdentifier("analyst-source-link")
+                                            .accessibilityValue(link.absoluteString)
                                     }
                                 }
                             } else if let error = message.error {

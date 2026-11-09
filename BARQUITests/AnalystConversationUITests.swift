@@ -53,7 +53,7 @@ final class AnalystConversationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["analyst-welcome"].exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-entity-picker").firstMatch.exists)
         var report = ""
-        let questions = ["حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة", "For the same match, explain the starting lineups and substitutions in English. Use updated data.", "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم"]
+        let questions = ["حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة", "For the same match, explain the starting lineups and substitutions in English. Use updated data.", "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم", "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق"]
         for (index, question) in questions.enumerated() {
             let field = app.descendants(matching: .any).matching(identifier: "analyst-question").firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 15)); field.tap(); field.typeText(question)
@@ -68,6 +68,15 @@ final class AnalystConversationUITests: XCTestCase {
             try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
             try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("0\(index + 1)-conversation.png"))
             XCTAssertEqual(result, .completed); XCTAssertTrue(answer.exists, response); XCTAssertFalse(error.exists, response)
+            if index == 3 {
+                let source = element("analyst-source-link")
+                XCTAssertTrue(source.waitForExistence(timeout: 10), "Historical answer must expose its real source")
+                XCTAssertEqual(source.label, "Wikidata")
+                XCTAssertEqual(source.value as? String, "https://www.wikidata.org/wiki/Q7156")
+                XCTAssertTrue(response.contains("1899") || response.contains("١٨٩٩"), "Verified foundation year missing")
+                report += "Source: \(source.label) \(source.value ?? "missing")\n"
+                try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
+            }
             if index < questions.count - 1 { sleep(66) }
         }
         app.terminate(); app.launch()
@@ -77,7 +86,9 @@ final class AnalystConversationUITests: XCTestCase {
         XCTAssertTrue(saved.waitForExistence(timeout: 10)); saved.tap()
         let restored = app.staticTexts["analyst-answer"], restoredError = app.staticTexts["analyst-error"]
         XCTAssertTrue(restored.waitForExistence(timeout: 10) || restoredError.exists, "Stored response or failure must survive process termination")
-        try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("04-restored.png"))
+        XCTAssertTrue(element("analyst-source-link").waitForExistence(timeout: 10), "Source must survive conversation restoration")
+        XCTAssertEqual(element("analyst-source-link").value as? String, "https://www.wikidata.org/wiki/Q7156")
+        try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("06-restored.png"))
         app.buttons["analyst-new-chat"].tap()
         XCTAssertTrue(app.staticTexts["analyst-welcome"].waitForExistence(timeout: 10))
         app.buttons["analyst-history"].tap()

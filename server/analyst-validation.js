@@ -8,6 +8,12 @@ function validateAnswer(answer, evidence) {
   const normalized = answer.replace(/[٠-٩]/g, d => String(d.charCodeAt(0)-1632)).replace(/[‐‑–—]/g, '-');
   if (evidence.seasonOnlyComparison && /(?<![\d-])\d{1,2}\s*-\s*\d{1,2}(?![\d-])/.test(normalized))
     throw new ServiceError('AI_FACT_CHECK_FAILED', 502);
+  // Observed native Arabic answer inverted failedToScore=0 into "never scored".
+  // A categorical no-goals claim is impossible when every compared club has goals.
+  const clubs = evidence.clubs || [];
+  if (evidence.seasonOnlyComparison && clubs.length > 0 && clubs.every(c => c.season?.totals?.goalsFor > 0) &&
+      /لم يسجل في أي مباراة|لم يسجل أي هدف|(?:never scored|did not score in any match|failed to score in every match)/iu.test(normalized.replace(/[\u064b-\u065f]/g, '')))
+    throw new ServiceError('AI_FACT_CHECK_FAILED', 502);
   // Missing assist metadata is never evidence for a solo goal or defensive error.
   // Fail closed on the observed inference, including qualified 'may'/'speculation'.
   const missingAssist = (evidence.events || []).some(e => String(e.type).toLowerCase() === 'goal' && e.goalAssist == null);

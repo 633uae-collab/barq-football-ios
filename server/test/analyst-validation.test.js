@@ -8,6 +8,13 @@ const evidence = { events: [
   { sourceId: 'event-1', minute: 18, addedTime: null, type: 'subst', playerIn: 'Silvan Broker', playerOut: 'Mees Laros', directionBasis: 'starting XI and substitution sequence' },
   { sourceId: 'event-2', minute: 30, addedTime: null, type: 'subst', playerIn: null, playerOut: null, participants: ['A', 'B'] }
 ] };
+test('rejects observed zero-score-match count inversion in native Arabic and English', () => {
+  const season = { seasonOnlyComparison: true, clubs: [{ season: { totals: { played: 12, goalsFor: 48, failedToScore: 0 } } }, { season: { totals: { played: 12, goalsFor: 31, failedToScore: 1 } } }] };
+  for (const text of ['ريال مدريد لم يسجل في أي مباراة، بينما برشلونة لم يسجل في مباراة واحدة فقط.', 'Real Madrid never scored this season.', 'Real Madrid failed to score in every match.'])
+    assert.throws(() => validateEventTimes(text, season), { code: 'AI_FACT_CHECK_FAILED' });
+  for (const text of ['ريال مدريد سجل في جميع مبارياته الـ12، وبرشلونة لم يسجل في مباراة واحدة.', 'Real Madrid scored in every played match; Barcelona had one match without scoring.'])
+    assert.doesNotThrow(() => validateEventTimes(text, season));
+});
 test('rejects observed hallucinated substitution minute in Arabic and English', () => {
   for (const answer of ['59′ – دخل البديل (event‑6)', "59' – substitution [event-6]", '٥٩′ – تبديل [event-6]'])
     assert.throws(() => validateEventTimes(answer, evidence), { code: 'AI_FACT_CHECK_FAILED' });
