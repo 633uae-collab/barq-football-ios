@@ -215,10 +215,19 @@ final class PremiumLaunchLayer: UIView {
         layer.add(animation, forKey: key)
     }
     @objc private func frameTick(_ dl: CADisplayLink) {
-        guard SplashClock.nextReady, !started else {
-            _ = clock.tick(active: SplashClock.nextReady)
+        if started {
+            _ = clock.tick()
             return
         }
+        // A laid-out window can still be underneath iOS's launch snapshot.
+        // Do not consume the camera track while that scene is inactive. The
+        // readiness probe also requires two foreground display opportunities.
+        guard window?.windowScene?.activationState == .foregroundActive,
+              SplashClock.nextReady else {
+            _ = clock.tick(active: false)
+            return
+        }
+        SplashDiag.log.notice("VISIBLE launch scene active +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         started = true
         CATransaction.begin(); CATransaction.setDisableActions(true)
         if let held = UserDefaults.standard.string(forKey: "splashHold") {
@@ -285,12 +294,16 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
         }
         func stop() { link?.invalidate(); link = nil }
         @objc private func destinationFrameDidDisplay(_ display: CADisplayLink) {
+            guard window?.windowScene?.activationState == .foregroundActive else {
+                previous = nil
+                return
+            }
             guard let previous, display.timestamp - previous < 0.05 else {
                 previous = display.timestamp
                 return
             }
             done = true; stop()
-            SplashDiag.log.notice("NEXT layout committed")
+            SplashDiag.log.notice("NEXT layout committed in active scene")
             SplashClock.nextReady = true
         }
     }

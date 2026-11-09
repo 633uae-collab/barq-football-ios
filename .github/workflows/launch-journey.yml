@@ -19,6 +19,7 @@ on:
       - ci/verify-launch-timing.py
       - ci/verify-launch-video.py
       - ci/record-launch.sh
+      - ci/record-repeated-launch.sh
       - ci/prepare-brand-mark.swift
       - project.yml
       - BARQUITests/ScoreAssociationUITests.swift
@@ -86,6 +87,9 @@ jobs:
       - name: Record unedited close and quick reopen separately
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: bash ci/record-launch.sh quick
+      - name: Record five consecutive real process restarts
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        run: bash ci/record-repeated-launch.sh
       - name: Verify real score association in Arabic and English
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
@@ -96,7 +100,7 @@ jobs:
         run: |
           result=0
           : > out/all-launch-timing.log
-          for log in out/first-timing.log out/quick-timing.log out/launch-timing.log; do
+          for log in out/first-timing.log out/quick-timing.log out/launch-timing.log out/repeated-timing.log; do
             if [[ -f "$log" ]]; then cat "$log" >> out/all-launch-timing.log
             else echo "::error::Required timing evidence is missing: $log"; result=1; fi
           done
