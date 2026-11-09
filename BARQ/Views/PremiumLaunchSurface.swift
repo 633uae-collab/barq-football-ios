@@ -205,11 +205,11 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
         override func layoutSubviews() {
             super.layoutSubviews()
             guard !done, link == nil, window != nil else { return }
-            let display = CADisplayLink(target: self, selector: #selector(frame))
+            let display = CADisplayLink(target: self, selector: #selector(destinationFrameDidDisplay(_:)))
             display.add(to: .main, forMode: .common); link = display
         }
         func stop() { link?.invalidate(); link = nil }
-        @objc private func frame(_ display: CADisplayLink) {
+        @objc private func destinationFrameDidDisplay(_ display: CADisplayLink) {
             guard let previous, display.timestamp - previous < 0.05 else {
                 previous = display.timestamp
                 return
