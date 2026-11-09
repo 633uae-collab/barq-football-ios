@@ -35,6 +35,9 @@ struct HomeView: View {
         // Keep the last row clear of the floating Liquid Glass tab bar.
         .contentMargins(.bottom, 24, for: .scrollContent)
         .safeAreaPadding(.bottom, 8)
+        // Empty pre-network content must not collapse the revealed gradient to
+        // the VStack's horizontal padding while the native bars stay full-width.
+        .frame(maxWidth: .infinity)
         .screenBackground()
         .navigationTitle("FOTIQ")
         .navigationBarTitleDisplayMode(.inline)
