@@ -6,3 +6,6 @@ server/data/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Deterministic original-logo pixels generated before XcodeGen scans resources.
+BARQ/Resources/PreparedBrandMark.rgba

@@ -1,35 +1,21 @@
 import SwiftUI
 import UIKit
 
-/// Removes only the original bitmap's dark matte, once, without redrawing the mark.
+/// The exact original matte-removal result is prepared by XcodeGen, not by
+/// a million-pixel Swift loop on the main thread during the first launch frame.
 enum TransparentBrandMark {
     static let image: UIImage = {
-        guard let source = UIImage(named: "SplashMark"), let cg = source.cgImage else { return UIImage() }
-        let width = cg.width, height = cg.height
-        var pixels = [UInt8](repeating: 0, count: width * height * 4)
-        let space = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(data: &pixels, width: width, height: height,
-            bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return source }
-        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
-        // Source matte is RGB 8/11/18. Recover edge coverage against the original
-        // white letter or green dot, then remove the matte from antialiased edges.
-        for i in stride(from: 0, to: pixels.count, by: 4) {
-            let r = Double(pixels[i]), g = Double(pixels[i + 1]), b = Double(pixels[i + 2])
-            let green = g > r * 1.5 && g > b
-            let coverage = min(1, max(0, green ? (g - 11) / (196 - 11) : (r - 8) / (255 - 8)))
-            pixels[i] = UInt8(min(255, max(0, r - 8 * (1 - coverage))))
-            pixels[i + 1] = UInt8(min(255, max(0, g - 11 * (1 - coverage))))
-            pixels[i + 2] = UInt8(min(255, max(0, b - 18 * (1 - coverage))))
-            pixels[i + 3] = UInt8((coverage * 255).rounded())
-        }
-        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+        let width = 1024, height = 1024
+        guard let url = Bundle.main.url(forResource: "PreparedBrandMark", withExtension: "rgba"),
+              let pixels = try? Data(contentsOf: url, options: .mappedIfSafe),
+              pixels.count == width * height * 4,
+              let provider = CGDataProvider(data: pixels as CFData),
               let output = CGImage(width: width, height: height, bitsPerComponent: 8,
-                bitsPerPixel: 32, bytesPerRow: width * 4, space: space,
+                bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
                 provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
-        else { return source }
-        return UIImage(cgImage: output, scale: source.scale, orientation: source.imageOrientation)
+        else { return UIImage(named: "SplashMark") ?? UIImage() }
+        return UIImage(cgImage: output)
     }()
 }
 

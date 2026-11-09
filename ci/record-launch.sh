@@ -53,6 +53,9 @@ for i in $(seq 1 45); do
 done
 sleep 4
 xcrun simctl io "$UDID" screenshot "out/$MODE-destination.png"
+# Keep the fully revealed destination visible in the original recording; this
+# changes recording duration only, never the app timeline or performance budget.
+sleep 3
 grep -q 'FINISH firstLaunch=' "out/$MODE-timing.log"
 # No cutting, encoding, scaling, speed changes or frame replacement.
 

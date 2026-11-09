@@ -18,6 +18,8 @@ on:
       - ci/verify-launch-timing.py
       - ci/verify-launch-video.py
       - ci/record-launch.sh
+      - ci/prepare-brand-mark.swift
+      - project.yml
       - BARQUITests/ScoreAssociationUITests.swift
       - BARQ/Views/Components.swift
       - BARQ/Resources/LaunchScreen.storyboard

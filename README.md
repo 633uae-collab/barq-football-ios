@@ -2,7 +2,7 @@
 Native SwiftUI app using real iOS 26 APIs (`glassEffect`, `GlassEffectContainer`, `.buttonStyle(.glass)`, `Tab`, `tabBarMinimizeBehavior`), SF Symbols only, Arabic/RTL.
 Data comes from the FOTIQ Node backend (API key stays server-side). Base URL is read from `https://koora-ae.surge.sh/config.json` (override in Settings).
 
-Build: `brew install xcodegen && xcodegen generate` then open `BARQFootball.xcodeproj`. CI: `.github/workflows/ios.yml` (free `macos-26` runner, unsigned simulator build + tests + screenshot).
+Build: `brew install xcodegen && xcodegen generate` then open `BARQFootball.xcodeproj`. XcodeGen prepares the unchanged original logo’s transparent RGBA resource at build time; the app no longer processes its million pixels during launch. CI: `.github/workflows/ios.yml` (free `macos-26` runner, unsigned simulator build + tests + screenshot).
 
 ## Needs Apple Developer Program ($99/yr)
 - Installing on a real iPhone via TestFlight (enable `testflight` job, add secrets listed there).

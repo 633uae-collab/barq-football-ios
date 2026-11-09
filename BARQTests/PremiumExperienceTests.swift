@@ -3,6 +3,8 @@ import XCTest
 
 final class PremiumExperienceTests: XCTestCase {
     func testBrandMarkHasTransparentMatteAndPreservesOriginalColors() throws {
+        let resource = try XCTUnwrap(Bundle.main.url(forResource: "PreparedBrandMark", withExtension: "rgba"))
+        XCTAssertEqual(try Data(contentsOf: resource).count, 1024 * 1024 * 4)
         let cg = try XCTUnwrap(TransparentBrandMark.image.cgImage)
         let bytes = try XCTUnwrap(cg.dataProvider?.data) as Data
         func pixel(_ x: Int, _ y: Int) -> [UInt8] {
