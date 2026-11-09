@@ -246,3 +246,13 @@ test('general club comparison selects domestic seasons even after a cup fixture'
   assert.ok(!paths.some(p => p.startsWith('/teams/statistics') && p.includes('league=2&')));
   assert.equal(evidence.clubs[0].matches[0].league.id, 2);
 });
+
+test('unconnected current news and medical announcements cannot be replaced by fixture evidence', async () => {
+  let calls = 0; const provider = { load: async () => { calls++; throw new Error('must not request unrelated fixtures'); } };
+  for (const question of ['آخر أخبار انتقالات برشلونة', 'هل إصابة لاعب ريال مدريد مؤكدة؟', 'Latest Liverpool injury news', 'What is the football trend today?']) {
+    const result = await collectEvidence(provider, question);
+    assert.equal(result.schema, 'fotiq-unavailable-announcement-v1');
+    assert.deepEqual(result.sources, []); assert.deepEqual(result.facts, []); assert.ok(result.missing.length);
+  }
+  assert.equal(calls, 0);
+});

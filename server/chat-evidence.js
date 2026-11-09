@@ -53,6 +53,12 @@ function relevantVenueSeason(stats, role) {
   };
 }
 async function collectEvidence(provider, question, context = {}, history = []) {
+  // Current announcements require an announcement source, not unrelated fixtures.
+  if (/\b(?:transfer|transfers|injury|injuries|injured|news|trend|trending)\b|انتقال|صفقة|اصابة|إصابة|إصابات|اصابات|أخبار|اخبار|ترند/i.test(question)) {
+    const fetchedAt = Date.now();
+    return { schema: 'fotiq-unavailable-announcement-v1', fetchedAt, retrievedAtUTC: new Date(fetchedAt).toISOString(),
+      events: [], sources: [], facts: [], missing: ['No licensed and verified current announcement source is connected for transfers, injuries, news or trends. State this limitation. Do not use model memory, past chat claims, or fixture data as confirmation.'] };
+  }
   const historical = await historicalKnowledge.collect(question);
   if (historical) {
     historical.fetchedAt ??= Date.now();

@@ -85,6 +85,7 @@ struct RemoteImage: View {
             guard let s = url, let u = URL(string: s) else { img = nil; return }
             if let c = ImageStore.shared.mem.object(forKey: s as NSString) { img = c; return }
             let r = await ImageStore.shared.image(u)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { img = r }
         }
     }
