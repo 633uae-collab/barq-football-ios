@@ -143,6 +143,12 @@ final class PremiumLaunchLayer: UIView {
         mark.frame = plane.bounds
         apertureMask.frame = bounds
         prepareAnimations()
+        if !reduceMotion {
+            // Establish the masked compositing surface while the initial logo
+            // is held, before readiness starts the timed camera movement.
+            apertureMask.path = maskPath(at: 0)
+            cover.mask = apertureMask
+        }
         CATransaction.commit()
         let dl = CADisplayLink(target: self, selector: #selector(frameTick))
         dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)

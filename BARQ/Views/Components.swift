@@ -70,7 +70,7 @@ struct RemoteImage: View {
     var fallback: String = "shield"
     var size: CGFloat = 32
     var circle = false
-    var waitForLaunch = false
+    var waitForLaunch = true
     @State private var img: UIImage?
     var body: some View {
         Group {
@@ -80,11 +80,14 @@ struct RemoteImage: View {
         .frame(width: size, height: size)
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(Rectangle()))
         .task(id: url) {
-            if waitForLaunch { await LaunchGate.wait() }
             guard !Task.isCancelled else { return }
             guard let s = url, let u = URL(string: s) else { img = nil; return }
             if let c = ImageStore.shared.mem.object(forKey: s as NSString) { img = c; return }
             let r = await ImageStore.shared.image(u)
+            // Prefetch/decode may finish while the launch cover is animating.
+            // Hold publication until reveal so image arrival cannot invalidate
+            // the prepared glass grid in the middle of the camera track.
+            if waitForLaunch { await LaunchGate.wait() }
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { img = r }
         }

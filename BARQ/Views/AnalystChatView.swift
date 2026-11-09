@@ -66,6 +66,8 @@ struct AnalystChatView: View {
         .onDisappear { visible = false }
         .task(id: "\(visible)-\(scenePhase == .active)-\(archive.current.turns.isEmpty)-\(en)") {
             guard visible, scenePhase == .active, archive.current.turns.isEmpty else { return }
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
             welcome = nil
             while !Task.isCancelled {
                 if let value = try? await API.shared.analystWelcome(language: en ? "en" : "ar"), !Task.isCancelled { welcome = value }

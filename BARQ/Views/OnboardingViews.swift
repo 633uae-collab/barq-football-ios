@@ -471,7 +471,7 @@ struct PickTile: View, Equatable {
     var body: some View {
         Button { if !on { Haptics.favoriteAdded() }; toggle() } label: {
             VStack(spacing: 8) {
-                RemoteImage(url: logo, size: 52, waitForLaunch: false)
+                RemoteImage(url: logo, size: 52)
                 Text(name).font(.footnote.weight(.semibold)).lineLimit(2).multilineTextAlignment(.center).frame(height: 34)
                 Image(systemName: on ? "star.fill" : "star").font(.title3)
                     .foregroundStyle(on ? Color("BrandGreen") : .secondary)
