@@ -14,9 +14,13 @@ struct LaunchContainer<Destination: View>: UIViewControllerRepresentable {
     private func renderer(_ environment: EnvironmentValues) -> () -> AnyView {
         let destination = destination
         return {
-            AnyView(destination()
-                .environment(\.self, environment)
-                .environment(\.launchPreparedImages, LaunchHomePreparation.images)
+            // Install one coherent environment. An inner ".environment(\.self)"
+            // would overwrite an outer prepared-image key and leave the first
+            // rendered destination showing placeholders despite cache hits.
+            var preparedEnvironment = environment
+            preparedEnvironment.launchPreparedImages = LaunchHomePreparation.images
+            return AnyView(destination()
+                .environment(\.self, preparedEnvironment)
                 .transaction { transaction in
                     if !LaunchGate.open {
                         transaction.animation = nil
