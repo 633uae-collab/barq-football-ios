@@ -69,12 +69,12 @@ jobs:
       - name: All unit tests
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -resultBundlePath unit.xcresult 2>&1 | tee unit.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -resultBundlePath unit.xcresult 2>&1 | tee unit.log
       - name: Build UI tests
         id: build_ui
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
       - name: Verify simulator resource signature before launch
         run: |
           # iOS 26 SplashBoard rejected unsealed launch resources with -67056
@@ -107,7 +107,7 @@ jobs:
           REC=$!
           trap 'kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true' EXIT
           sleep 2
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests/testCoveredDestinationIsNotExposedToAccessibility -only-testing:BARQUITests/PremiumExperienceUITests/testBackgroundResumeDoesNotRestartLaunchOrOnboarding -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests/testCoveredDestinationIsNotExposedToAccessibility -only-testing:BARQUITests/PremiumExperienceUITests/testBackgroundResumeDoesNotRestartLaunchOrOnboarding -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
       - name: Complete real onboarding for standalone reopen recordings
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
@@ -115,7 +115,7 @@ jobs:
           # on the clubs screen. Complete the real UI journey on this device;
           # never seed preferences or bypass onboarding for the review videos.
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/LaunchJourneyUITests -resultBundlePath recording-setup.xcresult 2>&1 | tee out/recording-setup.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/LaunchJourneyUITests -resultBundlePath recording-setup.xcresult 2>&1 | tee out/recording-setup.log
       - name: Record unedited close and quick reopen separately
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: bash ci/record-launch.sh quick
@@ -139,7 +139,7 @@ jobs:
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' && github.head_ref != 'codex/fotiq-rider-reference' && github.ref_name != 'codex/fotiq-rider-reference' }}
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
       - name: Record Reduce Motion using the system accessibility preference
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |

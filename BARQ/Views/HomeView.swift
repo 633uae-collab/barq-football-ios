@@ -32,16 +32,7 @@ struct HomeView: View {
             // Prepare visible native cards before reveal without constructing
             // every offscreen match row in the first layout transaction.
             LazyVStack(spacing: 14) {
-                if let e = error {
-                    EmptyState(symbol: "wifi.exclamationmark", title: "تعذر التحميل", message: LocalizedStringKey(e))
-                    if loaded { Text("تعذر تحديث البيانات. المعروض آخر نسخة محمّلة").font(.footnote).foregroundStyle(.secondary) }
-                    Button("إعادة المحاولة") { Task { await load() } }.buttonStyle(.glass)
-                        .accessibilityIdentifier("home-retry")
-                }
-                ForEach(store.homeSections, id: \.self) { key in
-                    if loaded { section(key).transition(.opacity) }
-                    else { LaunchHomeLoadingSection(key: key) }
-                }
+                feedContent
             }
             .animation(.smooth(duration: 0.3), value: store.homeSections)
             .animation(.smooth(duration: 0.3), value: loaded)
@@ -92,6 +83,19 @@ struct HomeView: View {
             }
         }
         .refreshable { await load() }
+    }
+
+    @ViewBuilder private var feedContent: some View {
+        if let e = error {
+            EmptyState(symbol: "wifi.exclamationmark", title: "تعذر التحميل", message: LocalizedStringKey(e))
+            if loaded { Text("تعذر تحديث البيانات. المعروض آخر نسخة محمّلة").font(.footnote).foregroundStyle(.secondary) }
+            Button("إعادة المحاولة") { Task { await load() } }.buttonStyle(.glass)
+                .accessibilityIdentifier("home-retry")
+        }
+        ForEach(store.homeSections, id: \.self) { key in
+            if loaded { section(key).transition(.opacity) }
+            else { LaunchHomeLoadingSection(key: key) }
+        }
     }
 
     @ViewBuilder func section(_ key: String) -> some View {

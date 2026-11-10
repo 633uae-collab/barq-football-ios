@@ -52,7 +52,7 @@ extension View {
         guard !open, !Task.isCancelled else { return }
         let id = UUID()
         await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 if open || Task.isCancelled { continuation.resume() }
                 else { waiters[id] = continuation }
             }
@@ -546,6 +546,16 @@ struct LaunchFlow<Content: View>: View {
             Group {
                 if destinationMounted {
                 if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
+                }
+            }
+            .transaction { transaction in
+                // Instruments captured initial SwiftUI/material animations still
+                // updating the covered destination during Rider erasure. Stage
+                // its final native appearance without an insertion animation;
+                // restore ordinary page animations as soon as launch completes.
+                if splash {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
                 }
             }
             .background {
