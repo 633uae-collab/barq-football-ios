@@ -25,12 +25,13 @@ def cleanup_group(child):
     # The old implementation only escalated while the leader was alive, so a
     # descendant ignoring TERM could hold the shell's tee open indefinitely.
     if signal_group(child.pid, signal.SIGTERM):
-        end = time.monotonic() + 3
-        while time.monotonic() < end:
-            child.poll()  # reap the leader before checking the remaining group
-            if not signal_group(child.pid, 0):
-                break
-            time.sleep(0.05)
+        try:
+            child.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            pass
+        # Always escalate the GROUP, even after wait reaps the leader. Do not
+        # probe killpg(..., 0): on the hosted macOS runner this returned EPERM
+        # after TERM and replaced the expected timeout result with a traceback.
         signal_group(child.pid, signal.SIGKILL)
     try:
         child.wait(timeout=3)
