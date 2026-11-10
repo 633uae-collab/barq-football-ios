@@ -42,23 +42,23 @@ class BoundedCoreTests(unittest.TestCase):
 
     def test_preserves_failure_code(self):
         code, output = self.invoke("print('expected failure', flush=True); raise SystemExit(7)")
-        self.assertEqual(code, 7)
+        self.assertEqual(code, 7, output)
         self.assertIn('expected failure', output)
 
     def test_timeout(self):
         code, output = self.invoke('import time; time.sleep(60)')
-        self.assertEqual(code, 124)
+        self.assertEqual(code, 124, output)
         self.assertIn('FOTIQ_COMMAND_TIMEOUT', output)
 
     def test_expired_job_budget_does_not_start_child(self):
         code, output = self.invoke("print('MUST_NOT_RUN')", deadline=time.time() - 1)
-        self.assertEqual(code, 124)
+        self.assertEqual(code, 124, output)
         self.assertNotIn('MUST_NOT_RUN', output)
         self.assertIn('job-evidence-reserve', output)
 
     def test_job_budget_caps_longer_command_budget(self):
         code, output = self.invoke('import time; time.sleep(60)', budget='60', deadline=time.time() + 0.5)
-        self.assertEqual(code, 124)
+        self.assertEqual(code, 124, output)
         self.assertIn('FOTIQ_COMMAND_TIMEOUT', output)
 
     def orphan(self, wait):
@@ -74,12 +74,12 @@ else:
 
     def test_normal_exit_cleans_pipe_holding_descendant(self):
         code, output = self.invoke(self.orphan('0.1'), budget='2')
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 0, output)
         self.assertIn('CHILD_PID=', output)
 
     def test_timeout_kills_descendant_even_when_leader_accepts_term(self):
         code, output = self.invoke(self.orphan('60'))
-        self.assertEqual(code, 124)
+        self.assertEqual(code, 124, output)
         self.assertIn('FOTIQ_COMMAND_TIMEOUT', output)
 
 
