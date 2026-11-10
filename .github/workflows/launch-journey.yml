@@ -37,9 +37,9 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Validate the corrected first-layout image environment on iPhone 17 Pro.
+    # Validate the direct live destination on standard Apple Silicon after Intel evidence.
     # Standard public runner only; no larger or paid service.
-    runs-on: macos-15-intel
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

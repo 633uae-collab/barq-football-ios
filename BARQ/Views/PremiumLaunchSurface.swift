@@ -82,7 +82,6 @@ struct PremiumLaunchSurface: UIViewRepresentable {
 
 final class PremiumLaunchLayer: UIView {
     private let cover = CAShapeLayer(), pulse = CAShapeLayer(), mark = CALayer()
-    private let opaqueErasureField = CALayer()
     private let markMask = CALayer()
     private let markBands = PremiumLaunchTrack.segments.map { _ in CALayer() }
     private let clock: SplashClock
@@ -111,12 +110,6 @@ final class PremiumLaunchLayer: UIView {
         accessibilityViewIsModal = true
         clipsToBounds = true
         cover.fillColor = UIColor(named: "RiderLaunchBackground")!.cgColor
-        // The destination warms behind the original cover. Once erasure begins,
-        // an opaque rectangle lets the compositor cull unchanged glass beneath
-        // the full dark field. It disappears before the circular reveal starts.
-        opaqueErasureField.backgroundColor = cover.fillColor
-        opaqueErasureField.isOpaque = true
-        opaqueErasureField.opacity = 0
         pulse.fillColor = UIColor(red: 0, green: 196 / 255, blue: 106 / 255, alpha: 1).cgColor
         pulse.opacity = 0
         mark.contents = UIImage(named: "RiderLaunchMark")?.cgImage
@@ -127,7 +120,6 @@ final class PremiumLaunchLayer: UIView {
         }
         layer.addSublayer(pulse)
         layer.addSublayer(cover)
-        layer.addSublayer(opaqueErasureField)
         layer.addSublayer(mark)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -154,7 +146,6 @@ final class PremiumLaunchLayer: UIView {
         prepared = true
         CATransaction.begin(); CATransaction.setDisableActions(true)
         cover.frame = bounds; pulse.frame = bounds
-        opaqueErasureField.frame = bounds
         mark.frame = LaunchPresentation.logoRect(in: bounds.size)
         markMask.frame = mark.bounds
         mark.mask = markMask
@@ -230,14 +221,6 @@ final class PremiumLaunchLayer: UIView {
             track(cover, "opacity", values, duration: duration)
             track(mark, "opacity", values, duration: duration)
         } else {
-            // This is visually identical to the full-radius cover and has no
-            // fade: after frame 62 only the existing measured circle remains.
-            let field = CAKeyframeAnimation(keyPath: "opacity")
-            field.values = [1, 0, 0]
-            field.keyTimes = [0, NSNumber(value: (1.033333 - offset) / duration), 1]
-            field.duration = duration
-            field.calculationMode = .discrete
-            tracks.append((opaqueErasureField, field))
             let coverRadius = PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size)
             let pulseRadius = PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size)
             track(cover, "transform.scale", times.map { PremiumLaunchTrack.coverRadius(at: $0, in: bounds.size) / coverRadius }, duration: duration)
