@@ -425,6 +425,10 @@ struct ClubPickStep: View {
             .scrollDismissesKeyboard(.immediately)
         }
         .task {
+            // Initial prefetch follows the same launch boundary as visible
+            // cache misses; bundled and decoded images already draw immediately.
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
             await ImageStore.shared.preload(model.popular.compactMap(\.logo))
         }
         .task(id: popularRetry) {
