@@ -71,10 +71,11 @@ struct RemoteImage: View {
     var size: CGFloat = 32
     var circle = false
     var waitForLaunch = true
+    @Environment(\.launchPreparedImages) private var prepared
     @State private var img: UIImage?
     var body: some View {
         Group {
-            if let img { Image(uiImage: img).resizable().scaledToFit().transition(.opacity) }
+            if let image = prepared[url ?? ""] ?? img { Image(uiImage: image).resizable().scaledToFit().transition(.opacity) }
             else { Image(systemName: fallback).resizable().scaledToFit().foregroundStyle(.secondary).padding(size * 0.18) }
         }
         .frame(width: size, height: size)
@@ -82,6 +83,9 @@ struct RemoteImage: View {
         .task(id: url) {
             guard !Task.isCancelled else { return }
             guard let s = url, let u = URL(string: s) else { img = nil; return }
+            // Prepared launch pixels participate in the first body evaluation;
+            // do not enqueue one @State transaction per cached logo afterwards.
+            if prepared[s] != nil { return }
             if let c = ImageStore.shared.mem.object(forKey: s as NSString) { img = c; return }
             let r = await ImageStore.shared.image(u)
             // Prefetch/decode may finish while the launch cover is animating.

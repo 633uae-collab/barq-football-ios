@@ -533,6 +533,7 @@ struct PickTile: View, Equatable {
 /// Wraps the app: splash on every launch, onboarding on first launch only, then the unchanged app.
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
+    @Environment(AppStore.self) private var store
     @State private var destinationMounted = false
     @State private var splash = true
     @State private var onboarded = Onboarding.isDone()
@@ -548,6 +549,7 @@ struct LaunchFlow<Content: View>: View {
                 if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
                 }
             }
+            .environment(\.launchPreparedImages, LaunchHomePreparation.images)
             .transaction { transaction in
                 // Instruments captured initial SwiftUI/material animations still
                 // updating the covered destination during Rider erasure. Stage
@@ -585,7 +587,10 @@ struct LaunchFlow<Content: View>: View {
                     if onboarded {
                         LaunchHomePreparation.snapshot = await LaunchHomeCache.shared.restore(scope: LaunchHomePreparation.scope)
                         if let snapshot = LaunchHomePreparation.snapshot {
-                            await LaunchHomeCache.shared.prepareCachedImages(snapshot)
+                            let favorites = HomeFeed.Favorites(matches: Set(store.savedMatches),
+                                teams: Set(store.favTeams.map(\.id)), leagues: Set(store.favLeagues))
+                            let addresses = snapshot.visibleImageAddresses(favorites: favorites, now: Date())
+                            LaunchHomePreparation.images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
                         }
                         SplashDiag.log.notice("HOME preparedLocalSnapshot=\(LaunchHomePreparation.snapshot != nil, privacy: .public)")
                     }

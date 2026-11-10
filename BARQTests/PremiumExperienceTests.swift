@@ -2,6 +2,25 @@ import XCTest
 @testable import BARQ
 
 final class PremiumExperienceTests: XCTestCase {
+    func testLaunchImagesIncludeVisibleFavoriteBeyondResponsePrefixAndPlayerBadge() {
+        let now = Date(timeIntervalSince1970: 1000)
+        func fixture(_ id: Int) -> Fixture {
+            Fixture(id: id, date: "", ts: 2000 + id,
+                status: FixtureStatus(short: "NS"), league: LeagueRef(id: 1, name: "League", logo: "league"),
+                home: TeamRef(id: id, name: "Home", logo: "home-\(id)"),
+                away: TeamRef(id: id + 100, name: "Away", logo: "away-\(id)"), goals: Goals())
+        }
+        let fixtures = (1...30).map(fixture)
+        let star = StarPlayer(id: 1, name: "Player", photo: "photo", team: TeamRef(id: 999, name: "Team", logo: "badge"),
+                              fixture: 30, goals: 0, assists: 0)
+        let snapshot = LaunchHomeSnapshot(scope: "test", savedAt: now, today: fixtures, tomorrow: [], stars: [star], lineupsReady: [])
+        let addresses = snapshot.visibleImageAddresses(favorites: .init(matches: [30]), now: now)
+        XCTAssertTrue(addresses.contains("home-30"))
+        XCTAssertTrue(addresses.contains("away-30"))
+        XCTAssertTrue(addresses.contains("photo"))
+        XCTAssertTrue(addresses.contains("badge"))
+        XCTAssertEqual(addresses.count, Set(addresses).count)
+    }
     @MainActor func testCancelledLaunchWaiterDoesNotNeedGateToOpen() async {
         LaunchGate.open = false
         defer { LaunchGate.open = true }

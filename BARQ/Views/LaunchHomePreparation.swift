@@ -10,6 +10,18 @@ struct LaunchHomeSnapshot: Codable {
     var tomorrow: [Fixture]
     var stars: [StarPlayer]?
     var lineupsReady: Set<Int>
+    func visibleImageAddresses(favorites: HomeFeed.Favorites, now: Date) -> [String] {
+        let all = today + tomorrow
+        // Response order is not Home's display order. Prepare the actual hero,
+        // first upcoming rows and first important fixtures, including star badges.
+        let fixtures = HomeFeed.dedupe(Array(HomeFeed.hero(all, favorites: favorites, now: now).prefix(6))
+            + HomeFeed.upcoming(all, now: now, limit: 6)
+            + Array(MatchSort.byImportance(today).prefix(6)))
+        var addresses = fixtures.flatMap { [$0.home.logo, $0.away.logo, $0.league.logo] }
+        addresses += (stars ?? []).prefix(3).flatMap { [$0.photo, $0.team.logo] }
+        var seen = Set<String>()
+        return addresses.compactMap { $0 }.filter { seen.insert($0).inserted }
+    }
     func usable(scope: String, now: Date = Date()) -> Bool {
         // A short-lived warm-start cache is not an offline source of live scores.
         self.scope == scope && (0...120).contains(now.timeIntervalSince(savedAt))
@@ -18,6 +30,7 @@ struct LaunchHomeSnapshot: Codable {
 
 @MainActor enum LaunchHomePreparation {
     static var snapshot: LaunchHomeSnapshot?
+    static var images: [String: UIImage] = [:]
     static var scope: String {
         UserDefaults.standard.string(forKey: "apiOverride")
             ?? (Bundle.main.object(forInfoDictionaryKey: "FOTIQAPIBase") as? String)
@@ -44,16 +57,60 @@ actor LaunchHomeCache {
         guard let data = try? JSONEncoder().encode(snapshot), data.count < 2_000_000 else { return }
         try? data.write(to: location, options: .atomic)
     }
-    func prepareCachedImages(_ snapshot: LaunchHomeSnapshot) {
-        var addresses = (snapshot.today + snapshot.tomorrow).prefix(24).flatMap { [$0.home.logo, $0.away.logo, $0.league.logo] }
-        addresses += (snapshot.stars ?? []).prefix(3).map(\.photo)
-        var seen = Set<String>()
-        for case let address? in addresses where seen.insert(address).inserted {
-            guard let url = URL(string: address),
-                  ImageStore.shared.mem.object(forKey: address as NSString) == nil,
-                  let response = ImageStore.shared.session.configuration.urlCache?.cachedResponse(for: URLRequest(url: url)),
-                  let image = UIImage(data: response.data) else { continue }
-            ImageStore.shared.mem.setObject(image.preparingForDisplay() ?? image, forKey: address as NSString)
+    func prepareCachedImages(_ addresses: [String]) -> [String: UIImage] {
+        var prepared: [String: UIImage] = [:]
+        for address in addresses {
+            if let image = ImageStore.shared.mem.object(forKey: address as NSString) {
+                prepared[address] = image
+                continue
+            }
+            guard let url = URL(string: address) else { continue }
+            let request = URLRequest(url: url)
+            // Older StarRow used AsyncImage's shared cache rather than ImageStore.
+            // Both lookups are disk/memory only; neither can start a network request.
+            let response = ImageStore.shared.session.configuration.urlCache?.cachedResponse(for: request)
+                ?? URLCache.shared.cachedResponse(for: request)
+            guard let response, let image = UIImage(data: response.data) else { continue }
+            let decoded = image.preparingForDisplay() ?? image
+            ImageStore.shared.mem.setObject(decoded, forKey: address as NSString)
+            prepared[address] = decoded
+        }
+        return prepared
+    }
+}
+
+private struct LaunchPreparedImagesKey: EnvironmentKey {
+    static let defaultValue: [String: UIImage] = [:]
+}
+extension EnvironmentValues {
+    var launchPreparedImages: [String: UIImage] {
+        get { self[LaunchPreparedImagesKey.self] }
+        set { self[LaunchPreparedImagesKey.self] = newValue }
+    }
+}
+
+/// First layout reads an immutable, already-decoded image. A cache miss keeps
+/// the original placeholder and waits for launch before publishing a download.
+/// Uses the same photo crop and placeholder as StarRow's former AsyncImage.
+struct LaunchPreparedPlayerPhoto: View {
+    let url: String?
+    @Environment(\.launchPreparedImages) private var prepared
+    @State private var downloaded: UIImage?
+    var body: some View {
+        Group {
+            if let image = downloaded ?? prepared[url ?? ""] {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                Image(systemName: "person.fill").foregroundStyle(.secondary)
+            }
+        }
+        .task(id: url) {
+            guard prepared[url ?? ""] == nil else { return }
+            await LaunchGate.wait()
+            guard !Task.isCancelled, let url, let address = URL(string: url) else { return }
+            let image = await ImageStore.shared.image(address)
+            guard !Task.isCancelled else { return }
+            downloaded = image
         }
     }
 }

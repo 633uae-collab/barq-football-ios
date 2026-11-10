@@ -88,6 +88,9 @@ final class PremiumLaunchLayer: UIView {
     private let reduceMotion: Bool
     private let onComplete: () -> Void
     private var link: CADisplayLink?
+    private var commitLink: UIUpdateLink?
+    private var preparedOffset: Double?
+    private var submittedAt: CFTimeInterval?
     private var prepared = false, started = false
     private var tracks: [(CALayer, CAKeyframeAnimation)] = []
     private weak var accessibilityWindow: UIWindow?
@@ -164,8 +167,20 @@ final class PremiumLaunchLayer: UIView {
         let display = CADisplayLink(target: self, selector: #selector(frameTick))
         display.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         display.add(to: .main, forMode: .common); link = display
+        let updates = UIUpdateLink(view: self)
+        updates.requiresContinuousUpdates = true
+        updates.addAction(to: .beforeCATransactionCommit) { [weak self] _, _ in self?.submitIfReady() }
+        updates.addAction(to: .afterCATransactionCommit) { [weak self] update, _ in
+            guard let self, let submittedAt = self.submittedAt else { return }
+            SplashDiag.log.notice("COMMIT submissionToCommit=\(CACurrentMediaTime() - submittedAt, privacy: .public)")
+            update.isEnabled = false
+        }
+        commitLink = updates
     }
-    func stop() { link?.invalidate(); link = nil }
+    func stop() {
+        link?.invalidate(); link = nil
+        commitLink?.isEnabled = false; commitLink = nil
+    }
     private func applyState(at time: Double) {
         let motionTime = reduceMotion ? 0 : time
         let coverScale = PremiumLaunchTrack.coverRadius(at: motionTime, in: bounds.size) / PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size)
@@ -218,8 +233,19 @@ final class PremiumLaunchLayer: UIView {
     }
     @objc private func frameTick(_ display: CADisplayLink) {
         if started { _ = clock.tick(); return }
+        _ = clock.tick(active: false)
+        guard preparedOffset == nil, SplashClock.nextReady,
+              window?.windowScene?.activationState == .foregroundActive else { return }
+        let setupStart = CACurrentMediaTime()
+        let offset = PremiumLaunchTrack.holdCredit(displayedFor: clock.displayedFor(at: setupStart), reduceMotion: reduceMotion)
+        prepareAnimations(offset: offset)
+        preparedOffset = offset
+        SplashDiag.log.notice("TRACKS setupSeconds=\(CACurrentMediaTime() - setupStart, privacy: .public)")
+    }
+    private func submitIfReady() {
+        guard !started, let offset = preparedOffset else { return }
         guard window?.windowScene?.activationState == .foregroundActive, SplashClock.nextReady else {
-            _ = clock.tick(active: false); return
+            return
         }
         SplashDiag.log.notice("VISIBLE launch scene active +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         started = true
@@ -230,10 +256,11 @@ final class PremiumLaunchLayer: UIView {
             CATransaction.commit(); stop(); return
         }
         let now = CACurrentMediaTime()
-        let offset = PremiumLaunchTrack.holdCredit(displayedFor: clock.displayedFor(at: now), reduceMotion: reduceMotion)
-        prepareAnimations(offset: offset)
-        // A shared layer-local origin keeps all tracks phase-aligned. Completion
-        // is event driven; no 8 ms SwiftUI polling task competes with rendering.
+        submittedAt = now
+        // Submit just before UIKit's normal commit, after display-link callbacks.
+        // Preparation no longer consumes the already-running erasure timeline.
+        // Never force-flush unrelated SwiftUI transactions or hide their cost:
+        // COMMIT and startup timing include any remaining commit work.
         clock.begin(at: now, timelineOffset: offset)
         CATransaction.setCompletionBlock { [weak self] in
             guard let self else { return }
@@ -252,31 +279,35 @@ final class PremiumLaunchLayer: UIView {
     }
 }
 
-/// Wait for the destination's actual layout and two display opportunities, not
-/// merely a queued SwiftUI state update. This keeps first text/glass layout out
-/// of the animated interval. No remote data is involved in readiness.
+/// Observe completed UIKit commits after actual destination layout. Display-link
+/// callbacks alone run before commit and cannot establish that layout was sent.
+/// No remote data is involved in readiness.
 struct LaunchDestinationReadiness: UIViewRepresentable {
     func makeUIView(context: Context) -> ReadinessProbe { ReadinessProbe() }
     func updateUIView(_ uiView: ReadinessProbe, context: Context) {}
     static func dismantleUIView(_ view: ReadinessProbe, coordinator: ()) { view.stop() }
     final class ReadinessProbe: UIView {
-        private var link: CADisplayLink?
+        private var link: UIUpdateLink?
         private var previous: CFTimeInterval?
         private var done = false
         override func layoutSubviews() {
             super.layoutSubviews()
             guard !done, link == nil, window != nil else { return }
-            let display = CADisplayLink(target: self, selector: #selector(destinationFrameDidDisplay(_:)))
-            display.add(to: .main, forMode: .common); link = display
+            let updates = UIUpdateLink(view: self)
+            updates.requiresContinuousUpdates = true
+            updates.addAction(to: .afterCATransactionCommit) { [weak self] _, _ in self?.destinationDidCommit() }
+            link = updates
         }
-        func stop() { link?.invalidate(); link = nil }
-        @objc private func destinationFrameDidDisplay(_ display: CADisplayLink) {
+        func stop() { link?.isEnabled = false; link = nil }
+        private func destinationDidCommit() {
+            guard !done else { return }
             guard window?.windowScene?.activationState == .foregroundActive else {
                 previous = nil
                 return
             }
-            guard let previous, display.timestamp - previous < 0.05 else {
-                previous = display.timestamp
+            let now = CACurrentMediaTime()
+            guard let previous, now - previous < 0.05 else {
+                previous = now
                 return
             }
             done = true; stop()

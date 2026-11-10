@@ -244,9 +244,8 @@ struct StarRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
-                AsyncImage(url: s.photo.flatMap(URL.init(string:))) { img in img.resizable().scaledToFill() } placeholder: {
-                    Image(systemName: "person.fill").foregroundStyle(.secondary)
-                }
+                LaunchPreparedPlayerPhoto(url: s.photo)
+                .id(s.photo)
                 .frame(width: 60, height: 60).clipShape(.circle)
                 .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 2))
                 RemoteImage(url: s.team.logo, size: 22).background(Circle().fill(.black.opacity(0.6)).frame(width: 26, height: 26))
