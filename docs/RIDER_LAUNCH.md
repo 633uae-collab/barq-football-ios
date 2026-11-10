@@ -33,7 +33,7 @@ Animation geometry is prepared once, and Core Animation interpolates layer trans
 
 The measured-reference timeline replaces the old 1.4 s target with 1.8 s. CI duration bounds are 1.8–2.0 s (0.8–1.0 s Reduce Motion). Cadence acceptance is stricter than the inherited 250 ms gap: maximum 50 ms, mean callback rate >=58 Hz, p95 <=20 ms. A passing callback check alone does not imply a visually smooth 60 fps result.
 
-Native capture uses an optimized Release build (testability enabled, simulator active architecture only). Intel evidence is retained; the latest comparison uses standard Apple Silicon. GitHub repository metadata confirms this repository is public, and standard public macOS runners are free under GitHub's published policy. No paid larger runner is enabled. Earlier Debug recordings are diagnostic evidence only and cannot substitute for the newest commit. First-launch and repeated-launch clips are also published before the remaining profiling steps finish. The capture display is kept awake and Simulator is foregrounded before recording. Unrelated live score-association UI tests are not run for this dedicated launch branch.
+Native capture uses an optimized Release build (`ENABLE_TESTABILITY=NO`, simulator active architecture only). Unit-test compilation separately enables testability. Intel evidence is retained; the latest comparison uses standard Apple Silicon. GitHub repository metadata confirms this repository is public, and standard public macOS runners are free under GitHub's published policy. No paid larger runner is enabled. Earlier Debug recordings are diagnostic evidence only and cannot substitute for the newest commit. First-launch and repeated-launch clips are also published before the remaining profiling steps finish. The capture display is kept awake and Simulator is foregrounded before recording. Unrelated live score-association UI tests are not run for this dedicated launch branch.
 
 ## Native evidence required before approval
 
@@ -47,47 +47,42 @@ Native capture uses an optimized Release build (testability enabled, simulator a
 
 Remaining differences by design: F has different strokes from Uber's wordmark; FOTIQ retains green instead of Uber's blue; its existing Home/onboarding replaces the map and bottom panel. Current native build, recordings, timing outcomes and residual problems must be reported from the actual run. No visual approval or main merge is authorized.
 
+## Final refinement architecture
 
-## Correlated profiling added during final refinement
+- Destination readiness observes UIKit `afterCATransactionCommit`, so a display callback before commit does not stand in for a completed layout commit.
+- Core Animation tracks are prepared before the motion clock starts and submitted during `beforeCATransactionCommit`. `TRACKS setupSeconds` and `COMMIT submissionToCommit` retain both costs. No forced transaction flush is used.
+- The local image plan follows actual favorites/upcoming/important fixture order and includes player photos and team badges. An immutable environment image map supplies cached, off-main decoded images during the first destination body evaluation, avoiding a separate state update for each cached logo.
+- Player photo cache misses wait for the launch gate. Crop, size, placeholder, surrounding cards and native Liquid Glass remain unchanged. Missing or expired local content still cannot be supplied without the network; it never delays the entrance.
+- Completion checks the real monotonic deadline after the CA completion signal. If CA calls back slightly early, the next display callback completes the launch. Recorded durations are never rounded upward to satisfy a test.
+- Validation adds independent native HEVC and ScreenCaptureKit window capture, as well as Time Profiler with and without simultaneous recording. Original MP4s remain unchanged.
 
-The validation workflow records Time Profiler twice on the same onboarding route: once without video capture and once with simultaneous, original simctl recording. Each callback gap includes monotonic start/end times and a Points of Interest event. The trace, exported CPU samples, signposts, timing logs, and unedited MP4 are retained together. Inclusive CPU sample weights overlap; they must not be added as wall-time measurements.
+## Latest verified evidence — 2026-11-10, build 8a73594
 
-Diagnostic commit `741e1cd` / run `42756079348` passed 103 unit tests and four journey/accessibility/offline UI tests. Its standalone first launch improved the measured main callback maximum from the prior 166.424 ms to 33.410 ms, but the encoded video omitted the erasure stage and retained a 271.667 ms reveal gap. The cadence and visual gates correctly failed. In the simultaneous Instruments capture, a 50.648 ms callback gap contained 30 ms of sampled main-thread work including SwiftUI graph/layout updates; another 82.431 ms gap contained only 13 ms of sampled main CPU work, so its entire duration cannot be attributed to a specific app stack. Initial material/default animations were still sampled while covered. The final source stages the covered destination without implicit insertion animations in response to this evidence. This diagnostic run is not evidence that the final source passed or reached stable presented 60 FPS.
+Run: https://github.com/633uae-collab/barq-football-ios/actions/runs/42783787296
 
-## Latest native validation — 2026-11-10, source ecf07fd
+**Not complete or visually accepted. Keep draft; do not merge.** Recorded source is `8a7359474bcf84a2817346044e0d90eaf0f09a31`; app source last changed at `6e9d05d`. Xcode 26.3 / iOS 26.2 / iPhone 17 Pro, standard Apple Silicon macOS 15.8.2, production Release with testability disabled. Unit-test compilation separately enables testability. Actual native videos and traces are in the run artifacts, with unchanged MP4 hashes in the delivered provenance manifest.
 
-Run: https://github.com/633uae-collab/barq-football-ios/actions/runs/42760123277
+| Standalone capture | Kernel process birth → completion | App init → completion | Active motion | Conservative callbacks / active second | Max motion callback gap |
+|---|---:|---:|---:|---:|---:|
+| First install → clubs | 3.708 s | 2.321 s | 1.271 s | 59.02 Hz | 33.321 ms |
+| Actual reopen → Home | 3.082 s | 2.179 s | 1.147 s | 58.39 Hz | 33.620 ms |
+| repeat-1 | 3.297 s | 2.368 s | 1.150 s | 59.14 Hz | 33.413 ms |
+| repeat-2 | 3.157 s | 2.171 s | 1.150 s | 59.14 Hz | 33.389 ms |
+| repeat-3 | 3.149 s | 2.221 s | 1.150 s | 58.26 Hz | 33.469 ms |
+| repeat-4 | 3.610 s | 2.525 s | 1.150 s | 59.99 Hz | 18.391 ms |
+| repeat-5 | 3.294 s | 2.260 s | 1.149 s | 59.16 Hz | 32.785 ms |
+| System Reduce Motion | 2.589 s | 1.529 s | 0.316 s | 56.89 Hz | 33.254 ms |
 
-Xcode 26.3, iPhone 17 Pro / iOS 26.2 (23C54), Release, standard Intel Mac mini. All 105 unit tests, four launch UI tests, and the separate real onboarding setup passed. Five distinct processes completed. Background resume and covered accessibility passed. **The cadence and encoded phase-visibility gates failed; this is not visually accepted and must not be merged.**
+Simulator boot was 103.798 s and is excluded. Nominal premium timelines were 1.814–1.817 s including credited static hold. Callback Hz is **not presented FPS**. Completion means the app callback, not proven final-frame presentation. Unit tests: 106 passed. Launch UI tests: 3/4 passed; background resume and covered accessibility passed. The offline onboarding completion test remained on the competition picker after the start action and failed its 20 s Home assertion. The separate interrupted-onboarding/setup journey passed. This failure is retained, not bypassed or reclassified as passing.
 
-| Standalone capture | Kernel process birth to completion | App init to completion | Active motion | Conservative callback count / motion second | p95 callback gap | Max callback gap |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| First install | 8.053 s | 4.749 s | 1.144 s | 53.32 Hz | 28.257 ms | 63.031 ms |
-| Actual reopen | 5.645 s | 3.848 s | 1.149 s | 55.72 Hz | 24.305 ms | 71.859 ms |
-| Restart 1 | 5.281 s | 3.596 s | 1.148 s | 57.50 Hz | 24.767 ms | 35.032 ms |
-| Restart 2 | 4.954 s | 3.452 s | 1.150 s | 55.66 Hz | 26.440 ms | 52.080 ms |
-| Restart 3 | 5.630 s | 3.972 s | 1.150 s | 58.26 Hz | 20.351 ms | 32.944 ms |
-| Restart 4 | 5.481 s | 3.750 s | 1.147 s | 51.43 Hz | 29.456 ms | 130.570 ms |
-| Restart 5 | 6.314 s | 4.562 s | 1.150 s | 58.26 Hz | 26.341 ms | 33.487 ms |
-| System Reduce Motion | 6.994 s | 3.792 s | 0.306 s | 48.95 Hz | 32.751 ms | 39.610 ms |
+Cadence and encoded phase gates failed without changing thresholds. UI automation reached a 118.787 ms motion callback gap. Standalone first-launch MP4 has three partial-erasure frames, no recorded wide-disk stage, a minimum visible full-mark hold of 1.475 s versus the reference's 0.667 s, and a 128.333 ms encoded interval after erasure starts. Actual reopen has ten partial frames (including similar states), a 1.205 s minimum hold, and a 121.667 ms encoded interval. Five restart partial-frame counts are 6/6/10/4/4; after-erasure-start reveal-region intervals are 85/71.666/73.333/98.333/68.333 ms. Restart four also has a 433.333 ms interval from the last full mark to the first partial mark, which includes static-to-motion onset and must not all be assigned to active motion.
 
-The separately measured simulator boot took 273.016 s; none of that interval is included above. These are callback/completion measurements, not displayed FPS. UI-automation recordings are separate: their largest motion callback gap was 780.677 ms and one nominal timeline reached 2.130 s. The full failing timing report is retained rather than selecting only the standalone clips.
+Original simctl recordings contain backward timestamp jumps, outside the reviewed launch segment for first/reopen/five, and within the static hold for the separate HEVC clip. No video was retimed to conceal this. Cross-jump durations are invalid. HEVC preserves eight partial-erasure frames with a 65 ms interval. Independent ScreenCaptureKit window recording has no backward timestamps, six partial-erasure frames, a 3.268 s full-mark hold, and a 105 ms reveal-region interval, despite a 33.286 ms native callback maximum. Thus simctl encoding alone is not an established explanation. No ≥250 ms near-black viewport interval was detected; this is not a smoothness certificate.
 
-Visual review of the original cold clip found only two partial erasure states and a 240 ms encoded gap around reveal. Its full mark persisted for at least 6.105 s including OS startup/preparation, versus the reference's roughly 0.667 s hold. The reopen had four partial erasure states and a 125 ms reveal-region gap; the five restarts had 7/7/7/6/4 partial states and maximum reveal-region encoded gaps of 296.667/188.333/250.000/170.000/115.000 ms. Encoded gaps are not display-link gaps and include the sampled reveal/settling window. The original files remain uncut and unretimed.
+Warm Home cards, available team badges and the player photo are visible beneath the contracting cover. Absent/expired snapshots and absent cached images still produce placeholders followed by real network content. No fabricated scores or network dependency was added. The logo center measured (602.5,1310.5) against screen center (603,1311), and visible height 204 px against 204.65 px from the supplied screenshot ratio; the small difference is within threshold/antialias/compression limits.
 
-Home's cached cards and available images were present under the contracting cover on the actual reopen and all five restarts. The preliminary opening in the reopen clip had no valid snapshot and showed redacted loading cards, then real data. Some team logos still arrived after reveal. Thus full real content at every cache miss is **not** solved; the animation remains independent of the network.
+### Instruments and remaining diagnostic limit
 
-The latest simultaneous Time Profiler recording captured an 83.393 ms callback gap with 64 ms of sampled main-thread CPU work, including 56 ms of inclusive SwiftUI graph/layout work (`GraphHost.flushTransactions`, `ViewGraphRootValueUpdater`, `AG::Subgraph::update`). Another 66.474 ms gap contained only 8 ms of sampled main CPU. The plain trace's maximum was 34.343 ms. Destination preparation used 756 ms sampled main CPU over 1.685 s in the recorded trace. Disabling covered insertion animations did not eliminate all graph/material work. These samples identify real overlapping work but do not prove the sole cause of the earlier 166 ms gap or all unobserved time. Animation Hitches explicitly reports that the simulator platform is unsupported; presented 60 FPS is unverified.
+Both Time Profiler runs cover preparation and motion on this build. Without recording, an 83.031 ms callback gap contains 36 ms sampled main CPU, including 30 ms inclusive SwiftUI graph/layout. With simultaneous original video, a 61.760 ms gap contains 37 ms sampled main CPU, including 26 ms graph/layout. Recorded destination preparation lasts 1.499 s with 604 ms sampled CPU (513 ms inclusive graph/layout). Active motion contains 103 ms sampled CPU, including 66 ms graph/layout and 27 ms material/animation. Inclusive categories overlap. These are real overlapping stacks, not proof of the sole cause of the old 166 ms gap or all unobserved time.
 
-The initial Apple Silicon ref update was rejected over possible compute cost. Subsequent repository metadata confirmed `private=false`, `visibility=public`; GitHub's official runner reference confirms standard `macos-15` is free for public repositories. With that new evidence, the update succeeded and unchanged-app comparison run 42769353643 started. No paid larger runner or billing setting was enabled. Main and the other developer's API/Groq files remain untouched.
-
-
-## Follow-up under native validation
-
-- Destination readiness now observes UIKit's `afterCATransactionCommit` phase through `UIUpdateLink`, rather than treating a display-link callback that occurs before commit as proof of a completed layout commit.
-- Tracks are constructed before starting the animation clock and submitted in `beforeCATransactionCommit`. The measured reference timeline, original mark, and all phase durations remain unchanged. `TRACKS setupSeconds` and `COMMIT submissionToCommit` expose preparation and commit cost separately; neither is removed from full startup measurement. No forced transaction flush is used.
-- The local image plan follows actual favorites/upcoming/important fixture order instead of the API response prefix, and includes player team badges. Decoded images enter the first destination body evaluation via an immutable environment value; cached logos no longer trigger one state update per image after layout.
-- Player photos use that same launch image cache and publish cache misses only after the entrance. Their crop, size, placeholder and surrounding card are unchanged. Existing standard network refresh and native Liquid Glass remain intact. An empty/expired local data or image cache still cannot supply remote content while offline; it does not delay the entrance.
-- These changes require fresh native compilation, recordings, cadence/visual review and profiling. They are not accepted based on source inspection or unit tests.
-
-UIKit documentation: https://developer.apple.com/documentation/uikit/uiupdatelink and https://developer.apple.com/documentation/uikit/uiupdateactionphase . Free standard public-runner policy: https://docs.github.com/en/actions/reference/runners/github-hosted-runners .
+Animation Hitches explicitly reports `Hitches is not supported on this platform`. Intel/Apple Silicon, iOS 26.2/26.5, production Release, native H264/HEVC and independent window capture have been examined. Stable presented 60 FPS is still unverified. No interactive Mac or physical iPhone is connected to this session for render-server/GPU frame correlation and direct reproduction of the offline start-action failure. That is the remaining validation access needed; no paid runner/service was enabled. The refinement file audit against PR #7 has zero overlap, and API/Groq/analyst source files were not changed.
