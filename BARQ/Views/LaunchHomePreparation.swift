@@ -65,10 +65,23 @@ actor LaunchHomeCache {
     }
     func prepareCachedImages(_ addresses: [String]) -> [String: UIImage] {
         var prepared: [String: UIImage] = [:]
-        var diskHits = 0
+        var diskHits = 0, bundledHits = 0
+        // Original provider PNGs for the six identities already bundled by
+        // ClubDirectory. Fresh installation can reveal their real logos even
+        // without a prior disk cache or any internet connection.
+        let bundled = Dictionary(uniqueKeysWithValues: [40, 50, 33, 42, 49, 85].map {
+            ("https://media.api-sports.io/football/teams/\($0).png", "LaunchClub\($0)")
+        })
         for address in addresses {
             if let image = ImageStore.shared.mem.object(forKey: address as NSString) {
                 prepared[address] = image
+                continue
+            }
+            if let name = bundled[address], let image = UIImage(named: name) {
+                let decoded = image.preparingForDisplay() ?? image
+                prepared[address] = decoded
+                ImageStore.shared.mem.setObject(decoded, forKey: address as NSString)
+                bundledHits += 1
                 continue
             }
             guard let url = URL(string: address) else { continue }
@@ -84,7 +97,7 @@ actor LaunchHomeCache {
             ImageStore.shared.mem.setObject(decoded, forKey: address as NSString)
             prepared[address] = decoded
         }
-        SplashDiag.log.notice("IMAGES requested=\(addresses.count, privacy: .public) prepared=\(prepared.count, privacy: .public) durableHits=\(diskHits, privacy: .public)")
+        SplashDiag.log.notice("IMAGES requested=\(addresses.count, privacy: .public) prepared=\(prepared.count, privacy: .public) durableHits=\(diskHits, privacy: .public) bundledHits=\(bundledHits, privacy: .public)")
         return prepared
     }
 }

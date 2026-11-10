@@ -45,4 +45,12 @@ final class LaunchImageCacheTests: XCTestCase {
         try cache.save(Data(repeating: 2, count: 5), for: "logo", now: now)
         XCTAssertEqual(cache.load("logo", now: now), Data([1]))
     }
+    func testFreshInstallCanPrepareEveryBundledClubLogoWithoutNetwork() async {
+        let addresses = ClubDirectory.bundled.compactMap(\.logo)
+        let images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
+        XCTAssertEqual(images.count, addresses.count)
+        for address in addresses {
+            XCTAssertGreaterThan(images[address]?.size.width ?? 0, 0)
+        }
+    }
 }

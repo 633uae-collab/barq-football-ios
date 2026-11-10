@@ -1,0 +1,62 @@
+[
+  {
+    "id": 40,
+    "source": "https://media.api-sports.io/football/teams/40.png",
+    "bytes": 47104,
+    "pixels": [
+      78,
+      150
+    ],
+    "sha256": "c3b13021c1abfb8231f1feb277501dfcf6649047e84e16c98e4b50cd77350330"
+  },
+  {
+    "id": 50,
+    "source": "https://media.api-sports.io/football/teams/50.png",
+    "bytes": 11120,
+    "pixels": [
+      150,
+      150
+    ],
+    "sha256": "090f6609ab46ca56313d8ddf62ef2185fed4846b2271b77f5f5f95af5cda24dc"
+  },
+  {
+    "id": 33,
+    "source": "https://media.api-sports.io/football/teams/33.png",
+    "bytes": 90381,
+    "pixels": [
+      150,
+      150
+    ],
+    "sha256": "6dff7e1a3d7d7a3748edf8ca55fefa00aa169a47f1933b62eb42d2f9cfcf3b2e"
+  },
+  {
+    "id": 42,
+    "source": "https://media.api-sports.io/football/teams/42.png",
+    "bytes": 18835,
+    "pixels": [
+      150,
+      150
+    ],
+    "sha256": "ba273b85e8fe0043c3dad252bf5f782e67e1f2b43c8339f6393e4020cb4b7123"
+  },
+  {
+    "id": 49,
+    "source": "https://media.api-sports.io/football/teams/49.png",
+    "bytes": 28061,
+    "pixels": [
+      150,
+      150
+    ],
+    "sha256": "a4353df0d45673ae0685be75ad1345ad25b4786d92775932761d45bd21175e47"
+  },
+  {
+    "id": 85,
+    "source": "https://media.api-sports.io/football/teams/85.png",
+    "bytes": 29962,
+    "pixels": [
+      150,
+      150
+    ],
+    "sha256": "ca6329d951be61f37f8e1267de5845600a9640d9a354e018caa32222408e6333"
+  }
+]
