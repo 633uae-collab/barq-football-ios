@@ -131,6 +131,7 @@ enum Onboarding {
 final class SplashClock {
     nonisolated(unsafe) static var nextReady = false
     nonisolated(unsafe) static var sawFirstFrame = false
+    var onFirstFrame: (() -> Void)?
     private var loggedFirstVisualFrame = false
     private var firstVisualTime: TimeInterval?
     private(set) var timelineOffset: Double = 0
@@ -165,6 +166,9 @@ final class SplashClock {
             loggedFirstVisualFrame = true
             firstVisualTime = now
             Self.sawFirstFrame = true
+            let callback = onFirstFrame
+            onFirstFrame = nil
+            callback?()
             SplashDiag.log.notice("FIRST splash frame +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         }
         // Prewarm the destination before the fixed hold-and-fade timeline starts.
@@ -530,74 +534,44 @@ struct PickTile: View, Equatable {
     }
 }
 
-/// Wraps the app: splash on every launch, onboarding on first launch only, then the unchanged app.
+/// One native launch container per scene lifetime; returning from the background
+/// retains the destination and cannot recreate the entrance.
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @Environment(AppStore.self) private var store
-    @State private var destinationMounted = false
-    @State private var splash = true
+    @Environment(\.colorScheme) private var colorScheme
     @State private var onboarded = Onboarding.isDone()
     @State private var firstLaunch = !Onboarding.isDone()
     var body: some View {
-        ZStack {
-            Color("RiderLaunchBackground").ignoresSafeArea()
-            // Build and lay out the destination before the first animated splash frame.
-            // iOS keeps the matching static launch screen visible while this initial work
-            // completes, and LaunchGate still prevents network work until the reveal ends.
-            Group {
-                if destinationMounted {
-                if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
-                }
+        LaunchContainer(firstLaunch: firstLaunch,
+                        revision: "\(onboarded)|\(store.lang)|\(colorScheme)",
+                        prepare: prepareDestination) {
+            if onboarded { content() }
+            else {
+                OnboardingView {
+                    withAnimation(.easeInOut(duration: 0.5)) { onboarded = true }
+                }.transition(.opacity)
             }
-            .environment(\.launchPreparedImages, LaunchHomePreparation.images)
-            .transaction { transaction in
-                // Instruments captured initial SwiftUI/material animations still
-                // updating the covered destination during Rider erasure. Stage
-                // its final native appearance without an insertion animation;
-                // restore ordinary page animations as soon as launch completes.
-                if splash {
-                    transaction.animation = nil
-                    transaction.disablesAnimations = true
-                }
+        }
+        .ignoresSafeArea()
+    }
+    @MainActor private func prepareDestination() async {
+        if onboarded {
+            LaunchHomePreparation.snapshot = await LaunchHomeCache.shared.restore(scope: LaunchHomePreparation.scope)
+            if let snapshot = LaunchHomePreparation.snapshot {
+                let favorites = HomeFeed.Favorites(matches: Set(store.savedMatches),
+                    teams: Set(store.favTeams.map(\.id)), leagues: Set(store.favLeagues))
+                let addresses = snapshot.visibleImageAddresses(favorites: favorites, now: Date())
+                LaunchHomePreparation.images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
             }
-            .background {
-                if destinationMounted { LaunchDestinationReadiness() }
-            }
-            // Prewarm layout without exposing controls beneath the launch cover.
-            // VoiceOver and touch must enter the destination only after reveal.
-            .accessibilityHidden(splash)
-            .allowsHitTesting(!splash)
-            if splash {
-                SplashView(firstLaunch: firstLaunch) {
-                    splash = false
-                    // Yield a frame so the uncovered interface appears before starting data work.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(50))
-                        LaunchGate.open = true
-                    }
-                }.zIndex(1)
-                .task {
-                    // Commit the lightweight original F first, then prewarm the
-                    // destination while the matching mark remains visible.
-                    while !SplashClock.sawFirstFrame && !Task.isCancelled {
-                        try? await Task.sleep(for: .milliseconds(8))
-                    }
-                    guard !Task.isCancelled else { return }
-                    os_signpost(.begin, log: SplashDiag.points, name: "Rider destination preparation")
-                    if onboarded {
-                        LaunchHomePreparation.snapshot = await LaunchHomeCache.shared.restore(scope: LaunchHomePreparation.scope)
-                        if let snapshot = LaunchHomePreparation.snapshot {
-                            let favorites = HomeFeed.Favorites(matches: Set(store.savedMatches),
-                                teams: Set(store.favTeams.map(\.id)), leagues: Set(store.favLeagues))
-                            let addresses = snapshot.visibleImageAddresses(favorites: favorites, now: Date())
-                            LaunchHomePreparation.images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
-                        }
-                        SplashDiag.log.notice("HOME preparedLocalSnapshot=\(LaunchHomePreparation.snapshot != nil, privacy: .public)")
-                    }
-                    destinationMounted = true
-                }
-            }
+            SplashDiag.log.notice("HOME preparedLocalSnapshot=\(LaunchHomePreparation.snapshot != nil, privacy: .public)")
+        } else {
+            // Reusing locally cached club logos must not enqueue one SwiftUI
+            // state publication per image in the middle of erasure.
+            let draft = Onboarding.loadDraft()
+            let clubs = draft.clubs + ClubDirectory.initial(.standard)
+            let addresses = Array(Set(clubs.compactMap(\.logo)))
+            LaunchHomePreparation.images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
         }
     }
 }
-
