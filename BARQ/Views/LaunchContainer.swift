@@ -76,7 +76,9 @@ final class LaunchContainerController: UIViewController {
 
     func update(revision: String, render: @escaping () -> AnyView, transaction: Transaction) {
         self.render = render
-        guard self.revision != revision else { return }
+        // Forward all subsequent environment changes (accent, Dynamic Type,
+        // accessibility, locale) once the native entrance releases the page.
+        guard released || self.revision != revision else { return }
         self.revision = revision
         guard let destination else { return }
         withTransaction(transaction) { destination.rootView = render() }

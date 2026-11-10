@@ -435,6 +435,8 @@ struct ClubPickStep: View {
             await ImageStore.shared.preload(model.popular.compactMap(\.logo))
         }
         .task(id: "\(q)|\(searchRetry)") {
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
             do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
             await model.search(q)
         }

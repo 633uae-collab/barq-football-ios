@@ -86,7 +86,14 @@ struct RemoteImage: View {
             // Prepared launch pixels participate in the first body evaluation;
             // do not enqueue one @State transaction per cached logo afterwards.
             if prepared[s] != nil { return }
-            if let c = ImageStore.shared.mem.object(forKey: s as NSString) { img = c; return }
+            if let c = ImageStore.shared.mem.object(forKey: s as NSString) {
+                // A prefetch can populate memory after the immutable preparation
+                // map was built. That late cache hit is still a state mutation.
+                if waitForLaunch { await LaunchGate.wait() }
+                guard !Task.isCancelled else { return }
+                img = c
+                return
+            }
             let r = await ImageStore.shared.image(u)
             // Prefetch/decode may finish while the launch cover is animating.
             // Hold publication until reveal so image arrival cannot invalidate
@@ -141,7 +148,12 @@ struct LivePill: View {
         // An endless repeatForever animation keeps the app from ever reporting "idle" to XCUITest
         // (seen in run 41651134723: "App event loop idle notification not received" after opening Matches with live games),
         // so UI-test launches (FOTIQ_UI_TEST=1) show the same dot without the pulse. Users always get the pulse.
-        .onAppear { if ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] != "1" { pulse = true } }
+        .task {
+            guard ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] != "1" else { return }
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
+            pulse = true
+        }
     }
 }
 
@@ -292,3 +304,4 @@ struct FixtureScore: View {
         }.monospacedDigit()
     }
 }
+
