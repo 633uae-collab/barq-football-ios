@@ -6,6 +6,7 @@ final class AnalystAccessibilityUITests: XCTestCase {
     func testRecordedTranscriptAllowsTenBilingualDraftsAndRelaunch() throws {
         continueAfterFailure = false
         let udid = try XCTUnwrap(ProcessInfo.processInfo.environment["SIMULATOR_UDID"])
+        print("FOTIQ_AX_REPLAY actualUDID=\(udid)")
         try (udid + "\n").write(toFile: "/tmp/fotiq-ax-replay-udid.txt", atomically: true, encoding: .utf8)
         let app = XCUIApplication.fotiq()
         app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
@@ -36,7 +37,16 @@ final class AnalystAccessibilityUITests: XCTestCase {
             XCTAssertEqual(answer.label, originalAnswer)
             print("FOTIQ_AX_REPLAY question=\(index + 1) stage=verified utc=\(Date().timeIntervalSince1970)")
             field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: question.count))
-            XCTAssertTrue(["", "اكتب سؤالك عن كرة القدم…"].contains(field.value as? String ?? "unexpected value"))
+            // typeText can return before the last deletion reaches SwiftUI/AX.
+            // Run 066 captured "C" 8 ms before the app logged zero characters.
+            // Wait for the same empty-field condition within the existing 15 s
+            // element budget; do not send another delete or alter the draft.
+            let emptyDraft = NSPredicate { _, _ in
+                guard let value = field.value as? String else { return false }
+                return value.isEmpty || value == field.placeholderValue
+            }
+            let cleared = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: emptyDraft, object: field)], timeout: 15)
+            XCTAssertEqual(cleared, .completed, "Draft must be empty after deletion; AX value: \(String(describing: field.value))")
             XCTAssertFalse(app.buttons["analyst-send"].isEnabled)
         }
         app.terminate()
