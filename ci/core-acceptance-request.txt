@@ -1,1 +1,5 @@
-2026-11-10: Run core functional acceptance after process-boundary tests passed on macOS in run 42791112509 (6/6). Previous functional run 42778470614 exceeded the hard job deadline before evidence upload. New harness checkpoints unit, welcome and conversation evidence and reserves time for collection; no application or UI assertion change. Keep 65+ second spacing, server admission cap, no retries, no recording, no entry tests, no deployment. A quota rejection is a failed/blocked live test, never a reason to restart the service or bypass limits.
+After completed run 42791306277: remove video-only simulator presentation setup from functional acceptance.
+Evidence: bootstatus succeeded; simctl ui appearance dark timed out before any app/test launch.
+Use the boot-only preflight already successful in recorded AX replay 42777159234.
+Preserve all live questions, exact input/reply/source/restoration assertions and UI time limits.
+No recording, entry tests, provider retries, quota bypass, server publication, or concurrent live calls.

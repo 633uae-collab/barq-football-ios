@@ -35,21 +35,21 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_26.3.app
           xcodebuild -version
-      - run: brew install xcodegen ffmpeg && xcodegen generate
-      - name: Pick simulator, enable touch indicators, boot
+      - run: brew install xcodegen && xcodegen generate
+      - name: Boot the functional simulator without video presentation setup
         run: |
           mkdir -p out
-          xcrun simctl list devices available -j > out/devices.json
+          set -o pipefail
+          python3 ci/run-core-command.py 120 xcrun simctl list devices available -j > out/devices.json 2>out/simulator-list.log
           UDID=$(python3 -c 'import json; d=json.load(open("out/devices.json"))["devices"]; print(next(v["udid"] for k,vs in d.items() if k.endswith("iOS-26-2") for v in vs if v["name"] == "iPhone 16 Pro"))')
           uname -m > out/architecture.txt
           printf '%s\n' "$UDID" > out/requested-udid.txt
           echo "UDID=$UDID" >> $GITHUB_ENV
-          defaults write com.apple.iphonesimulator ShowSingleTouches 1
-          defaults write com.apple.iphonesimulator ShowPinches 1
-          python3 ci/run-core-command.py 120 xcrun simctl boot "$UDID" || true
-          python3 ci/run-core-command.py 120 xcrun simctl bootstatus "$UDID" -b
-          python3 ci/run-core-command.py 30 xcrun simctl ui "$UDID" appearance dark
-          open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+          # Match the successful 592df02 AX replay preflight: boot only.
+          # Appearance/touch overlays/Simulator.app belong to the separate video pass.
+          # Run 42791306277 booted successfully but simctl ui timed out before tests.
+          python3 ci/run-core-command.py 120 xcrun simctl boot "$UDID" 2>&1 | tee out/simulator-boot.log || true
+          python3 ci/run-core-command.py 120 xcrun simctl bootstatus "$UDID" -b 2>&1 | tee out/simulator-bootstatus.log
       - name: Core unit tests (entry tests excluded)
         run: |
           set -o pipefail
