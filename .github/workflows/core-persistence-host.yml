@@ -1,0 +1,35 @@
+name: Core persistence on Intel host
+on:
+  push:
+    branches: [codex/core-stability]
+    paths:
+      - .github/workflows/core-persistence-host.yml
+      - ci/core-persistence-host.py
+      - ci/core-host-request.txt
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  persistence:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+      - name: Run original persistence sources and tests without a simulator
+        run: |
+          set -o pipefail
+          mkdir -p out
+          printf '%s\n' "$GITHUB_SHA" > out/head-sha.txt
+          python3 ci/core-persistence-host.py
+          python3 ci/run-core-command.py 600 swift test --package-path out/core-persistence-package 2>&1 | tee out/persistence-host.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-persistence-host-evidence
+          path: |
+            out/head-sha.txt
+            out/persistence-host.log
+            out/source-sha256.json
+          retention-days: 14
