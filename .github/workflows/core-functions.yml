@@ -36,7 +36,12 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.3.app
           xcodebuild -version
       - run: brew install xcodegen && xcodegen generate
-      - name: Start simulator migration before compilation
+      - name: Build UI tests
+        id: ui_build
+        run: |
+          set -o pipefail
+          python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "generic/platform=iOS Simulator" ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
+      - name: Select and boot simulator after compilation
         run: |
           mkdir -p out
           set -o pipefail
@@ -49,17 +54,12 @@ jobs:
           # Appearance/touch overlays/Simulator.app belong to the separate video pass.
           # Run 42791306277 booted successfully but simctl ui timed out before tests.
           python3 ci/run-core-command.py 120 xcrun simctl boot "$UDID" 2>&1 | tee out/simulator-boot.log || true
-      - name: Build UI tests
-        id: ui_build
-        run: |
-          set -o pipefail
-          python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
       - name: Verify simulator readiness after compilation
         id: simulator_ready
         run: |
           set -o pipefail
-          # The prior Intel run exhausted readiness during first-boot migration.
-          # Compile while migration progresses; keep the same readiness deadline.
+          # Build independently of CoreSimulator device discovery.
+          # Keep the same readiness deadline and require success before UI tests.
           python3 ci/run-core-command.py 120 xcrun simctl bootstatus "$UDID" -b 2>&1 | tee out/simulator-bootstatus.log
       - name: Core unit tests (entry tests excluded)
         run: |
