@@ -1,12 +1,6 @@
 name: Launch journey validation and video
 on:
   workflow_dispatch:
-    inputs:
-      runner:
-        description: Standard public macOS runner for native comparison
-        type: choice
-        options: [macos-15-intel, macos-15]
-        default: macos-15-intel
   pull_request:
     branches: [codex/premium-cinematic]
     paths:
@@ -43,9 +37,9 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Standard public Intel pool while the ARM comparison is capacity-queued.
-    # Both pools are free for this public repository; no larger runner is used.
-    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
+    # Compare the identical application against run 42833284555 on Intel.
+    # Both standard public pools are free; no larger runner is used.
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
