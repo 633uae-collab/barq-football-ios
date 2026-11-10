@@ -71,13 +71,18 @@ jobs:
           mkdir -p out
           xcrun simctl spawn "$UDID" log stream --level debug --style compact --predicate 'subsystem == "ae.barq.transport" OR subsystem == "ae.barq.composer"' >out/transport-codes.log 2>&1 &
           TRANSPORT_LOG_PID=$!
+          # Keep diagnostic progress in the hosted job log even if final upload fails.
+          tail -n +1 -F out/transport-codes.log &
+          COMPOSER_TAIL_PID=$!
+          python3 -u ci/core-host-health.py out/host-health.jsonl &
+          HOST_HEALTH_PID=$!
           # Recording starts only after the test confirms the analyst is ready.
           # The test supplies its real simulator UDID and stops capture before relaunch.
           mkdir -p /tmp/fotiq-core-recording
           touch /tmp/fotiq-core-recording/enabled
           python3 ci/record-core.py out/video &
           RECORDING_PID=$!
-          stop_diagnostics() { kill "$TRANSPORT_LOG_PID" 2>/dev/null || true; kill "$RECORDING_PID" 2>/dev/null || true; wait "$RECORDING_PID" 2>/dev/null || true; }
+          stop_diagnostics() { kill "$HOST_HEALTH_PID" "$COMPOSER_TAIL_PID" 2>/dev/null || true; kill "$TRANSPORT_LOG_PID" 2>/dev/null || true; kill "$RECORDING_PID" 2>/dev/null || true; wait "$RECORDING_PID" 2>/dev/null || true; }
           trap stop_diagnostics EXIT
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testRealBilingualFollowUpsAndConversationRestoration -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
       - name: Real bilingual score association and saved match
