@@ -127,7 +127,7 @@ actor API {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try JSONEncoder().encode(Request(question: question, context: context, history: history))
         let data: Data, response: URLResponse
-        do { (data, response) = try await analystSession.data(for: request) }
+        do { (data, response) = try await analystSession.data(for: request, delegate: AnalystTransportMetrics()) }
         catch {
             // Diagnostic codes only: never log URL, question, headers, userInfo,
             // certificate contents, answer or credentials. TLS validation stays on.
@@ -186,6 +186,22 @@ actor API {
             if status == 204 { return }
             struct Ack: Decodable { var ok: Bool }
             guard let ack = try? JSONDecoder().decode(Ack.self, from: data), ack.ok else { throw APIError.badResponse }
+        }
+    }
+}
+
+
+/// Phase timings only. Never log endpoints, payloads, headers, addresses or certificates.
+private final class AnalystTransportMetrics: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        let log = Logger(subsystem: "ae.barq.transport", category: "analyst")
+        log.info("POST metrics totalMs=\(Int(metrics.taskInterval.duration * 1000), privacy: .public) transactions=\(metrics.transactionMetrics.count, privacy: .public)")
+        for phase in metrics.transactionMetrics {
+            func milliseconds(_ start: Date?, _ end: Date?) -> Int {
+                guard let start, let end else { return -1 }
+                return Int(end.timeIntervalSince(start) * 1000)
+            }
+            log.info("POST phases dnsMs=\(milliseconds(phase.domainLookupStartDate, phase.domainLookupEndDate), privacy: .public) connectMs=\(milliseconds(phase.connectStartDate, phase.connectEndDate), privacy: .public) tlsMs=\(milliseconds(phase.secureConnectionStartDate, phase.secureConnectionEndDate), privacy: .public) firstByteMs=\(milliseconds(phase.requestEndDate, phase.responseStartDate), privacy: .public) requestStarted=\(phase.requestStartDate != nil, privacy: .public) responseStarted=\(phase.responseStartDate != nil, privacy: .public) reusedConnection=\(phase.isReusedConnection, privacy: .public)")
         }
     }
 }
