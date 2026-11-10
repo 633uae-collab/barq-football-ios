@@ -142,7 +142,11 @@ struct AnalystChatView: View {
                     .accessibilityLabel(Text(verbatim: en ? "Football question" : "سؤال عن كرة القدم"))
                     .onChange(of: question) { _, value in
                         composerLog.info("text changed characters=\(value.count, privacy: .public)")
-                        if value.count > 1000 { question = String(value.prefix(1000)) }
+                        // Match the server's JavaScript string.length limit without splitting
+                        // Arabic combining marks or emoji sequences.
+                        if value.utf16.count > 1000 {
+                            question = AnalystConversation.boundedContext(value, utf16Limit: 1000)
+                        }
                     }
                 Button { Task { await send() } } label: { Image(systemName: "arrow.up").font(.headline).frame(width: 28, height: 28) }
                     .buttonStyle(.glassProminent).accessibilityLabel(Text(verbatim: en ? "Send" : "إرسال"))
