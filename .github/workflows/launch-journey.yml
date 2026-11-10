@@ -62,7 +62,7 @@ jobs:
         run: |
           set -o pipefail
           # Catch source errors without first paying the simulator migration cost.
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination 'generic/platform=iOS Simulator' -arch "$(uname -m)" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee out/compile-unit.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination 'generic/platform=iOS Simulator' ARCHS="$(uname -m)" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee out/compile-unit.log
       - name: Pick simulator, enable touch indicators, boot
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "
