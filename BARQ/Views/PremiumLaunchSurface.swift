@@ -168,13 +168,15 @@ final class PremiumLaunchLayer: UIView {
         display.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         display.add(to: .main, forMode: .common); link = display
         let updates = UIUpdateLink(view: self)
-        updates.requiresContinuousUpdates = true
         updates.addAction(to: .beforeCATransactionCommit) { [weak self] _, _ in self?.submitIfReady() }
         updates.addAction(to: .afterCATransactionCommit) { [weak self] update, _ in
             guard let self, let submittedAt = self.submittedAt else { return }
             SplashDiag.log.notice("COMMIT submissionToCommit=\(CACurrentMediaTime() - submittedAt, privacy: .public)")
             update.isEnabled = false
         }
+        // UIKit requires an associated phase action before continuous updates.
+        updates.requiresContinuousUpdates = true
+        updates.isEnabled = true
         commitLink = updates
     }
     func stop() {
@@ -294,8 +296,9 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
             super.layoutSubviews()
             guard !done, link == nil, window != nil else { return }
             let updates = UIUpdateLink(view: self)
-            updates.requiresContinuousUpdates = true
             updates.addAction(to: .afterCATransactionCommit) { [weak self] _, _ in self?.destinationDidCommit() }
+            updates.requiresContinuousUpdates = true
+            updates.isEnabled = true
             link = updates
         }
         func stop() { link?.isEnabled = false; link = nil }
