@@ -37,10 +37,11 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Validate the direct live destination on standard Apple Silicon after Intel evidence.
+    # Validate the final prefetch boundary; the same app source also has an ARM run.
     # Standard public runner only; no larger or paid service.
-    runs-on: macos-26
-    timeout-minutes: 60
+    runs-on: macos-15-intel
+    # Retain time for raw profiling after native tests; app timing gates are unchanged.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - name: Select the verified Xcode 26.3 profiler
