@@ -18,9 +18,9 @@ jobs:
     concurrency:
       group: fotiq-live-provider-review
       cancel-in-progress: false
-    # Run the live flow on the same standard Apple Silicon environment as
-    # the bounded AX replay; Intel failed before app launch in run 42772782700.
-    runs-on: macos-15
+    # Standard Intel runner: free for this public repository; ARM capacity is unavailable.
+    # Keep the existing boot bounds, acceptance assertions and entry-test exclusions.
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
