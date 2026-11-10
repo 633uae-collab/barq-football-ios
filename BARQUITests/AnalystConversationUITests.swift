@@ -56,7 +56,21 @@ final class AnalystConversationUITests: XCTestCase {
         defer { try? recording("stop") }
         var report = ""
         var lastVerifiedReply = ""
-        let questions = ["حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة", "For the same match, explain the starting lineups and substitutions in English. Use updated data.", "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم", "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق"]
+        var receivedTurns: [(question: String, answer: String)] = []
+        // Five Arabic and five English questions. Preserve provider spacing.
+        let questions = [
+            "حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة",
+            "For the same match, explain the starting lineups and substitutions in English. Use updated data.",
+            "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم",
+            "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق",
+            "Compare Barcelona and Real Madrid in La Liga 2025/26. Keep each team's statistics separate.",
+            "قارن برشلونة وريال مدريد في الدوري الإسباني موسم ٢٠٢٥/٢٦، ولا تعرض أرقاماً غير متحققة",
+            "Analyze a live match now. Clearly distinguish confirmed data from unavailable statistics.",
+            "للمباراة نفسها، وضّح التشكيلة والتبديلات المتحققة فقط",
+            "Compare Real Madrid and Barcelona in La Liga 2025/26. State the competition and season.",
+            "When was FC Barcelona founded? Give the verified foundation date and source."
+        ]
+        XCTAssertEqual(questions.count, 10)
         for (index, question) in questions.enumerated() {
             let field = app.textFields["analyst-question"]
             XCTAssertTrue(field.waitForExistence(timeout: 15)); field.tap(); field.typeText(question)
@@ -74,8 +88,11 @@ final class AnalystConversationUITests: XCTestCase {
             try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
             try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("0\(index + 1)-conversation.png"))
             XCTAssertEqual(result, .completed); XCTAssertTrue(answer.exists, response); XCTAssertFalse(error.exists, response)
-            if answer.exists { lastVerifiedReply = response }
-            if index == 3 {
+            if answer.exists {
+                lastVerifiedReply = response
+                receivedTurns.append((question, response))
+            }
+            if index == 3 || index == 9 {
                 let source = element("analyst-source-link")
                 XCTAssertTrue(source.waitForExistence(timeout: 10), "Historical answer must expose its real source")
                 XCTAssertEqual(source.label, "Wikidata")
@@ -86,6 +103,7 @@ final class AnalystConversationUITests: XCTestCase {
             }
             if index < questions.count - 1 { sleep(66) }
         }
+        XCTAssertEqual(receivedTurns.count, 10, "Every question requires an actual answer before restoration")
         try recording("stop")
         app.terminate(); app.launch()
         XCTAssertTrue(app.buttons["analyst-history"].waitForExistence(timeout: 30))
@@ -100,6 +118,20 @@ final class AnalystConversationUITests: XCTestCase {
         XCTAssertTrue(element("analyst-source-link").waitForExistence(timeout: 10), "Source must survive conversation restoration")
         XCTAssertEqual(element("analyst-source-link").value as? String, "https://www.wikidata.org/wiki/Q7156")
         try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("06-restored.png"))
+        // Verify every saved question and exact received answer, not only the last.
+        // Walk backwards because the restored transcript opens at its bottom.
+        for (offset, turn) in receivedTurns.reversed().enumerated() {
+            let answerText = app.staticTexts.matching(NSPredicate(format: "label == %@", turn.answer)).firstMatch
+            let questionText = app.staticTexts.matching(NSPredicate(format: "label == %@", turn.question)).firstMatch
+            var scrolls = 0
+            while !(answerText.exists && questionText.exists) && scrolls < 12 {
+                app.swipeDown()
+                scrolls += 1
+            }
+            XCTAssertTrue(answerText.exists, "Saved answer \(10 - offset) must match the received text")
+            XCTAssertTrue(questionText.exists, "Saved question \(10 - offset) must survive termination")
+            try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("restored-turn-\(10 - offset).png"))
+        }
         app.buttons["analyst-new-chat"].tap()
         XCTAssertTrue(app.staticTexts["analyst-welcome"].waitForExistence(timeout: 10))
         app.buttons["analyst-history"].tap()
