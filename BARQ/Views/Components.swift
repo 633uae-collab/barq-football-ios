@@ -50,6 +50,12 @@ final class ImageStore {
                        (response as? HTTPURLResponse)?.statusCode == 200,
                        let image = UIImage(data: data) {
                         let decoded = image.preparingForDisplay() ?? image
+                        let control = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Cache-Control") ?? ""
+                        if !control.lowercased().contains("no-store") {
+                            // Finish the bounded local write before publication,
+                            // so an immediate full reopen can prepare this image.
+                            await LaunchHomeCache.shared.saveImage(data, address: url.absoluteString)
+                        }
                         mem.setObject(decoded, forKey: key)
                         return decoded
                     }

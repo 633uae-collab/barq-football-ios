@@ -40,6 +40,12 @@ struct LaunchHomeSnapshot: Codable {
 
 actor LaunchHomeCache {
     static let shared = LaunchHomeCache()
+    private let imageDisk = LaunchImageDiskCache(directory: FileManager.default
+        .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("rider-images-v1", isDirectory: true))
+    func saveImage(_ data: Data, address: String) {
+        try? imageDisk.save(data, for: address)
+    }
     private var location: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("rider-home-v1.json")
@@ -59,6 +65,7 @@ actor LaunchHomeCache {
     }
     func prepareCachedImages(_ addresses: [String]) -> [String: UIImage] {
         var prepared: [String: UIImage] = [:]
+        var diskHits = 0
         for address in addresses {
             if let image = ImageStore.shared.mem.object(forKey: address as NSString) {
                 prepared[address] = image
@@ -70,11 +77,14 @@ actor LaunchHomeCache {
             // Both lookups are disk/memory only; neither can start a network request.
             let response = ImageStore.shared.session.configuration.urlCache?.cachedResponse(for: request)
                 ?? URLCache.shared.cachedResponse(for: request)
-            guard let response, let image = UIImage(data: response.data) else { continue }
+            let durableData = imageDisk.load(address)
+            guard let data = durableData ?? response?.data, let image = UIImage(data: data) else { continue }
+            if durableData != nil { diskHits += 1 }
             let decoded = image.preparingForDisplay() ?? image
             ImageStore.shared.mem.setObject(decoded, forKey: address as NSString)
             prepared[address] = decoded
         }
+        SplashDiag.log.notice("IMAGES requested=\(addresses.count, privacy: .public) prepared=\(prepared.count, privacy: .public) durableHits=\(diskHits, privacy: .public)")
         return prepared
     }
 }
@@ -143,3 +153,4 @@ struct LaunchHomeLoadingSection: View {
         .accessibilityIdentifier("launch-home-placeholder-" + key)
     }
 }
+
