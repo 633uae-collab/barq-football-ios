@@ -37,15 +37,20 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Same app, free standard Apple Silicon pool on macOS 26. Preserve macOS 15
-    # evidence separately; no paid larger runner or app retiming is involved.
-    runs-on: macos-26
+    # Standard public runner: Xcode 26.3 provided usable simulator CPU traces.
+    # Keep the macOS 26 / Xcode 26.6 comparison as separate evidence.
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 26
+      - name: Select the verified Xcode 26.3 profiler
         run: |
-          X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"; xcodebuild -version
+          test -d /Applications/Xcode_26.3.app
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          mkdir -p out
+          xcodebuild -version | tee out/xcode-version.txt
+          sw_vers > out/host-version.txt
+          xcrun simctl list devices available -j > out/simulator-devices.json
       - run: brew install xcodegen ffmpeg && xcodegen generate
       - name: Build host-side process birth measurement
         run: mkdir -p out && clang -O2 ci/process-birth.c -o out/process-birth
@@ -78,7 +83,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
+          # UI automation does not import the app's internal symbols. Rebuild
+          # the recorded application with production Release testability OFF.
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
       - name: Verify simulator resource signature before launch
         run: |
           # iOS 26 SplashBoard rejected unsealed launch resources with -67056
@@ -187,6 +194,7 @@ jobs:
         run: |
           mkdir -p out/trace
           APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
+          APP=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$APP")
           for TEMPLATE in 'Time Profiler' 'Animation Hitches'; do
             NAME=$(echo "$TEMPLATE" | tr -d ' ')
             xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true

@@ -2,6 +2,7 @@
 set -euo pipefail
 mkdir -p out/trace
 APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
+APP=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$APP")
 for KIND in plain recorded; do
   xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
   xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > "out/trace/$KIND-timing.log" 2>&1 &
