@@ -37,9 +37,9 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Cross-check the same app on the standard Apple Silicon pool. The Intel
-    # run remains evidence; no paid larger runner or app retiming is involved.
-    runs-on: macos-15
+    # Same app, free standard Apple Silicon pool on macOS 26. Preserve macOS 15
+    # evidence separately; no paid larger runner or app retiming is involved.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -170,6 +170,11 @@ jobs:
         timeout-minutes: 4
         continue-on-error: true
         run: bash ci/record-window-launch.sh
+      - name: Independently record a real reopen with native HEVC
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        timeout-minutes: 3
+        continue-on-error: true
+        run: bash ci/record-codec-launch.sh
       - name: Correlate Instruments stacks with simultaneous original recording
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         timeout-minutes: 6
