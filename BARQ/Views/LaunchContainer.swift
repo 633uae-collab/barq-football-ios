@@ -76,9 +76,10 @@ final class LaunchContainerController: UIViewController {
 
     func update(revision: String, render: @escaping () -> AnyView, transaction: Transaction) {
         self.render = render
-        // Forward all subsequent environment changes (accent, Dynamic Type,
-        // accessibility, locale) once the native entrance releases the page.
-        guard released || self.revision != revision else { return }
+        // Forward environment changes even while covered: in particular the
+        // initial inactive -> active scene change must reach Home's refresh and
+        // visibility rules. The native animation does not publish SwiftUI state
+        // every frame, and finishing it does not call this update method.
         self.revision = revision
         guard let destination else { return }
         withTransaction(transaction) { destination.rootView = render() }
