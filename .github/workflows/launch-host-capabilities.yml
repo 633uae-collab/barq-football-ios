@@ -1,0 +1,48 @@
+name: Launch host graphics capabilities
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [codex/premium-cinematic]
+    paths: [.github/workflows/launch-host-capabilities.yml]
+permissions:
+  contents: read
+jobs:
+  graphics-capabilities:
+    runs-on: macos-15-intel
+    timeout-minutes: 8
+    steps:
+      - name: Inspect actual display modes and Metal devices
+        run: |
+          mkdir -p out
+          cat > /tmp/fotiq-display-capabilities.swift <<'SWIFT'
+          import Foundation
+          import CoreGraphics
+          import Metal
+          let display = CGMainDisplayID()
+          func values(_ mode: CGDisplayMode) -> [String: Any] {
+              ["width": mode.width, "height": mode.height, "pixelWidth": mode.pixelWidth,
+               "pixelHeight": mode.pixelHeight, "refreshHz": mode.refreshRate,
+               "usableForDesktop": mode.isUsableForDesktopGUI()]
+          }
+          let modes = (CGDisplayCopyAllDisplayModes(display, nil) as? [CGDisplayMode]) ?? []
+          let devices: [[String: Any]] = MTLCopyAllDevices().map {
+              ["name": $0.name, "lowPower": $0.isLowPower, "unifiedMemory": $0.hasUnifiedMemory,
+               "recommendedWorkingSetBytes": $0.recommendedMaxWorkingSetSize,
+               "supportsMac2": $0.supportsFamily(.mac2),
+               "supportsApple7": $0.supportsFamily(.apple7)]
+          }
+          let report: [String: Any] = [
+              "current": CGDisplayCopyDisplayMode(display).map(values) ?? [:],
+              "availableModes": modes.map(values), "metalDevices": devices,
+              "measurement": "Read-only capabilities; no display settings or app behavior changed"
+          ]
+          let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+          print(String(decoding: data, as: UTF8.self))
+          SWIFT
+          swift /tmp/fotiq-display-capabilities.swift | tee out/display-capabilities.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: launch-host-capabilities
+          path: out/
+          retention-days: 14
