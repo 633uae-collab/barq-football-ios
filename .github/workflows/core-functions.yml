@@ -24,8 +24,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Reserve time for evidence before the hard job limit
+        run: |
+          mkdir -p out
+          printf '%s\n' "$GITHUB_SHA" > out/head-sha.txt
+          python3 -c 'import time; print("FOTIQ_CORE_DEADLINE_EPOCH=" + str(time.time() + 3000))' >> "$GITHUB_ENV"
       - name: Recorder protocol checks
-        run: python3 -m unittest discover -s ci/tests -p 'test_record_core.py'
+        run: python3 -m unittest discover -s ci/tests -p 'test_*.py'
       - name: Select Xcode 26
         run: |
           sudo xcode-select -s /Applications/Xcode_26.3.app
@@ -41,19 +46,30 @@ jobs:
           echo "UDID=$UDID" >> $GITHUB_ENV
           defaults write com.apple.iphonesimulator ShowSingleTouches 1
           defaults write com.apple.iphonesimulator ShowPinches 1
-          xcrun simctl boot "$UDID" || true
-          python3 ci/run-bounded-core.py 120 xcrun simctl bootstatus "$UDID" -b
-          xcrun simctl ui "$UDID" appearance dark
+          python3 ci/run-core-command.py 120 xcrun simctl boot "$UDID" || true
+          python3 ci/run-core-command.py 120 xcrun simctl bootstatus "$UDID" -b
+          python3 ci/run-core-command.py 30 xcrun simctl ui "$UDID" appearance dark
           open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
       - name: Core unit tests (entry tests excluded)
         run: |
           set -o pipefail
-          python3 ci/run-bounded-core.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -skip-testing:BARQTests/OnboardingTests -skip-testing:BARQTests/P0OnboardingTests -skip-testing:BARQTests/LaunchJourneyTests -skip-testing:BARQTests/PremiumExperienceTests/testBrandMarkHasTransparentMatteAndPreservesOriginalColors -skip-testing:BARQTests/PremiumExperienceTests/testLaunchClockUsesElapsedTimeWithoutFrameClamp -skip-testing:BARQTests/PremiumExperienceTests/testLaunchClockDoesNotConsumeTransitionWhileDestinationIsPreparing -skip-testing:BARQTests/PremiumExperienceTests/testStaticLaunchKeepsOriginalSizeAndUsesOnlyOpacity -skip-testing:BARQTests/PremiumExperienceTests/testRiderRevealCoversAllCornersThenContractsMonotonically -skip-testing:BARQTests/PremiumExperienceTests/testRiderMarkErasesBeforeTheFieldContractsAndPulseClearsAtEnd -resultBundlePath unit.xcresult 2>&1 | tee unit.log
+          python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -skip-testing:BARQTests/OnboardingTests -skip-testing:BARQTests/P0OnboardingTests -skip-testing:BARQTests/LaunchJourneyTests -skip-testing:BARQTests/PremiumExperienceTests/testBrandMarkHasTransparentMatteAndPreservesOriginalColors -skip-testing:BARQTests/PremiumExperienceTests/testLaunchClockUsesElapsedTimeWithoutFrameClamp -skip-testing:BARQTests/PremiumExperienceTests/testLaunchClockDoesNotConsumeTransitionWhileDestinationIsPreparing -skip-testing:BARQTests/PremiumExperienceTests/testStaticLaunchKeepsOriginalSizeAndUsesOnlyOpacity -skip-testing:BARQTests/PremiumExperienceTests/testRiderRevealCoversAllCornersThenContractsMonotonically -skip-testing:BARQTests/PremiumExperienceTests/testRiderMarkErasesBeforeTheFieldContractsAndPulseClearsAtEnd -resultBundlePath unit.xcresult 2>&1 | tee unit.log
+      - name: Preserve unit evidence before UI work
+        if: always()
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: core-unit-evidence
+          path: |
+            out/head-sha.txt
+            unit.log
+            unit.xcresult
+          retention-days: 14
       - name: Build UI tests
         id: ui_build
         run: |
           set -o pipefail
-          python3 ci/run-bounded-core.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
+          python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
       - name: Verify simulator resource signature before launch
         run: |
           # iOS 26 SplashBoard rejected unsealed launch resources with -67056
@@ -73,8 +89,20 @@ jobs:
           python3 -u ci/core-host-health.py out/welcome-host-health.jsonl &
           WELCOME_HEALTH_PID=$!
           trap 'kill "$WELCOME_LOG_PID" "$WELCOME_TAIL_PID" "$WELCOME_HEALTH_PID" 2>/dev/null || true' EXIT
-          python3 ci/run-bounded-core.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testLiveWelcomeRemainsOutsideTheConversation -resultBundlePath welcome.xcresult 2>&1 | tee out/welcome.log
+          python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testLiveWelcomeRemainsOutsideTheConversation -resultBundlePath welcome.xcresult 2>&1 | tee out/welcome.log
+      - name: Preserve welcome evidence before conversation
+        if: always()
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: core-welcome-evidence
+          path: |
+            out/
+            build-ui.log
+            welcome.xcresult
+          retention-days: 14
       - name: Real conversation, follow-ups and restoration
+        id: conversation
         if: ${{ !cancelled() && steps.ui_build.outcome == 'success' }}
         run: |
           set -o pipefail
@@ -90,13 +118,29 @@ jobs:
           # Recording is a separate evidence pass after functional acceptance.
           stop_diagnostics() { kill "$HOST_HEALTH_PID" "$COMPOSER_TAIL_PID" "$TRANSPORT_LOG_PID" 2>/dev/null || true; }
           trap stop_diagnostics EXIT
-          python3 ci/run-bounded-core.py 1800 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testRealBilingualFollowUpsAndConversationRestoration -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
+          python3 ci/run-core-command.py 1800 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testRealBilingualFollowUpsAndConversationRestoration -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
+      - name: Collect conversation evidence before another simulator test
+        if: always()
+        run: |
+          mkdir -p out/screenshots
+          cp /tmp/fotiq-conversation-shots/* out/screenshots/ 2>/dev/null || true
+          printf '%s\n' "$GITHUB_SHA" > out/head-sha.txt
+      - name: Preserve conversation evidence immediately
+        if: always()
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: core-conversation-evidence
+          path: |
+            out/
+            conversation.xcresult
+          retention-days: 14
       - name: Real bilingual score association and saved match
         if: ${{ !cancelled() && steps.ui_build.outcome == 'success' }}
         run: |
           set -o pipefail
           mkdir -p out
-          python3 ci/run-bounded-core.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
+          python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
       - name: Collect actual evidence
         if: always()
         run: |
