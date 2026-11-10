@@ -118,10 +118,10 @@ final class LaunchContainerController: UIViewController {
         guard !released else { return }
         released = true
         os_signpost(.end, log: SplashDiag.points, name: "Rider motion")
-        SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public) mode=\(reduceMotion ? "reduced" : "premium", privacy: .public)")
-        SplashDiag.log.notice("MOTION committedToCompletion=\(clock.activeDuration, privacy: .public) creditedStaticHold=\(clock.timelineOffset, privacy: .public) finishEpoch=\(Date().timeIntervalSince1970, privacy: .public)")
-        SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public) maxCallbackGapIncludingPreparation=\(clock.startupLargestFrameGap, privacy: .public)")
-        SplashDiag.log.notice("FRAME_STATS samples=\(clock.sampledFrames, privacy: .public) mean=\(clock.meanFrameGap, privacy: .public) p95=\(clock.percentile95Gap, privacy: .public)")
+        SplashDiag.log.notice("FINISH firstLaunch=\(self.firstLaunch, privacy: .public) elapsed=\(self.clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(self.clock.largestFrameGap, privacy: .public) mode=\(self.reduceMotion ? "reduced" : "premium", privacy: .public)")
+        SplashDiag.log.notice("MOTION committedToCompletion=\(self.clock.activeDuration, privacy: .public) creditedStaticHold=\(self.clock.timelineOffset, privacy: .public) finishEpoch=\(Date().timeIntervalSince1970, privacy: .public)")
+        SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public) maxCallbackGapIncludingPreparation=\(self.clock.startupLargestFrameGap, privacy: .public)")
+        SplashDiag.log.notice("FRAME_STATS samples=\(self.clock.sampledFrames, privacy: .public) mean=\(self.clock.meanFrameGap, privacy: .public) p95=\(self.clock.percentile95Gap, privacy: .public)")
         surface?.restoreAccessibility()
         surface?.removeFromSuperview()
         surface = nil

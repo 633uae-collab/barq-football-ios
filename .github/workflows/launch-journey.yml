@@ -56,6 +56,13 @@ jobs:
         run: mkdir -p out && clang -O2 ci/process-birth.c -o out/process-birth
       - name: Keep the capture display awake
         run: caffeinate -d -i -u -t 3600 </dev/null >/tmp/fotiq-capture-awake.log 2>&1 &
+      - name: Compile native targets before simulator boot
+        id: compile_native
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          # Catch source errors without first paying the simulator migration cost.
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination 'generic/platform=iOS Simulator' -arch "$(uname -m)" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee out/compile-unit.log
       - name: Pick simulator, enable touch indicators, boot
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "
@@ -75,12 +82,12 @@ jobs:
         timeout-minutes: 20
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -parallel-testing-enabled NO -resultBundlePath unit.xcresult 2>&1 | tee unit.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -resultBundlePath unit.xcresult 2>&1 | tee unit.log
       - name: Build UI tests
         id: build_ui
         # Preserve any unit failure; still collect independent native launch
         # evidence when XCTest's unit-host bootstrap fails or times out.
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.compile_native.outcome == 'success' }}
         run: |
           set -o pipefail
           # UI automation does not import the app's internal symbols. Rebuild
