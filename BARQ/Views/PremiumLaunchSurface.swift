@@ -302,7 +302,6 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
     func updateUIView(_ uiView: ReadinessProbe, context: Context) {}
     static func dismantleUIView(_ view: ReadinessProbe, coordinator: ()) { view.stop() }
     final class ReadinessProbe: UIView {
-        var onReady: (() -> Void)?
         private var link: UIUpdateLink?
         private var previous: CFTimeInterval?
         private var done = false
@@ -328,7 +327,6 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
                 return
             }
             done = true; stop()
-            if let onReady { onReady(); return }
             os_signpost(.end, log: SplashDiag.points, name: "Rider destination preparation")
             SplashDiag.log.notice("NEXT layout committed in active scene")
             SplashClock.nextReady = true

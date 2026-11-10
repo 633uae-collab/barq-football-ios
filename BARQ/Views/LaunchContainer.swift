@@ -14,9 +14,8 @@ struct LaunchContainer<Destination: View>: UIViewControllerRepresentable {
     private func renderer(_ environment: EnvironmentValues) -> () -> AnyView {
         let destination = destination
         return {
-            // Install one coherent environment. An inner ".environment(\.self)"
-            // would overwrite an outer prepared-image key and leave the first
-            // rendered destination showing placeholders despite cache hits.
+            // A full environment assignment must include prepared pixels;
+            // otherwise it overwrites an outer prepared-image modifier.
             var preparedEnvironment = environment
             preparedEnvironment.launchPreparedImages = LaunchHomePreparation.images
             return AnyView(destination()
@@ -53,9 +52,10 @@ final class LaunchContainerController: UIViewController {
     private var surface: PremiumLaunchLayer?
     private var destination: UIHostingController<AnyView>?
     private var readiness: LaunchDestinationReadiness.ReadinessProbe?
-    private var transitionSnapshot: UIView?
     private var preparation: Task<Void, Never>?
     private var released = false
+    private var coveredRootUpdates = 0
+    private var motionRootUpdates = 0
 
     init(firstLaunch: Bool, reduceMotion: Bool, revision: String,
          prepare: @escaping () async -> Void, render: @escaping () -> AnyView) {
@@ -87,6 +87,10 @@ final class LaunchContainerController: UIViewController {
         // every frame, and finishing it does not call this update method.
         self.revision = revision
         guard let destination else { return }
+        if !released {
+            coveredRootUpdates += 1
+            if clock.elapsed > 0 { motionRootUpdates += 1 }
+        }
         withTransaction(transaction) { destination.rootView = render() }
     }
 
@@ -111,11 +115,6 @@ final class LaunchContainerController: UIViewController {
             host.didMove(toParent: self)
             destination = host
             let probe = LaunchDestinationReadiness.ReadinessProbe()
-            probe.onReady = { [weak self] in
-                // Snapshot only after the real destination has committed. Avoid
-                // re-entering a UIKit commit from its completion phase.
-                DispatchQueue.main.async { self?.prepareTransitionSnapshot() }
-            }
             probe.isUserInteractionEnabled = false
             probe.frame = view.bounds
             probe.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -125,73 +124,21 @@ final class LaunchContainerController: UIViewController {
         }
     }
 
-    private func prepareTransitionSnapshot() {
-        guard !released, let destination, let surface else { return }
-        let started = CACurrentMediaTime()
-        view.layoutIfNeeded()
-        destination.view.layoutIfNeeded()
-        // UIKit captures the original, already-rendered native interface. This
-        // is a temporary transition view, not a substitute design or a video.
-        // Parking the live hierarchy avoids backdrop/material recomposition
-        // while the dark cover contracts. No image is stored on disk.
-        if let snapshot = destination.view.snapshotView(afterScreenUpdates: true) {
-            snapshot.frame = destination.view.frame
-            snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            snapshot.isUserInteractionEnabled = false
-            snapshot.accessibilityElementsHidden = true
-            view.insertSubview(snapshot, belowSubview: surface)
-            transitionSnapshot = snapshot
-            destination.view.isHidden = true
-        }
-        SplashDiag.log.notice("TRANSITION snapshot=\(self.transitionSnapshot != nil, privacy: .public) prepareSeconds=\(CACurrentMediaTime() - started, privacy: .public)")
-        readiness?.stop()
-        readiness?.removeFromSuperview()
-        let probe = LaunchDestinationReadiness.ReadinessProbe()
-        probe.frame = view.bounds
-        probe.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        probe.isUserInteractionEnabled = false
-        view.insertSubview(probe, belowSubview: surface)
-        readiness = probe
-    }
-
     private func finish() {
         guard !released else { return }
         released = true
         os_signpost(.end, log: SplashDiag.points, name: "Rider motion")
+        SplashDiag.log.notice("FINISH firstLaunch=\(self.firstLaunch, privacy: .public) elapsed=\(self.clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(self.clock.largestFrameGap, privacy: .public) mode=\(self.reduceMotion ? "reduced" : "premium", privacy: .public)")
+        SplashDiag.log.notice("MOTION committedToCompletion=\(self.clock.activeDuration, privacy: .public) creditedStaticHold=\(self.clock.timelineOffset, privacy: .public) finishEpoch=\(Date().timeIntervalSince1970, privacy: .public)")
+        SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public) maxCallbackGapIncludingPreparation=\(self.clock.startupLargestFrameGap, privacy: .public)")
+        SplashDiag.log.notice("FRAME_STATS samples=\(self.clock.sampledFrames, privacy: .public) mean=\(self.clock.meanFrameGap, privacy: .public) p95=\(self.clock.percentile95Gap, privacy: .public)")
+        SplashDiag.log.notice("CONTAINER coveredRootUpdates=\(self.coveredRootUpdates, privacy: .public) motionRootUpdates=\(self.motionRootUpdates, privacy: .public)")
         surface?.restoreAccessibility()
         surface?.removeFromSuperview()
         surface = nil
         readiness?.stop()
         readiness?.removeFromSuperview()
         readiness = nil
-        guard transitionSnapshot != nil, let destination else { completeHandoff(); return }
-        let started = CACurrentMediaTime()
-        // Keep the identical snapshot above the live native view until UIKit
-        // commits its return. It prevents a blank frame at the handoff.
-        UIView.performWithoutAnimation { destination.view.isHidden = false }
-        let probe = LaunchDestinationReadiness.ReadinessProbe()
-        probe.frame = view.bounds
-        probe.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        probe.isUserInteractionEnabled = false
-        probe.onReady = { [weak self] in
-            guard let self else { return }
-            SplashDiag.log.notice("HANDOFF nativeViewCommitSeconds=\(CACurrentMediaTime() - started, privacy: .public)")
-            self.transitionSnapshot?.removeFromSuperview()
-            self.transitionSnapshot = nil
-            self.readiness?.removeFromSuperview()
-            self.readiness = nil
-            self.completeHandoff()
-        }
-        view.addSubview(probe)
-        readiness = probe
-        view.setNeedsLayout()
-    }
-
-    private func completeHandoff() {
-        SplashDiag.log.notice("FINISH firstLaunch=\(self.firstLaunch, privacy: .public) elapsed=\(self.clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(self.clock.largestFrameGap, privacy: .public) mode=\(self.reduceMotion ? "reduced" : "premium", privacy: .public)")
-        SplashDiag.log.notice("MOTION committedToCompletion=\(self.clock.activeDuration, privacy: .public) creditedStaticHold=\(self.clock.timelineOffset, privacy: .public) finishEpoch=\(Date().timeIntervalSince1970, privacy: .public)")
-        SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public) maxCallbackGapIncludingPreparation=\(self.clock.startupLargestFrameGap, privacy: .public)")
-        SplashDiag.log.notice("FRAME_STATS samples=\(self.clock.sampledFrames, privacy: .public) mean=\(self.clock.meanFrameGap, privacy: .public) p95=\(self.clock.percentile95Gap, privacy: .public)")
         destination?.view.accessibilityElementsHidden = false
         destination?.view.isUserInteractionEnabled = true
         // Opening the data gate does not reconstruct the root or its glass.
