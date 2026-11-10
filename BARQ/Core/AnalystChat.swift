@@ -67,3 +67,26 @@ struct AnalystWelcome: Decodable {
         expiresAt > date.timeIntervalSince1970 * 1000 ? text : Self.fallback(english: english)
     }
 }
+
+enum AnalystNetworkFailure {
+    // Resolve known transport errors without Foundation's localized-description
+    // resource lookup on the UI actor. Never automatically resend a chat POST.
+    static func message(for error: Error, english: Bool) -> String? {
+        let value = error as NSError
+        guard value.domain == NSURLErrorDomain else { return nil }
+        let suffix = english
+            ? " Your question remains in this conversation. It was not resent automatically."
+            : " سؤالك باقٍ في هذه المحادثة، ولم نُعد إرساله تلقائياً."
+        switch value.code {
+        case NSURLErrorNetworkConnectionLost:
+            return (english ? "The connection was interrupted before a complete answer arrived." : "انقطع الاتصال قبل وصول الإجابة كاملة.") + suffix
+        case NSURLErrorTimedOut:
+            return (english ? "The answer did not arrive within the connection time limit." : "لم تصل الإجابة خلال مهلة الاتصال.") + suffix
+        case NSURLErrorNotConnectedToInternet, NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed:
+            return (english ? "The analysis service could not be reached." : "تعذّر الوصول إلى خدمة التحليل.") + suffix
+        case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted, NSURLErrorServerCertificateHasBadDate, NSURLErrorServerCertificateHasUnknownRoot, NSURLErrorServerCertificateNotYetValid:
+            return (english ? "A secure connection could not be established." : "تعذّر إنشاء اتصال آمن.") + suffix
+        default: return nil
+        }
+    }
+}

@@ -152,11 +152,10 @@ struct AnalystChatView: View {
             archive.finish(conversation: conversationID, turn: message.id, reply: reply)
             composerLog.info("reply stored characters=\(reply.answer.count, privacy: .public) model=\(reply.model, privacy: .public)")
         } catch {
-            let messageText: String
-            if let network = error as? URLError, [.secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate].contains(network.code) {
-                messageText = en ? "A secure connection could not be established. Please try again. Your message is saved; no automatic resend was made." : "تعذّر إنشاء اتصال آمن. حاول مجدداً. سؤالك محفوظ ولم نُعد إرساله تلقائياً."
-            } else { messageText = error.localizedDescription }
+            composerLog.info("reply failed code=\((error as NSError).code, privacy: .public)")
+            let messageText = AnalystNetworkFailure.message(for: error, english: en) ?? error.localizedDescription
             archive.finish(conversation: conversationID, turn: message.id, error: messageText)
+            composerLog.info("failure stored")
         }
     }
 }
