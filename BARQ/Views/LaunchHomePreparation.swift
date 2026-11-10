@@ -85,14 +85,19 @@ actor LaunchHomeCache {
                 continue
             }
             guard let url = URL(string: address) else { continue }
-            let request = URLRequest(url: url)
-            // Older StarRow used AsyncImage's shared cache rather than ImageStore.
-            // Both lookups are disk/memory only; neither can start a network request.
-            let response = ImageStore.shared.session.configuration.urlCache?.cachedResponse(for: request)
-                ?? URLCache.shared.cachedResponse(for: request)
-            let durableData = imageDisk.load(address)
-            guard let data = durableData ?? response?.data, let image = UIImage(data: data) else { continue }
-            if durableData != nil { diskHits += 1 }
+            let data: Data?
+            if let durableData = imageDisk.load(address) {
+                data = durableData
+                diskHits += 1
+            } else {
+                // Read legacy URLCache only on a durable-cache miss. A known
+                // image must not pay for two extra synchronous cache lookups.
+                let request = URLRequest(url: url)
+                let response = ImageStore.shared.session.configuration.urlCache?.cachedResponse(for: request)
+                    ?? URLCache.shared.cachedResponse(for: request)
+                data = response?.data
+            }
+            guard let data, let image = UIImage(data: data) else { continue }
             let decoded = image.preparingForDisplay() ?? image
             ImageStore.shared.mem.setObject(decoded, forKey: address as NSString)
             prepared[address] = decoded
@@ -167,3 +172,30 @@ struct LaunchHomeLoadingSection: View {
     }
 }
 
+
+/// Keep the existing countdown typography and cadence, but avoid periodic
+/// SwiftUI graph work while the prepared destination is covered.
+struct LaunchPreparedCountdown: View {
+    let kickoff: Date
+    @State private var ticking = LaunchGate.open
+    var body: some View {
+        Group {
+            if ticking {
+                TimelineView(.periodic(from: .now, by: HomeFeed.uiTest ? 30 : 1)) { context in
+                    Text(verbatim: HomeFeed.countdown(to: kickoff, now: context.date))
+                }
+            } else {
+                Text(verbatim: HomeFeed.countdown(to: kickoff, now: Date()))
+            }
+        }
+        .font(.system(size: 28, weight: .heavy, design: .rounded)).monospacedDigit()
+        .environment(\.layoutDirection, .leftToRight)
+        .accessibilityIdentifier("hero-countdown")
+        .task {
+            guard !ticking else { return }
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
+            ticking = true
+        }
+    }
+}

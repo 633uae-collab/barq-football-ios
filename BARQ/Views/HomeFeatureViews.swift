@@ -156,12 +156,7 @@ struct FavoriteHeroCard: View {
             VStack(spacing: 4) {
                 // Per-second countdown for users. Under UI tests (FOTIQ_UI_TEST=1) it ticks every 30 s: a 1 s re-render of the glass hero
                 // kept the app from ever going idle for XCUITest when a favourite kicked off within the hero window (same issue as LivePill).
-                TimelineView(.periodic(from: .now, by: HomeFeed.uiTest ? 30 : 1)) { ctx in
-                    Text(verbatim: HomeFeed.countdown(to: f.kickoff, now: ctx.date))
-                        .font(.system(size: 28, weight: .heavy, design: .rounded)).monospacedDigit()
-                        .environment(\.layoutDirection, .leftToRight)
-                        .accessibilityIdentifier("hero-countdown")
-                }
+                LaunchPreparedCountdown(kickoff: f.kickoff)
                 Text("على البداية").font(.caption2).foregroundStyle(.secondary)
                 Label(HomeFeed.uaeTime(f.kickoff), systemImage: "clock").font(.caption.bold())
                 Text("بتوقيت الإمارات").font(.caption2).foregroundStyle(.secondary)
@@ -229,6 +224,10 @@ struct StarsCard: View {
         // Auto-advance only while Home is on screen and the app is active (task cancels otherwise).
         .task(id: active && (players?.count ?? 0) > 1) {
             guard active, let p = players, p.count > 1 else { return }
+            // Covered preparation can outlast the carousel interval on a slow
+            // launch. Start its unchanged five-second cadence after handoff.
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 if Task.isCancelled { break }
@@ -388,3 +387,4 @@ struct AddFavoritesSheet: View {
         .accessibilityIdentifier(id)
     }
 }
+
