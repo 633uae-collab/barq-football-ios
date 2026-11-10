@@ -143,7 +143,7 @@ actor API {
         }
         let reply = try JSONDecoder().decode(AnalystReply.self, from: data)
         guard !reply.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              reply.model == "openai/gpt-oss-120b" else { throw APIError.badResponse }
+              reply.responseKind != nil else { throw APIError.badResponse }
         return reply
     }
 
@@ -286,3 +286,4 @@ final class LocalizedMainBundle: Bundle {
         return super.localizedString(forKey: key, value: value, table: tableName)
     }
 }
+

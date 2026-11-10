@@ -12,11 +12,26 @@ struct AnalystReply: Codable {
     var generatedAt: Double
     var context: AnalystContext?
     var sources: [AnalystSource]?
+    var responseKind: AnalystResponseKind? { AnalystResponseKind(rawValue: model) }
     var sourceNames: String? {
         let names = (sources ?? []).compactMap(\.displayName)
         var seen = Set<String>()
         let unique = names.filter { seen.insert($0).inserted }
         return unique.isEmpty ? nil : unique.joined(separator: " · ")
+    }
+}
+
+enum AnalystResponseKind: String, CaseIterable {
+    case groq = "openai/gpt-oss-120b"
+    case providerData = "verified-provider-data"
+    case linkDiscovery = "unverified-link-discovery"
+
+    func label(english: Bool) -> String {
+        switch self {
+        case .groq: return english ? "AI analysis · Groq" : "تحليل بالذكاء الاصطناعي · Groq"
+        case .providerData: return english ? "Direct provider data · API-Football" : "بيانات مباشرة من المزوّد · API-Football"
+        case .linkDiscovery: return english ? "Unverified discovery links · GDELT" : "روابط اكتشاف غير مؤكدة · GDELT"
+        }
     }
 }
 struct AnalystSource: Codable {
@@ -90,3 +105,4 @@ enum AnalystNetworkFailure {
         }
     }
 }
+

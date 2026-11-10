@@ -2,6 +2,27 @@ import XCTest
 @testable import BARQ
 
 @MainActor final class AnalystConversationTests: XCTestCase {
+    func testEveryReplyKindAndItsSourceSurviveStorage() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let archive = AnalystConversations(url: url)
+        let id = try XCTUnwrap(archive.selectedID)
+        for kind in AnalystResponseKind.allCases {
+            let turn = AnalystTurn(question: "Question")
+            let reply = AnalystReply(answer: "Exact reply", model: kind.rawValue, fetchedAt: 1, generatedAt: 2,
+                                     sources: [AnalystSource(name: "Source", url: "https://example.org/evidence")])
+            archive.append(turn, context: AnalystContext())
+            archive.finish(conversation: id, turn: turn.id, reply: reply)
+        }
+        let restored = AnalystConversations(url: url)
+        XCTAssertEqual(restored.current.turns.count, AnalystResponseKind.allCases.count)
+        for (turn, kind) in zip(restored.current.turns, AnalystResponseKind.allCases) {
+            XCTAssertEqual(turn.answer?.answer, "Exact reply")
+            XCTAssertEqual(turn.answer?.responseKind, kind)
+            XCTAssertEqual(turn.answer?.sources?.first?.link?.absoluteString, "https://example.org/evidence")
+        }
+        XCTAssertNil(restored.storageError)
+    }
     func testLongConversationRestoresWithoutSendingCachedAnswerAndBoundsNetworkHistory() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -51,3 +72,4 @@ import XCTest
         XCTAssertTrue(restored.current.history.isEmpty)
     }
 }
+

@@ -63,29 +63,19 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p out
+          python3 ci/sample-core-stall.py out/welcome.log "$UDID" &
+          DIAGNOSTIC_PID=$!
+          trap 'kill "$DIAGNOSTIC_PID" 2>/dev/null || true' EXIT
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testLiveWelcomeRemainsOutsideTheConversation -resultBundlePath welcome.xcresult 2>&1 | tee out/welcome.log
       - name: Real conversation, follow-ups and restoration
+        if: ${{ !cancelled() && steps.ui_build.outcome == 'success' }}
         run: |
           set -o pipefail
           mkdir -p out
           xcrun simctl spawn "$UDID" log stream --level debug --style compact --predicate 'subsystem == "ae.barq.transport" OR subsystem == "ae.barq.composer"' >out/transport-codes.log 2>&1 &
           TRANSPORT_LOG_PID=$!
-          # Sample the actual app only when XCTest is retrying a stalled query.
-          # Diagnostic only: do not use sampled intervals as performance acceptance.
-          (
-            for attempt in $(seq 1 900); do
-              if grep -q 'retry 1' out/conversation.log 2>/dev/null; then
-                PID=$(pgrep -x BARQ | head -1 || true)
-                date -u > out/query-stall-sample-time.txt
-                echo "APP_PID=$PID" >> out/query-stall-sample-time.txt
-                if [[ -n "$PID" ]]; then
-                  /usr/bin/sample "$PID" 8 1 -file out/query-stall-app-sample.txt || true
-                fi
-                exit 0
-              fi
-              sleep 1
-            done
-          ) &
+          # Correlate each stack with actual PID/path, UTC time and test log size.
+          python3 ci/sample-core-stall.py out/conversation.log "$UDID" &
           DIAGNOSTIC_PID=$!
           stop_diagnostics() { kill "$TRANSPORT_LOG_PID" 2>/dev/null || true; kill "$DIAGNOSTIC_PID" 2>/dev/null || true; wait "$DIAGNOSTIC_PID" 2>/dev/null || true; }
           trap stop_diagnostics EXIT
@@ -115,3 +105,4 @@ jobs:
             welcome.xcresult
             scores.xcresult
           retention-days: 14
+

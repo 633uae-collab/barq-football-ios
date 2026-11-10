@@ -32,6 +32,11 @@ struct AnalystChatView: View {
                                     .glassEffect(.regular.tint(.green.opacity(0.08)), in: .rect(cornerRadius: 20))
                             }
                             if let reply = message.answer {
+                                if let kind = reply.responseKind {
+                                    Text(verbatim: kind.label(english: en))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                        .accessibilityIdentifier(message.id == archive.current.turns.last?.id ? "analyst-response-kind" : "analyst-previous-response-kind")
+                                }
                                 let renderedAnswer = (try? AttributedString(markdown: reply.answer, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(reply.answer)
                                 Text(renderedAnswer)
                                     // Give VoiceOver/XCTest the already resolved text. Do not ask
@@ -161,3 +166,4 @@ struct AnalystChatView: View {
         }
     }
 }
+
