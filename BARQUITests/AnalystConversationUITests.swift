@@ -52,6 +52,8 @@ final class AnalystConversationUITests: XCTestCase {
         try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("00-welcome.png"))
         XCTAssertTrue(app.staticTexts["analyst-welcome"].exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-entity-picker").firstMatch.exists)
+        try recording("start", phase: "analyst")
+        defer { try? recording("stop") }
         var report = ""
         var lastVerifiedReply = ""
         let questions = ["حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة", "For the same match, explain the starting lineups and substitutions in English. Use updated data.", "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم", "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق"]
@@ -84,8 +86,10 @@ final class AnalystConversationUITests: XCTestCase {
             }
             if index < questions.count - 1 { sleep(66) }
         }
+        try recording("stop")
         app.terminate(); app.launch()
         XCTAssertTrue(app.buttons["analyst-history"].waitForExistence(timeout: 30))
+        try recording("start", phase: "restored")
         app.buttons["analyst-history"].tap()
         let saved = app.buttons.matching(identifier: "analyst-saved-conversation").firstMatch
         XCTAssertTrue(saved.waitForExistence(timeout: 10)); saved.tap()
@@ -101,4 +105,28 @@ final class AnalystConversationUITests: XCTestCase {
         app.buttons["analyst-history"].tap()
         XCTAssertTrue(app.buttons.matching(identifier: "analyst-saved-conversation").firstMatch.waitForExistence(timeout: 10))
     }
+    private func recording(_ action: String, phase: String = "") throws {
+        let directory = URL(fileURLWithPath: "/tmp/fotiq-core-recording", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("enabled").path) else { return }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let id = UUID().uuidString
+        let udid = try XCTUnwrap(ProcessInfo.processInfo.environment["SIMULATOR_UDID"], "Record the actual XCTest simulator")
+        let request = ["id": id, "action": action, "phase": phase, "udid": udid]
+        try JSONSerialization.data(withJSONObject: request).write(to: directory.appendingPathComponent("request.json"), options: .atomic)
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            if let data = try? Data(contentsOf: directory.appendingPathComponent("ack.json")),
+               let ack = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               ack["id"] as? String == id {
+                guard ack["ok"] as? Bool == true else {
+                    throw NSError(domain: "CoreRecording", code: 1, userInfo: [NSLocalizedDescriptionKey: ack["error"] as? String ?? "Recorder failed"])
+                }
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        throw NSError(domain: "CoreRecording", code: 2, userInfo: [NSLocalizedDescriptionKey: "Recorder acknowledgment missing"])
+    }
+
 }
+

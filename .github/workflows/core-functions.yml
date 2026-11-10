@@ -63,9 +63,6 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p out
-          python3 ci/sample-core-stall.py out/welcome.log "$UDID" &
-          DIAGNOSTIC_PID=$!
-          trap 'kill "$DIAGNOSTIC_PID" 2>/dev/null || true' EXIT
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testLiveWelcomeRemainsOutsideTheConversation -resultBundlePath welcome.xcresult 2>&1 | tee out/welcome.log
       - name: Real conversation, follow-ups and restoration
         if: ${{ !cancelled() && steps.ui_build.outcome == 'success' }}
@@ -74,10 +71,13 @@ jobs:
           mkdir -p out
           xcrun simctl spawn "$UDID" log stream --level debug --style compact --predicate 'subsystem == "ae.barq.transport" OR subsystem == "ae.barq.composer"' >out/transport-codes.log 2>&1 &
           TRANSPORT_LOG_PID=$!
-          # Correlate each stack with actual PID/path, UTC time and test log size.
-          python3 ci/sample-core-stall.py out/conversation.log "$UDID" &
-          DIAGNOSTIC_PID=$!
-          stop_diagnostics() { kill "$TRANSPORT_LOG_PID" 2>/dev/null || true; kill "$DIAGNOSTIC_PID" 2>/dev/null || true; wait "$DIAGNOSTIC_PID" 2>/dev/null || true; }
+          # Recording starts only after the test confirms the analyst is ready.
+          # The test supplies its real simulator UDID and stops capture before relaunch.
+          mkdir -p /tmp/fotiq-core-recording
+          touch /tmp/fotiq-core-recording/enabled
+          python3 ci/record-core.py out/video &
+          RECORDING_PID=$!
+          stop_diagnostics() { kill "$TRANSPORT_LOG_PID" 2>/dev/null || true; kill "$RECORDING_PID" 2>/dev/null || true; wait "$RECORDING_PID" 2>/dev/null || true; }
           trap stop_diagnostics EXIT
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testRealBilingualFollowUpsAndConversationRestoration -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
       - name: Real bilingual score association and saved match

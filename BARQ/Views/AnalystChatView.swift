@@ -77,6 +77,18 @@ struct AnalystChatView: View {
         }
         .onAppear { visible = true }
         .onDisappear { visible = false }
+        .task { @MainActor in
+            // Diagnostics only: compare main-actor progress with XCTest query times.
+            // No UI mutation, sampling attachment, or test acceptance override.
+            guard ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] == "1" else { return }
+            var previous = ProcessInfo.processInfo.systemUptime
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                composerLog.info("main actor heartbeat gapMs=\(Int((now - previous) * 1000), privacy: .public) focused=\(writing, privacy: .public) busy=\(sending, privacy: .public)")
+                previous = now
+            }
+        }
         .task(id: "\(visible)-\(scenePhase == .active)-\(archive.current.turns.isEmpty)-\(en)") {
             guard visible, scenePhase == .active, archive.current.turns.isEmpty else { return }
             await LaunchGate.wait()
