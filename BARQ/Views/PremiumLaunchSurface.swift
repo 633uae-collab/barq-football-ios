@@ -91,7 +91,7 @@ final class PremiumLaunchLayer: UIView {
     private var commitLink: UIUpdateLink?
     private var preparedOffset: Double?
     private var submittedAt: CFTimeInterval?
-    private var prepared = false, started = false
+    private var prepared = false, started = false, finished = false
     private var tracks: [(CALayer, CAKeyframeAnimation)] = []
     private weak var accessibilityWindow: UIWindow?
     private var previousAccessibilityElements: [Any]?
@@ -234,7 +234,11 @@ final class PremiumLaunchLayer: UIView {
         }
     }
     @objc private func frameTick(_ display: CADisplayLink) {
-        if started { _ = clock.tick(); return }
+        if started {
+            _ = clock.tick()
+            finishIfReady()
+            return
+        }
         _ = clock.tick(active: false)
         guard preparedOffset == nil, SplashClock.nextReady,
               window?.windowScene?.activationState == .foregroundActive else { return }
@@ -243,6 +247,16 @@ final class PremiumLaunchLayer: UIView {
         prepareAnimations(offset: offset)
         preparedOffset = offset
         SplashDiag.log.notice("TRACKS setupSeconds=\(CACurrentMediaTime() - setupStart, privacy: .public)")
+    }
+    private func finishIfReady() {
+        let end = reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration
+        // CA may deliver completion just before the monotonic deadline. Keep
+        // the already-revealed destination until the next real display callback;
+        // never round the measured duration up or release network work early.
+        guard clock.animationCompleted, clock.elapsed >= end, !finished else { return }
+        finished = true
+        stop()
+        onComplete()
     }
     private func submitIfReady() {
         guard !started, let offset = preparedOffset else { return }
@@ -268,8 +282,7 @@ final class PremiumLaunchLayer: UIView {
             guard let self else { return }
             _ = self.clock.tick()
             self.clock.animationCompleted = true
-            self.stop()
-            self.onComplete()
+            self.finishIfReady()
         }
         applyState(at: duration)
         for (target, animation) in tracks {

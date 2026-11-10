@@ -41,8 +41,12 @@ final class CaptureObserver: NSObject, SCRecordingOutputDelegate, SCStreamOutput
 }
 
 @main enum WindowCapture {
+    @MainActor
     static func main() async {
         do {
+            // A command-line AppKit executable must initialize its connection
+            // to WindowServer before checking capture access or using SCK.
+            NSApplication.shared.setActivationPolicy(.prohibited)
             guard CommandLine.arguments.count == 3 else { throw CaptureError.message("Expected output.mp4 stop-file") }
             // Never bypass screen-recording permission or capture other windows.
             guard CGPreflightScreenCaptureAccess() else { throw CaptureError.message("Screen recording permission unavailable; no permission changes attempted") }
