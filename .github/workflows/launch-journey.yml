@@ -37,9 +37,9 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Standard public runner: Xcode 26.3 provided usable simulator CPU traces.
-    # Keep the macOS 26 / Xcode 26.6 comparison as separate evidence.
-    runs-on: macos-15
+    # Standard public Intel pool while the ARM comparison is capacity-queued.
+    # Both pools are free for this public repository; no larger runner is used.
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -119,13 +119,23 @@ jobs:
           trap 'kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true' EXIT
           sleep 2
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests/testCoveredDestinationIsNotExposedToAccessibility -only-testing:BARQUITests/PremiumExperienceUITests/testBackgroundResumeDoesNotRestartLaunchOrOnboarding -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
+      - name: Repeat the previously failing offline completion three times
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > out/offline-repetition-timing.log 2>&1 &
+          LOG=$!
+          trap 'kill "$LOG" 2>/dev/null || true' EXIT
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/P0OfflineOnboardingUITests -test-iterations 3 -resultBundlePath offline-repetition.xcresult 2>&1 | tee out/offline-repetition.log
       - name: Export launch UI diagnostics without masking a failure
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
-          if [[ -d journey.xcresult ]]; then
-            xcrun xcresulttool get test-results summary --path journey.xcresult > out/journey-summary.json
-            xcrun xcresulttool export attachments --path journey.xcresult --output-path out/journey-attachments
-          fi
+          for RESULT in journey offline-repetition; do
+            if [[ -d "$RESULT.xcresult" ]]; then
+              xcrun xcresulttool get test-results summary --path "$RESULT.xcresult" > "out/$RESULT-summary.json"
+              xcrun xcresulttool export attachments --path "$RESULT.xcresult" --output-path "out/$RESULT-attachments"
+            fi
+          done
       - name: Complete real onboarding for standalone reopen recordings
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
@@ -220,7 +230,7 @@ jobs:
         run: |
           result=0
           : > out/all-launch-timing.log
-          for log in out/first-timing.log out/quick-timing.log out/launch-timing.log out/repeated-timing.log out/reduced-timing.log; do
+          for log in out/first-timing.log out/quick-timing.log out/launch-timing.log out/repeated-timing.log out/reduced-timing.log out/offline-repetition-timing.log; do
             if [[ -f "$log" ]]; then cat "$log" >> out/all-launch-timing.log
             else echo "::error::Required timing evidence is missing: $log"; result=1; fi
           done
@@ -270,6 +280,7 @@ jobs:
             build-ui.log
             unit.xcresult
             journey.xcresult
+            offline-repetition.xcresult
             recording-setup.xcresult
             scores.xcresult
           retention-days: 14
