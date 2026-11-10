@@ -62,7 +62,9 @@ struct AnalystChatView: View {
                     Color.clear.frame(height: 1).id("chat-bottom")
                 }.padding()
             }
-            .scrollDismissesKeyboard(.interactively)
+            // Keep a draft focused while the transcript scrolls or adjusts for the keyboard.
+            // Sending still dismisses explicitly through the composer FocusState.
+            .scrollDismissesKeyboard(.never)
             .onAppear { scroll.scrollTo("chat-bottom", anchor: .bottom) }
             .onChange(of: archive.current.turns.count) { _, _ in withAnimation { scroll.scrollTo("chat-bottom", anchor: .bottom) } }
             .onChange(of: sending) { _, value in if !value { withAnimation { scroll.scrollTo("chat-bottom", anchor: .bottom) } } }
