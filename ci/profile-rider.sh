@@ -25,7 +25,9 @@ for KIND in plain recorded; do
   fi
   # Identical fresh-onboarding route in both samples. Raw profiler traces and
   # the simultaneous unedited MP4 allow callback gaps to be correlated to stacks.
-  xcrun xctrace record --template 'Time Profiler' --device "$UDID" --time-limit 12s --output "out/trace/$KIND.trace" --launch -- "$APP" -lang ar -resetOnboarding YES > "out/trace/$KIND.log" 2>&1
+  # The original 12s recorded trace stopped sampling before motion on the slow
+  # host. Extend capture, not the app timeline; retain all startup/hold cost.
+  xcrun xctrace record --template 'Time Profiler' --device "$UDID" --time-limit 30s --output "out/trace/$KIND.trace" --launch -- "$APP" -lang ar -resetOnboarding YES > "out/trace/$KIND.log" 2>&1
   cleanup
   trap - EXIT
   xcrun xctrace export --input "out/trace/$KIND.trace" --toc > "out/trace/$KIND-toc.xml"

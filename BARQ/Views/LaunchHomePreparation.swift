@@ -1,6 +1,24 @@
 import SwiftUI
 import UIKit
 
+/// Bound local decoding to the club picker's initial viewport plus one row.
+/// Use the full screen height (including header/footer) and a deliberately lower
+/// row height than PickTile's 52 pt image + 34 pt text + star + padding. This
+/// over-prepares visible rows without decoding the entire cached directory.
+/// Offscreen rows retain the existing post-launch image path when scrolled in.
+enum LaunchClubPreparation {
+    static func imageAddresses(selected: [TeamRef], popular: [TeamRef], viewport: CGSize) -> [String] {
+        guard viewport.width.isFinite, viewport.height.isFinite,
+              viewport.width > 0, viewport.height > 0 else { return [] }
+        let columns = max(1, Int((max(0, viewport.width - 32) + 12) / 112))
+        let rows = Int(ceil(viewport.height / 120)) + 1
+        var identities = Set<Int>()
+        let clubs = (selected + popular).filter { identities.insert($0.id).inserted }
+        var addresses = Set<String>()
+        return clubs.prefix(columns * rows).compactMap(\.logo).filter { addresses.insert($0).inserted }
+    }
+}
+
 /// Launch-owned presentation cache. The API client, live refresh rules and
 /// destination components remain unchanged. Never fabricate fixtures for startup.
 struct LaunchHomeSnapshot: Codable {

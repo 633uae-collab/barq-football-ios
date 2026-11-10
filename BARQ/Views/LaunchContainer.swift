@@ -8,7 +8,7 @@ import os
 struct LaunchContainer<Destination: View>: UIViewControllerRepresentable {
     let firstLaunch: Bool
     let revision: String
-    let prepare: () async -> Void
+    let prepare: (CGSize) async -> Void
     @ViewBuilder var destination: () -> Destination
 
     private func renderer(_ environment: EnvironmentValues) -> () -> AnyView {
@@ -46,11 +46,11 @@ final class LaunchContainerController: UIViewController {
     private let firstLaunch: Bool
     private let reduceMotion: Bool
     private var revision: String
-    private let prepare: () async -> Void
+    private let prepare: (CGSize) async -> Void
     private var render: () -> AnyView
     private let clock = SplashClock()
     private var surface: PremiumLaunchLayer?
-    private var destination: UIHostingController<AnyView>?
+    private var destination: LaunchDestinationController?
     private var readiness: LaunchDestinationReadiness.ReadinessProbe?
     private var preparation: Task<Void, Never>?
     private var released = false
@@ -58,7 +58,7 @@ final class LaunchContainerController: UIViewController {
     private var motionRootUpdates = 0
 
     init(firstLaunch: Bool, reduceMotion: Bool, revision: String,
-         prepare: @escaping () async -> Void, render: @escaping () -> AnyView) {
+         prepare: @escaping (CGSize) async -> Void, render: @escaping () -> AnyView) {
         self.firstLaunch = firstLaunch
         self.reduceMotion = reduceMotion
         self.revision = revision
@@ -102,19 +102,34 @@ final class LaunchContainerController: UIViewController {
             await Task.yield()
             guard let self, !Task.isCancelled else { return }
             os_signpost(.begin, log: SplashDiag.points, name: "Rider destination preparation")
-            await prepare()
+            await prepare(view.bounds.size)
             guard !Task.isCancelled else { return }
-            let host = UIHostingController(rootView: render())
-            host.view.backgroundColor = .clear
-            host.view.frame = view.bounds
-            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            host.view.isUserInteractionEnabled = false
-            host.view.accessibilityElementsHidden = true
-            addChild(host)
-            view.insertSubview(host.view, at: 0)
-            host.didMove(toParent: self)
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            let host = withTransaction(transaction) {
+                LaunchDestinationController(rootView: render())
+            }
+            // Resolve the real destination's first layout while still covered.
+            // A sibling probe's commit alone does not drain pending host layout.
+            // Scope UIKit animation suppression to insertion only; native glass
+            // and subsequent page interactions retain their normal behavior.
+            UIView.performWithoutAnimation {
+                withTransaction(transaction) {
+                    host.view.backgroundColor = .clear
+                    host.view.frame = view.bounds
+                    host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                    host.view.isUserInteractionEnabled = false
+                    host.view.accessibilityElementsHidden = true
+                    addChild(host)
+                    view.insertSubview(host.view, at: 0)
+                    host.didMove(toParent: self)
+                    host.view.setNeedsLayout()
+                    host.view.layoutIfNeeded()
+                }
+            }
             destination = host
             let probe = LaunchDestinationReadiness.ReadinessProbe()
+            probe.layoutGeneration = { [weak host] in host?.layoutGeneration ?? 0 }
             probe.isUserInteractionEnabled = false
             probe.frame = view.bounds
             probe.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -133,6 +148,7 @@ final class LaunchContainerController: UIViewController {
         SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public) maxCallbackGapIncludingPreparation=\(self.clock.startupLargestFrameGap, privacy: .public)")
         SplashDiag.log.notice("FRAME_STATS samples=\(self.clock.sampledFrames, privacy: .public) mean=\(self.clock.meanFrameGap, privacy: .public) p95=\(self.clock.percentile95Gap, privacy: .public)")
         SplashDiag.log.notice("CONTAINER coveredRootUpdates=\(self.coveredRootUpdates, privacy: .public) motionRootUpdates=\(self.motionRootUpdates, privacy: .public)")
+        SplashDiag.log.notice("DESTINATION layoutPasses=\(self.destination?.layoutGeneration ?? 0, privacy: .public) motionLayoutPasses=\(self.destination?.motionLayoutPasses ?? 0, privacy: .public)")
         surface?.restoreAccessibility()
         surface?.removeFromSuperview()
         surface = nil
@@ -155,5 +171,17 @@ final class LaunchContainerController: UIViewController {
         surface?.stop()
         surface?.restoreAccessibility()
         readiness?.stop()
+    }
+}
+
+/// Observes the actual hosting view rather than treating commits of an empty
+/// sibling as evidence that SwiftUI has completed its destination layout.
+private final class LaunchDestinationController: UIHostingController<AnyView> {
+    private(set) var layoutGeneration = 0
+    private(set) var motionLayoutPasses = 0
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        layoutGeneration += 1
+        if SplashClock.nextReady && !LaunchGate.open { motionLayoutPasses += 1 }
     }
 }

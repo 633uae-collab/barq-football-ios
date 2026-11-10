@@ -302,8 +302,10 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
     func updateUIView(_ uiView: ReadinessProbe, context: Context) {}
     static func dismantleUIView(_ view: ReadinessProbe, coordinator: ()) { view.stop() }
     final class ReadinessProbe: UIView {
+        var layoutGeneration: () -> Int = { 0 }
         private var link: UIUpdateLink?
         private var previous: CFTimeInterval?
+        private var previousLayoutGeneration: Int?
         private var done = false
         override func layoutSubviews() {
             super.layoutSubviews()
@@ -319,11 +321,15 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
             guard !done else { return }
             guard window?.windowScene?.activationState == .foregroundActive else {
                 previous = nil
+                previousLayoutGeneration = nil
                 return
             }
             let now = CACurrentMediaTime()
-            guard let previous, now - previous < 0.05 else {
+            let generation = layoutGeneration()
+            guard let previous, now - previous < 0.05,
+                  previousLayoutGeneration == generation else {
                 previous = now
+                previousLayoutGeneration = generation
                 return
             }
             done = true; stop()
@@ -333,5 +339,3 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
         }
     }
 }
-
-

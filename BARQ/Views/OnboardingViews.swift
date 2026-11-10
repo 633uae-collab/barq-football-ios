@@ -561,7 +561,7 @@ struct LaunchFlow<Content: View>: View {
         }
         .ignoresSafeArea()
     }
-    @MainActor private func prepareDestination() async {
+    @MainActor private func prepareDestination(viewport: CGSize) async {
         if onboarded {
             LaunchHomePreparation.snapshot = await LaunchHomeCache.shared.restore(scope: LaunchHomePreparation.scope)
             if let snapshot = LaunchHomePreparation.snapshot {
@@ -575,8 +575,8 @@ struct LaunchFlow<Content: View>: View {
             // Reusing locally cached club logos must not enqueue one SwiftUI
             // state publication per image in the middle of erasure.
             let draft = Onboarding.loadDraft()
-            let clubs = draft.clubs + ClubDirectory.initial(.standard)
-            let addresses = Array(Set(clubs.compactMap(\.logo)))
+            let addresses = LaunchClubPreparation.imageAddresses(selected: draft.clubs,
+                popular: ClubDirectory.initial(.standard), viewport: viewport)
             LaunchHomePreparation.images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
         }
     }
