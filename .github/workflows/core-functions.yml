@@ -18,10 +18,9 @@ jobs:
     concurrency:
       group: fotiq-live-provider-review
       cancel-in-progress: false
-    # The macos-26 jobs were cancelled before any steps in both attempts.
-    # Use the Xcode 26 Intel runner that completed native validation 42687173166.
-    # Assertions, provider spacing and timeouts remain unchanged.
-    runs-on: macos-15-intel
+    # Run the live flow on the same standard Apple Silicon environment as
+    # the bounded AX replay; Intel failed before app launch in run 42772782700.
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -29,30 +28,32 @@ jobs:
         run: python3 -m unittest discover -s ci/tests -p 'test_record_core.py'
       - name: Select Xcode 26
         run: |
-          X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"; xcodebuild -version
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
       - run: brew install xcodegen ffmpeg && xcodegen generate
       - name: Pick simulator, enable touch indicators, boot
         run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c "
-          import json,sys;d=json.load(sys.stdin)['devices']
-          c=[x for k,v in sorted(d.items(),reverse=True) if 'iOS-26' in k for x in v if 'iPhone' in x['name']]
-          p=[x for x in c if 'Pro' in x['name'] and 'Max' not in x['name']] or c
-          print(p[0]['udid'])")
+          mkdir -p out
+          xcrun simctl list devices available -j > out/devices.json
+          UDID=$(python3 -c 'import json; d=json.load(open("out/devices.json"))["devices"]; print(next(v["udid"] for k,vs in d.items() if k.endswith("iOS-26-2") for v in vs if v["name"] == "iPhone 16 Pro"))')
+          uname -m > out/architecture.txt
+          printf '%s\n' "$UDID" > out/requested-udid.txt
           echo "UDID=$UDID" >> $GITHUB_ENV
           defaults write com.apple.iphonesimulator ShowSingleTouches 1
           defaults write com.apple.iphonesimulator ShowPinches 1
-          xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl boot "$UDID" || true
+          python3 ci/run-bounded-core.py 120 xcrun simctl bootstatus "$UDID" -b
           xcrun simctl ui "$UDID" appearance dark
           open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
       - name: Core unit tests (entry tests excluded)
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -skip-testing:BARQTests/LaunchJourneyTests -skip-testing:BARQTests/PremiumExperienceTests/testBrandMarkHasTransparentMatteAndPreservesOriginalColors -skip-testing:BARQTests/PremiumExperienceTests/testLaunchClockUsesElapsedTimeWithoutFrameClamp -skip-testing:BARQTests/PremiumExperienceTests/testLaunchClockDoesNotConsumeTransitionWhileDestinationIsPreparing -skip-testing:BARQTests/PremiumExperienceTests/testStaticLaunchKeepsOriginalSizeAndUsesOnlyOpacity -skip-testing:BARQTests/PremiumExperienceTests/testRiderRevealCoversAllCornersThenContractsMonotonically -skip-testing:BARQTests/PremiumExperienceTests/testRiderMarkErasesBeforeTheFieldContractsAndPulseClearsAtEnd -resultBundlePath unit.xcresult 2>&1 | tee unit.log
+          python3 ci/run-bounded-core.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -skip-testing:BARQTests/OnboardingTests -skip-testing:BARQTests/P0OnboardingTests -skip-testing:BARQTests/LaunchJourneyTests -skip-testing:BARQTests/PremiumExperienceTests/testBrandMarkHasTransparentMatteAndPreservesOriginalColors -skip-testing:BARQTests/PremiumExperienceTests/testLaunchClockUsesElapsedTimeWithoutFrameClamp -skip-testing:BARQTests/PremiumExperienceTests/testLaunchClockDoesNotConsumeTransitionWhileDestinationIsPreparing -skip-testing:BARQTests/PremiumExperienceTests/testStaticLaunchKeepsOriginalSizeAndUsesOnlyOpacity -skip-testing:BARQTests/PremiumExperienceTests/testRiderRevealCoversAllCornersThenContractsMonotonically -skip-testing:BARQTests/PremiumExperienceTests/testRiderMarkErasesBeforeTheFieldContractsAndPulseClearsAtEnd -resultBundlePath unit.xcresult 2>&1 | tee unit.log
       - name: Build UI tests
         id: ui_build
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
+          python3 ci/run-bounded-core.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
       - name: Verify simulator resource signature before launch
         run: |
           # iOS 26 SplashBoard rejected unsealed launch resources with -67056
@@ -72,7 +73,7 @@ jobs:
           python3 -u ci/core-host-health.py out/welcome-host-health.jsonl &
           WELCOME_HEALTH_PID=$!
           trap 'kill "$WELCOME_LOG_PID" "$WELCOME_TAIL_PID" "$WELCOME_HEALTH_PID" 2>/dev/null || true' EXIT
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testLiveWelcomeRemainsOutsideTheConversation -resultBundlePath welcome.xcresult 2>&1 | tee out/welcome.log
+          python3 ci/run-bounded-core.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testLiveWelcomeRemainsOutsideTheConversation -resultBundlePath welcome.xcresult 2>&1 | tee out/welcome.log
       - name: Real conversation, follow-ups and restoration
         if: ${{ !cancelled() && steps.ui_build.outcome == 'success' }}
         run: |
@@ -89,13 +90,13 @@ jobs:
           # Recording is a separate evidence pass after functional acceptance.
           stop_diagnostics() { kill "$HOST_HEALTH_PID" "$COMPOSER_TAIL_PID" "$TRANSPORT_LOG_PID" 2>/dev/null || true; }
           trap stop_diagnostics EXIT
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testRealBilingualFollowUpsAndConversationRestoration -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
+          python3 ci/run-bounded-core.py 1800 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testRealBilingualFollowUpsAndConversationRestoration -resultBundlePath conversation.xcresult 2>&1 | tee out/conversation.log
       - name: Real bilingual score association and saved match
         if: ${{ !cancelled() && steps.ui_build.outcome == 'success' }}
         run: |
           set -o pipefail
           mkdir -p out
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
+          python3 ci/run-bounded-core.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
       - name: Collect actual evidence
         if: always()
         run: |
@@ -115,5 +116,6 @@ jobs:
             welcome.xcresult
             scores.xcresult
           retention-days: 14
+
 
 

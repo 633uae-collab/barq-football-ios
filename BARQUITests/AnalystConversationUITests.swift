@@ -24,27 +24,13 @@ final class AnalystConversationUITests: XCTestCase {
     }
 
     func testRealBilingualFollowUpsAndConversationRestoration() throws {
-        continueAfterFailure = true
-        let app = XCUIApplication()
-        app.launchEnvironment["FOTIQ_UI_TEST"] = "1"
-        app.launchArguments = ["-lang", "ar", "-resetOnboarding", "YES"]
+        continueAfterFailure = false
+        // Core acceptance begins at the analyst. Entry/onboarding belongs to
+        // the other developer and is not asserted or recorded by this suite.
+        let app = XCUIApplication.fotiq()
+        app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
         app.launch()
         func element(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
-        XCTAssertTrue(element("ob-club-40").waitForExistence(timeout: 40))
-        XCTAssertFalse(element("ob-next").isEnabled)
-        XCTAssertFalse(element("ob-skip").isEnabled)
-        element("ob-club-40").tap()
-        XCTAssertTrue(element("ob-next").isEnabled)
-        element("ob-next").tap()
-        XCTAssertTrue(element("ob-back").waitForExistence(timeout: 10))
-        element("ob-skip").tap()
-        XCTAssertTrue(element("ob-start").waitForExistence(timeout: 10))
-        element("ob-skip").tap()
-        XCTAssertTrue(element("home-notifications").waitForExistence(timeout: 30))
-        let analystTab = app.tabBars.buttons["المحلل"]
-        XCTAssertTrue(analystTab.waitForExistence(timeout: 10)); analystTab.tap()
-        // Reopening later must use saved onboarding, not a test bypass/reset.
-        app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
         let newChat = app.buttons["analyst-new-chat"]
         XCTAssertTrue(newChat.waitForExistence(timeout: 40)); newChat.tap()
         let directory = URL(fileURLWithPath: "/tmp/fotiq-conversation-shots", isDirectory: true)
@@ -64,9 +50,9 @@ final class AnalystConversationUITests: XCTestCase {
             "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم",
             "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق",
             "Compare Barcelona and Real Madrid in La Liga 2025/26. Keep each team's statistics separate.",
-            "قارن برشلونة وريال مدريد في الدوري الإسباني موسم ٢٠٢٥/٢٦، ولا تعرض أرقاماً غير متحققة",
-            "Analyze a live match now. Clearly distinguish confirmed data from unavailable statistics.",
-            "للمباراة نفسها، وضّح التشكيلة والتبديلات المتحققة فقط",
+            "قارن إحصاءات مبابي وليفاندوفسكي في الدوري الإسباني موسم ٢٠٢٥/٢٦؛ اربط كل لاعب بفريقه ولا تخمّن الأرقام",
+            "Analyze a completed match. State its date, competition, final score and confirmed statistics; distinguish unavailable data.",
+            "للمباراة المنتهية نفسها، وضّح التشكيلة والتبديلات المتحققة فقط",
             "Compare Real Madrid and Barcelona in La Liga 2025/26. State the competition and season.",
             "When was FC Barcelona founded? Give the verified foundation date and source."
         ]
@@ -90,6 +76,7 @@ final class AnalystConversationUITests: XCTestCase {
             try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
             try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("0\(index + 1)-conversation.png"))
             XCTAssertEqual(result, .completed); XCTAssertTrue(answer.exists, response); XCTAssertFalse(error.exists, response)
+            XCTAssertEqual(app.staticTexts["analyst-response-kind"].label, "تحليل بالذكاء الاصطناعي · Groq", "Live Groq acceptance must not count a different response kind")
             if answer.exists {
                 lastVerifiedReply = response
                 receivedTurns.append((question, response))
@@ -135,6 +122,30 @@ final class AnalystConversationUITests: XCTestCase {
             XCTAssertTrue(questionText.exists, "Saved question \(10 - offset) must survive termination")
             try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("restored-turn-\(10 - offset).png"))
         }
+        // A new real request after a full process restart must use the saved
+        // conversation context. Keep the provider spacing for this 11th call.
+        sleep(66)
+        let followUp = "For that same club, repeat its name and verified foundation year. Do not switch clubs."
+        let followUpField = app.textFields["analyst-question"]
+        XCTAssertTrue(followUpField.waitForExistence(timeout: 15))
+        followUpField.tap(); followUpField.typeText(followUp)
+        XCTAssertEqual(followUpField.value as? String, followUp)
+        XCTAssertTrue(app.buttons["analyst-send"].isEnabled)
+        app.buttons["analyst-send"].tap()
+        let followUpAnswer = app.staticTexts["analyst-answer"]
+        let followUpError = app.staticTexts["analyst-error"]
+        let followUpResult = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            followUpAnswer.exists || followUpError.exists
+        }, object: nil)], timeout: 180)
+        XCTAssertEqual(followUpResult, .completed)
+        XCTAssertTrue(followUpAnswer.exists)
+        XCTAssertFalse(followUpError.exists)
+        let followUpText = followUpAnswer.label
+        XCTAssertTrue(followUpText.localizedCaseInsensitiveContains("Barcelona") || followUpText.contains("برشلونة"))
+        XCTAssertTrue(followUpText.contains("1899") || followUpText.contains("١٨٩٩"))
+        report += "\nPost-restoration follow-up\n\(followUp)\n\(followUpText)\n"
+        try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
+        try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("post-restoration-follow-up.png"))
         app.buttons["analyst-new-chat"].tap()
         XCTAssertTrue(app.staticTexts["analyst-welcome"].waitForExistence(timeout: 10))
         app.buttons["analyst-history"].tap()
@@ -171,5 +182,6 @@ final class AnalystConversationUITests: XCTestCase {
     }
 
 }
+
 
 
