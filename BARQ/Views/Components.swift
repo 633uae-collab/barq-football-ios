@@ -100,11 +100,11 @@ struct RemoteImage: View {
                 img = c
                 return
             }
-            let r = await ImageStore.shared.image(u)
-            // Prefetch/decode may finish while the launch cover is animating.
-            // Hold publication until reveal so image arrival cannot invalidate
-            // the prepared glass grid in the middle of the camera track.
+            // Immutable local/bundled pixels are already present. A cache miss
+            // must not compete with motion for network callbacks or decoding.
             if waitForLaunch { await LaunchGate.wait() }
+            guard !Task.isCancelled else { return }
+            let r = await ImageStore.shared.image(u)
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { img = r }
         }

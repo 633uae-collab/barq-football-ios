@@ -37,9 +37,9 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Compare the identical application against run 42833284555 on Intel.
-    # Both standard public pools are free; no larger runner is used.
-    runs-on: macos-15
+    # Use the supported macOS 26 standard Apple Silicon pool.
+    # macOS 15 ARM allocation was unavailable; no larger/paid runner is used.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
