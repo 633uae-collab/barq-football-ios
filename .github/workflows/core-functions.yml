@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Recorder protocol checks
+        run: python3 -m unittest discover -s ci/tests -p 'test_record_core.py'
       - name: Select Xcode 26
         run: |
           X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"; xcodebuild -version
@@ -63,12 +65,21 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p out
+          xcrun simctl spawn "$UDID" log stream --level debug --style compact --predicate 'subsystem == "ae.barq.transport" OR subsystem == "ae.barq.composer"' >out/welcome-transport.log 2>&1 &
+          WELCOME_LOG_PID=$!
+          tail -n +1 -F out/welcome-transport.log &
+          WELCOME_TAIL_PID=$!
+          python3 -u ci/core-host-health.py out/welcome-host-health.jsonl &
+          WELCOME_HEALTH_PID=$!
+          trap 'kill "$WELCOME_LOG_PID" "$WELCOME_TAIL_PID" "$WELCOME_HEALTH_PID" 2>/dev/null || true' EXIT
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystConversationUITests/testLiveWelcomeRemainsOutsideTheConversation -resultBundlePath welcome.xcresult 2>&1 | tee out/welcome.log
       - name: Real conversation, follow-ups and restoration
         if: ${{ !cancelled() && steps.ui_build.outcome == 'success' }}
         run: |
           set -o pipefail
           mkdir -p out
+          mkdir -p /tmp/fotiq-core-recording
+          python3 ci/record-core.py out/video --prepare "$UDID"
           xcrun simctl spawn "$UDID" log stream --level debug --style compact --predicate 'subsystem == "ae.barq.transport" OR subsystem == "ae.barq.composer"' >out/transport-codes.log 2>&1 &
           TRANSPORT_LOG_PID=$!
           # Keep diagnostic progress in the hosted job log even if final upload fails.
@@ -78,7 +89,6 @@ jobs:
           HOST_HEALTH_PID=$!
           # Recording starts only after the test confirms the analyst is ready.
           # The test supplies its real simulator UDID and stops capture before relaunch.
-          mkdir -p /tmp/fotiq-core-recording
           touch /tmp/fotiq-core-recording/enabled
           python3 ci/record-core.py out/video &
           RECORDING_PID=$!
@@ -110,4 +120,5 @@ jobs:
             welcome.xcresult
             scores.xcresult
           retention-days: 14
+
 

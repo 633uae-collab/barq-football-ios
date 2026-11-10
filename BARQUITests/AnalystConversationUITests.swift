@@ -143,9 +143,11 @@ final class AnalystConversationUITests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let id = UUID().uuidString
         let udid = try XCTUnwrap(ProcessInfo.processInfo.environment["SIMULATOR_UDID"], "Record the actual XCTest simulator")
-        let request = ["id": id, "action": action, "phase": phase, "udid": udid]
-        try JSONSerialization.data(withJSONObject: request).write(to: directory.appendingPathComponent("request.json"), options: .atomic)
         let deadline = Date().addingTimeInterval(20)
+        let request: [String: Any] = ["id": id, "action": action, "phase": phase, "udid": udid,
+                                      "requestedAt": Date().timeIntervalSince1970,
+                                      "expiresAt": deadline.timeIntervalSince1970]
+        try JSONSerialization.data(withJSONObject: request).write(to: directory.appendingPathComponent("request.json"), options: .atomic)
         while Date() < deadline {
             if let data = try? Data(contentsOf: directory.appendingPathComponent("ack.json")),
                let ack = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -157,8 +159,11 @@ final class AnalystConversationUITests: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.1)
         }
+        // A timed-out start must not begin recording after XCTest tears down the app.
+        try? Data().write(to: directory.appendingPathComponent("cancelled-\(id)"), options: .atomic)
         throw NSError(domain: "CoreRecording", code: 2, userInfo: [NSLocalizedDescriptionKey: "Recorder acknowledgment missing"])
     }
 
 }
+
 
