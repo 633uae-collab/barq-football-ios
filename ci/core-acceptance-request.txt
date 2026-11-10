@@ -1,5 +1,1 @@
-After completed run 42791306277: remove video-only simulator presentation setup from functional acceptance.
-Evidence: bootstatus succeeded; simctl ui appearance dark timed out before any app/test launch.
-Use the boot-only preflight already successful in recorded AX replay 42777159234.
-Preserve all live questions, exact input/reply/source/restoration assertions and UI time limits.
-No recording, entry tests, provider retries, quota bypass, server publication, or concurrent live calls.
+2026-11-11: On standard Intel, start simulator migration then compile UI tests before the unchanged 120-second readiness check. Prior run 42892963536 failed migration before app execution; completed/cancelled verified. No entry tests, recording, provider retries, UI timeout changes or deployment. Conversation and scores require successful compilation AND simulator readiness.
