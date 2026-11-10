@@ -39,8 +39,27 @@ extension View {
 }
 
 @MainActor enum LaunchGate {
-    static var open = false
-    static func wait() async { while !open && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(50)) } }
+    private static var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    static var open = false {
+        didSet {
+            guard open else { return }
+            let pending = Array(waiters.values)
+            waiters.removeAll()
+            for waiter in pending { waiter.resume() }
+        }
+    }
+    static func wait() async {
+        guard !open, !Task.isCancelled else { return }
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if open || Task.isCancelled { continuation.resume() }
+                else { waiters[id] = continuation }
+            }
+        } onCancel: {
+            Task { @MainActor in waiters.removeValue(forKey: id)?.resume() }
+        }
+    }
 }
 
 // MARK: - Persistence (pure, unit-tested)

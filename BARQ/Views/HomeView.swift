@@ -29,7 +29,9 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            // Prepare visible native cards before reveal without constructing
+            // every offscreen match row in the first layout transaction.
+            LazyVStack(spacing: 14) {
                 if let e = error {
                     EmptyState(symbol: "wifi.exclamationmark", title: "تعذر التحميل", message: LocalizedStringKey(e))
                     if loaded { Text("تعذر تحديث البيانات. المعروض آخر نسخة محمّلة").font(.footnote).foregroundStyle(.secondary) }

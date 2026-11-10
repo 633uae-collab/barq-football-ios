@@ -2,6 +2,25 @@ import XCTest
 @testable import BARQ
 
 final class PremiumExperienceTests: XCTestCase {
+    @MainActor func testCancelledLaunchWaiterDoesNotNeedGateToOpen() async {
+        LaunchGate.open = false
+        defer { LaunchGate.open = true }
+        let waiting = Task { await LaunchGate.wait(); return Task.isCancelled }
+        await Task.yield()
+        waiting.cancel()
+        let cancelled = await waiting.value
+        XCTAssertTrue(cancelled)
+    }
+    @MainActor func testOpeningLaunchGateResumesEveryPendingConsumer() async {
+        LaunchGate.open = false
+        defer { LaunchGate.open = true }
+        let consumers = (0..<12).map { index in Task { await LaunchGate.wait(); return index } }
+        await Task.yield()
+        LaunchGate.open = true
+        var results: [Int] = []
+        for consumer in consumers { results.append(await consumer.value) }
+        XCTAssertEqual(results, Array(0..<12))
+    }
     func testPreparationConsumesOnlyTheStationaryReferenceHold() {
         for preparation in [-1.0, 0, 0.2, 0.65, 0.9, 5.0] {
             let credit = PremiumLaunchTrack.holdCredit(displayedFor: preparation, reduceMotion: false)
