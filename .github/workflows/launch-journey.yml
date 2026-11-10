@@ -37,9 +37,9 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # The standard ARM pool did not allocate run 42713555479. Use the working
-    # standard Intel pool; no paid larger runner. Record optimized builds.
-    runs-on: macos-15-intel
+    # Cross-check the same app on the standard Apple Silicon pool. The Intel
+    # run remains evidence; no paid larger runner or app retiming is involved.
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
