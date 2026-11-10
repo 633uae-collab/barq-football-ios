@@ -6,6 +6,7 @@ on:
       - .github/workflows/core-persistence-host.yml
       - ci/core-persistence-host.py
       - ci/core-host-request.txt
+      - ci/CorePersistenceProcess.swift
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,6 +25,16 @@ jobs:
           printf '%s\n' "$GITHUB_SHA" > out/head-sha.txt
           python3 ci/core-persistence-host.py
           python3 ci/run-core-command.py 600 swift test --package-path out/core-persistence-package 2>&1 | tee out/persistence-host.log
+      - name: Verify archive across separate native processes (synthetic data)
+        run: |
+          set -o pipefail
+          python3 ci/run-core-command.py 120 swift build --package-path out/core-persistence-package --product CorePersistenceProcess 2>&1 | tee out/persistence-process-build.log
+          BIN=out/core-persistence-package/.build/debug/CorePersistenceProcess
+          for mode in write read followup verify-followup; do
+            python3 ci/run-core-command.py 30 "$BIN" "$mode" "$PWD/out/process-conversations.json" 2>&1 | tee -a out/persistence-process.log
+            if [ "$mode" = write ]; then cp out/process-conversations.json out/process-original.json; fi
+            if [ "$mode" = read ]; then cmp out/process-original.json out/process-conversations.json; fi
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -32,4 +43,6 @@ jobs:
             out/head-sha.txt
             out/persistence-host.log
             out/source-sha256.json
+            out/persistence-process*.log
+            out/process-conversations.json
           retention-days: 14
