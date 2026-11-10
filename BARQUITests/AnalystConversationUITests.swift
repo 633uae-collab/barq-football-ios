@@ -72,11 +72,13 @@ final class AnalystConversationUITests: XCTestCase {
         ]
         XCTAssertEqual(questions.count, 10)
         for (index, question) in questions.enumerated() {
+            print("FOTIQ_CORE_STEP question=\(index + 1) stage=input-start utc=\(Date().timeIntervalSince1970)")
             let field = app.textFields["analyst-question"]
             XCTAssertTrue(field.waitForExistence(timeout: 15)); field.tap(); field.typeText(question)
             // Opening the keyboard alone is not successful text entry.
             XCTAssertEqual(field.value as? String, question, "The actual question must be present before sending")
             XCTAssertTrue(app.buttons["analyst-send"].isEnabled, "Verified input must enable Send")
+            print("FOTIQ_CORE_STEP question=\(index + 1) stage=input-verified utc=\(Date().timeIntervalSince1970)")
             let began = Date(); app.buttons["analyst-send"].tap()
             XCTAssertFalse(app.staticTexts["analyst-welcome"].exists, "Welcome must disappear immediately after sending")
             XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-welcome-logo").firstMatch.exists)
@@ -105,6 +107,7 @@ final class AnalystConversationUITests: XCTestCase {
         }
         XCTAssertEqual(receivedTurns.count, 10, "Every question requires an actual answer before restoration")
         try recording("stop")
+        print("FOTIQ_CORE_STEP stage=terminate-for-restoration utc=\(Date().timeIntervalSince1970)")
         app.terminate(); app.launch()
         XCTAssertTrue(app.buttons["analyst-history"].waitForExistence(timeout: 30))
         try recording("start", phase: "restored")
@@ -139,7 +142,10 @@ final class AnalystConversationUITests: XCTestCase {
     }
     private func recording(_ action: String, phase: String = "") throws {
         let directory = URL(fileURLWithPath: "/tmp/fotiq-core-recording", isDirectory: true)
-        guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("enabled").path) else { return }
+        guard ProcessInfo.processInfo.environment["FOTIQ_RECORD_VIDEO"] == "1" else { return }
+        guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("enabled").path) else {
+            throw NSError(domain: "CoreRecording", code: 3, userInfo: [NSLocalizedDescriptionKey: "Explicit video pass requires a recorder"])
+        }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let id = UUID().uuidString
         let udid = try XCTUnwrap(ProcessInfo.processInfo.environment["SIMULATOR_UDID"], "Record the actual XCTest simulator")
