@@ -10,6 +10,12 @@ enum PremiumLaunchTrack {
     // Measured from the 361-frame, 60 Hz public reference. The final map hold
     // and loop reset are not part of an application launch. See docs/RIDER_LAUNCH.md.
     static let duration = 1.8
+    static let firstErase = 40.0 / 60
+    /// Preparation already displays the exact stationary artwork. Credit only
+    /// that static part; never skip an erasure, contraction or pulse frame.
+    static func holdCredit(displayedFor seconds: Double, reduceMotion: Bool) -> Double {
+        min(max(0, seconds), reduceMotion ? LaunchPresentation.hold : firstErase)
+    }
     static func smooth(_ t: Double) -> CGFloat {
         let x = min(1, max(0, t))
         return CGFloat(x * x * (3 - 2 * x))
@@ -65,7 +71,8 @@ enum PremiumLaunchTrack {
 struct PremiumLaunchSurface: UIViewRepresentable {
     let clock: SplashClock
     let reduceMotion: Bool
-    func makeUIView(context: Context) -> PremiumLaunchLayer { PremiumLaunchLayer(clock: clock, reduceMotion: reduceMotion) }
+    let onComplete: () -> Void
+    func makeUIView(context: Context) -> PremiumLaunchLayer { PremiumLaunchLayer(clock: clock, reduceMotion: reduceMotion, onComplete: onComplete) }
     func updateUIView(_ view: PremiumLaunchLayer, context: Context) {}
     static func dismantleUIView(_ view: PremiumLaunchLayer, coordinator: ()) {
         view.stop()
@@ -79,14 +86,16 @@ final class PremiumLaunchLayer: UIView {
     private let markBands = PremiumLaunchTrack.segments.map { _ in CALayer() }
     private let clock: SplashClock
     private let reduceMotion: Bool
+    private let onComplete: () -> Void
     private var link: CADisplayLink?
     private var prepared = false, started = false
     private var tracks: [(CALayer, CAKeyframeAnimation)] = []
     private weak var accessibilityWindow: UIWindow?
     private var previousAccessibilityElements: [Any]?
-    init(clock: SplashClock, reduceMotion: Bool) {
+    init(clock: SplashClock, reduceMotion: Bool, onComplete: @escaping () -> Void) {
         self.clock = clock
         self.reduceMotion = reduceMotion
+        self.onComplete = onComplete
         super.init(frame: .zero)
         // The contracting cover reveals the native view beneath this surface.
         isOpaque = false
@@ -151,7 +160,6 @@ final class PremiumLaunchLayer: UIView {
         cover.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size), in: bounds.size)
         pulse.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size), in: bounds.size)
         applyState(at: 0)
-        prepareAnimations()
         CATransaction.commit()
         let display = CADisplayLink(target: self, selector: #selector(frameTick))
         display.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
@@ -186,9 +194,11 @@ final class PremiumLaunchLayer: UIView {
         animation.calculationMode = .linear
         tracks.append((target, animation))
     }
-    private func prepareAnimations() {
-        let duration = reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration
-        let times = (0...168).map { Double($0) / 168 * duration }
+    private func prepareAnimations(offset: Double) {
+        let end = reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration
+        let duration = end - offset
+        let count = Int(ceil(duration * 120))
+        let times = (0...count).map { offset + Double($0) / Double(count) * duration }
         if reduceMotion {
             let values = times.map { LaunchPresentation.opacity(at: $0) }
             track(cover, "opacity", values, duration: duration)
@@ -219,11 +229,26 @@ final class PremiumLaunchLayer: UIView {
             applyState(at: held == "start" ? 0 : (held == "fade" ? duration * 0.75 : duration))
             CATransaction.commit(); stop(); return
         }
-        CATransaction.setCompletionBlock { [weak self] in self?.clock.animationCompleted = true }
+        let now = CACurrentMediaTime()
+        let offset = PremiumLaunchTrack.holdCredit(displayedFor: clock.displayedFor(at: now), reduceMotion: reduceMotion)
+        prepareAnimations(offset: offset)
+        // A shared layer-local origin keeps all tracks phase-aligned. Completion
+        // is event driven; no 8 ms SwiftUI polling task competes with rendering.
+        clock.begin(at: now, timelineOffset: offset)
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self else { return }
+            _ = self.clock.tick()
+            self.clock.animationCompleted = true
+            self.stop()
+            self.onComplete()
+        }
         applyState(at: duration)
-        for (target, animation) in tracks { target.add(animation, forKey: animation.keyPath) }
+        for (target, animation) in tracks {
+            animation.beginTime = target.convertTime(now, from: nil)
+            target.add(animation, forKey: animation.keyPath)
+        }
         CATransaction.commit()
-        _ = clock.tick()
+        _ = clock.tick(now)
     }
 }
 
@@ -255,8 +280,10 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
                 return
             }
             done = true; stop()
+            os_signpost(.end, log: SplashDiag.points, name: "Rider destination preparation")
             SplashDiag.log.notice("NEXT layout committed in active scene")
             SplashClock.nextReady = true
         }
     }
 }
+

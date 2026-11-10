@@ -5,6 +5,7 @@ import UIKit
 /// Splash diagnostics (subsystem ae.barq.splash): per-frame progress, time-to-first-frame, main-thread hangs.
 enum SplashDiag {
     static let log = Logger(subsystem: "ae.barq.splash", category: "splash")
+    static let points = OSLog(subsystem: "ae.barq.splash", category: .pointsOfInterest)
     static let processStart = Date()   // set when the app struct initialises (first touch of this enum)
     nonisolated(unsafe) private static var watchdog: Thread?
     /// Background thread pings main every 50 ms and logs any gap > 100 ms (= main thread blocked).
@@ -112,6 +113,16 @@ final class SplashClock {
     nonisolated(unsafe) static var nextReady = false
     nonisolated(unsafe) static var sawFirstFrame = false
     private var loggedFirstVisualFrame = false
+    private var firstVisualTime: TimeInterval?
+    private(set) var timelineOffset: Double = 0
+    var activeDuration: Double { max(0, elapsed - timelineOffset) }
+    func displayedFor(at now: TimeInterval) -> Double { max(0, now - (firstVisualTime ?? now)) }
+    func begin(at now: TimeInterval, timelineOffset: Double) {
+        self.timelineOffset = timelineOffset
+        start = now; previous = now
+        SplashDiag.log.notice("START launch +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms timelineOffset=\(timelineOffset, privacy: .public) uptime=\(now, privacy: .public)")
+        os_signpost(.begin, log: SplashDiag.points, name: "Rider motion")
+    }
     private var start: TimeInterval?
     private var previous: TimeInterval?
     private var startupPrevious: TimeInterval?
@@ -133,6 +144,7 @@ final class SplashClock {
         startupPrevious = now
         if !loggedFirstVisualFrame {
             loggedFirstVisualFrame = true
+            firstVisualTime = now
             Self.sawFirstFrame = true
             SplashDiag.log.notice("FIRST splash frame +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         }
@@ -152,11 +164,15 @@ final class SplashClock {
         }
         if let previous, now > previous {
             let gap = now - previous
+            if gap > 1.0 / 30 {
+                SplashDiag.log.notice("FRAME_GAP seconds=\(gap, privacy: .public) fromUptime=\(previous, privacy: .public) toUptime=\(now, privacy: .public)")
+                os_signpost(.event, log: SplashDiag.points, name: "Rider callback gap", "gap=%.6f from=%.6f to=%.6f", gap, previous, now)
+            }
             largestFrameGap = max(largestFrameGap, gap)
             if frameGaps.count < 512 { frameGaps.append(gap) }
         }
         previous = now
-        elapsed = max(0, now - (start ?? now))
+        elapsed = timelineOffset + max(0, now - (start ?? now))
         return elapsed
     }
 }
@@ -186,20 +202,16 @@ struct SplashView: View {
     @State private var clock = SplashClock()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        PremiumLaunchSurface(clock: clock, reduceMotion: reduceMotion)
-            .ignoresSafeArea()
-            .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
-            .task {
-                guard UserDefaults.standard.string(forKey: "splashHold") == nil else { return }
-                while (clock.elapsed < (reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration) || !clock.animationCompleted) && !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(8))
-                }
-                guard !Task.isCancelled else { return }
+        PremiumLaunchSurface(clock: clock, reduceMotion: reduceMotion) {
+                os_signpost(.end, log: SplashDiag.points, name: "Rider motion")
                 SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public) mode=\(reduceMotion ? "reduced" : "premium", privacy: .public)")
+                SplashDiag.log.notice("MOTION committedToCompletion=\(clock.activeDuration, privacy: .public) creditedStaticHold=\(clock.timelineOffset, privacy: .public) finishEpoch=\(Date().timeIntervalSince1970, privacy: .public)")
                 SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public) maxCallbackGapIncludingPreparation=\(clock.startupLargestFrameGap, privacy: .public)")
                 SplashDiag.log.notice("FRAME_STATS samples=\(clock.sampledFrames, privacy: .public) mean=\(clock.meanFrameGap, privacy: .public) p95=\(clock.percentile95Gap, privacy: .public)")
                 onFinish()
             }
+            .ignoresSafeArea()
+            .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
     }
 }
 
@@ -540,9 +552,18 @@ struct LaunchFlow<Content: View>: View {
                         try? await Task.sleep(for: .milliseconds(8))
                     }
                     guard !Task.isCancelled else { return }
+                    os_signpost(.begin, log: SplashDiag.points, name: "Rider destination preparation")
+                    if onboarded {
+                        LaunchHomePreparation.snapshot = await LaunchHomeCache.shared.restore(scope: LaunchHomePreparation.scope)
+                        if let snapshot = LaunchHomePreparation.snapshot {
+                            await LaunchHomeCache.shared.prepareCachedImages(snapshot)
+                        }
+                        SplashDiag.log.notice("HOME preparedLocalSnapshot=\(LaunchHomePreparation.snapshot != nil, privacy: .public)")
+                    }
                     destinationMounted = true
                 }
             }
         }
     }
 }
+

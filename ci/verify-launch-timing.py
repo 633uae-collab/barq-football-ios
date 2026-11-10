@@ -18,9 +18,11 @@ for i, r in enumerate(rows):
     if not low <= r['elapsed'] < high: errors.append(f'{i}: duration {r["elapsed"]:.4f}s outside {low}-{high}s')
     if r['maxFrameGap'] > .050: errors.append(f'{i}: frame gap {r["maxFrameGap"]:.4f}s exceeds 50ms')
 for i, r in enumerate(cadence):
-    if r['samples'] < 20 or r['callbackFPS'] < 58 or r['p95Gap'] > .020:
+    # Reduced Motion may credit its 0.5 s static hold, leaving a 0.3 s fade.
+    if r['samples'] < 12 or r['callbackFPS'] < 58 or r['p95Gap'] > .020:
         errors.append(f'{i}: unstable 60Hz callback cadence: {r}')
 report = dict(measurement='Main-thread display-link callbacks; not proof of presented-frame FPS', launches=rows, cadence=cadence, failures=errors)
 Path('out/timing-report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps(report,indent=2))
 if errors: raise SystemExit(1)
+

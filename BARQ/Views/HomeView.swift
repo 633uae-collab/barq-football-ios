@@ -16,6 +16,17 @@ struct HomeView: View {
     @State private var adding = false
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // The launch coordinator decodes this off the main actor before mounting
+        // Home. All existing cards participate in its first covered layout.
+        let snapshot = LaunchHomePreparation.snapshot.flatMap { $0.usable(scope: LaunchHomePreparation.scope) ? $0 : nil }
+        _today = State(initialValue: snapshot?.today ?? [])
+        _tomorrow = State(initialValue: snapshot?.tomorrow ?? [])
+        _stars = State(initialValue: snapshot?.stars)
+        _lineupsReady = State(initialValue: snapshot?.lineupsReady ?? [])
+        _loaded = State(initialValue: snapshot != nil)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
@@ -25,7 +36,10 @@ struct HomeView: View {
                     Button("إعادة المحاولة") { Task { await load() } }.buttonStyle(.glass)
                         .accessibilityIdentifier("home-retry")
                 }
-                ForEach(store.homeSections, id: \.self) { key in section(key).transition(.opacity) }
+                ForEach(store.homeSections, id: \.self) { key in
+                    if loaded { section(key).transition(.opacity) }
+                    else { LaunchHomeLoadingSection(key: key) }
+                }
             }
             .animation(.smooth(duration: 0.3), value: store.homeSections)
             .animation(.smooth(duration: 0.3), value: loaded)
@@ -140,6 +154,7 @@ struct HomeView: View {
             today = t.fixtures
             now = Date()
             loaded = true; error = nil
+            saveLaunchSnapshot()
             let tm = await b
             if let tm { tomorrow = tm.fixtures }
             top = MatchSort.topN(today: t.fixtures, tomorrow: tm?.fixtures ?? [])
@@ -152,7 +167,14 @@ struct HomeView: View {
                 if let d: MatchDetail = try? await API.shared.get("/api/match/\(f.id)", maxAge: 120), d.lineups.count >= 2 { ready.insert(f.id) }
             }
             lineupsReady = ready
+            saveLaunchSnapshot()
         } catch { self.error = error.localizedDescription }
+    }
+
+    private func saveLaunchSnapshot() {
+        let snapshot = LaunchHomeSnapshot(scope: LaunchHomePreparation.scope, savedAt: Date(),
+            today: today, tomorrow: tomorrow, stars: stars, lineupsReady: lineupsReady)
+        Task { await LaunchHomeCache.shared.save(snapshot) }
     }
 }
 
@@ -356,3 +378,4 @@ struct ReorderSectionsSheet: View {
         }
     }
 }
+

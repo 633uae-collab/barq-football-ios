@@ -47,6 +47,8 @@ jobs:
         run: |
           X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"; xcodebuild -version
       - run: brew install xcodegen ffmpeg && xcodegen generate
+      - name: Build host-side process birth measurement
+        run: mkdir -p out && clang -O2 ci/process-birth.c -o out/process-birth
       - name: Keep the capture display awake
         run: caffeinate -d -i -u -t 3600 </dev/null >/tmp/fotiq-capture-awake.log 2>&1 &
       - name: Pick simulator, enable touch indicators, boot
@@ -59,7 +61,9 @@ jobs:
           echo "UDID=$UDID" >> $GITHUB_ENV
           defaults write com.apple.iphonesimulator ShowSingleTouches 1
           defaults write com.apple.iphonesimulator ShowPinches 1
+          BOOT_START=$(python3 -c 'import time; print(time.monotonic())')
           xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
+          python3 -c 'import json,time,sys; json.dump({"simulatorBootSeconds":time.monotonic()-float(sys.argv[1]),"includedInAppTiming":False},open("out/simulator-boot.json","w"))' "$BOOT_START"
           xcrun simctl ui "$UDID" appearance dark
           open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
       - name: All unit tests
@@ -157,6 +161,11 @@ jobs:
           restore_normal_capture
           trap - EXIT
           exit "$result"
+      - name: Correlate Instruments stacks with simultaneous original recording
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        timeout-minutes: 6
+        continue-on-error: true
+        run: bash ci/profile-rider.sh
       - name: Instruments Time Profiler and Animation Hitches
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         timeout-minutes: 4
@@ -235,3 +244,4 @@ jobs:
             recording-setup.xcresult
             scores.xcresult
           retention-days: 14
+

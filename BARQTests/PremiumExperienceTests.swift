@@ -2,6 +2,32 @@ import XCTest
 @testable import BARQ
 
 final class PremiumExperienceTests: XCTestCase {
+    func testPreparationConsumesOnlyTheStationaryReferenceHold() {
+        for preparation in [-1.0, 0, 0.2, 0.65, 0.9, 5.0] {
+            let credit = PremiumLaunchTrack.holdCredit(displayedFor: preparation, reduceMotion: false)
+            XCTAssertGreaterThanOrEqual(credit, 0)
+            XCTAssertLessThanOrEqual(credit, PremiumLaunchTrack.firstErase)
+            for index in PremiumLaunchTrack.segments.indices {
+                XCTAssertEqual(PremiumLaunchTrack.remaining(at: credit, segment: index), 1)
+            }
+        }
+        XCTAssertEqual(PremiumLaunchTrack.holdCredit(displayedFor: 5, reduceMotion: true), 0.5)
+        let clock = SplashClock()
+        _ = clock.tick(10, active: false)
+        XCTAssertEqual(clock.displayedFor(at: 11), 1)
+        clock.begin(at: 11, timelineOffset: 2.0 / 3)
+        XCTAssertEqual(clock.tick(11.2), 2.0 / 3 + 0.2, accuracy: 0.00001)
+        XCTAssertEqual(clock.activeDuration, 0.2, accuracy: 0.00001)
+    }
+    func testLaunchCacheRejectsExpiredFutureAndDifferentBackendResponses() {
+        let now = Date(timeIntervalSince1970: 1000)
+        var snapshot = LaunchHomeSnapshot(scope: "production", savedAt: now, today: [], tomorrow: [], stars: nil, lineupsReady: [])
+        XCTAssertTrue(snapshot.usable(scope: "production", now: now))
+        XCTAssertFalse(snapshot.usable(scope: "offline-test", now: now))
+        XCTAssertFalse(snapshot.usable(scope: "production", now: now.addingTimeInterval(121)))
+        snapshot.savedAt = now.addingTimeInterval(1)
+        XCTAssertFalse(snapshot.usable(scope: "production", now: now))
+    }
     func testBrandMarkHasTransparentMatteAndPreservesOriginalColors() throws {
         let resource = try XCTUnwrap(Bundle.main.url(forResource: "PreparedBrandMark", withExtension: "rgba"))
         XCTAssertEqual(try Data(contentsOf: resource).count, 1024 * 1024 * 4)
@@ -107,3 +133,4 @@ final class PremiumExperienceTests: XCTestCase {
         XCTAssertEqual(Onboarding.loadDraft(d).leagues, [39])
     }
 }
+
