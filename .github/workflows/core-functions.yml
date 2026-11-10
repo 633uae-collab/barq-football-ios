@@ -18,9 +18,11 @@ jobs:
     concurrency:
       group: fotiq-live-provider-review
       cancel-in-progress: false
-    # Standard Intel runner: free for this public repository; ARM capacity is unavailable.
-    # Keep the existing boot bounds, acceptance assertions and entry-test exclusions.
-    runs-on: macos-15-intel
+    # Standard Intel runner: free for this public repository.
+    # Xcode 26.4 fixes simulator cache creation and simdiskimaged hangs (Apple 170836966/172343027).
+    # This is an environment comparison, not a claimed fix for the app's AX stall.
+    # Keep iOS 26.2, all boot/UI deadlines, assertions and entry exclusions unchanged.
+    runs-on: macos-26-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -33,8 +35,9 @@ jobs:
         run: python3 -m unittest discover -s ci/tests -p 'test_*.py'
       - name: Select Xcode 26
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app
-          xcodebuild -version
+          sudo xcode-select -s /Applications/Xcode_26.4.1.app
+          xcodebuild -version | tee out/xcode-version.txt
+          sw_vers > out/host-version.txt
       - run: brew install xcodegen && xcodegen generate
       - name: Build UI tests
         id: ui_build
@@ -46,7 +49,7 @@ jobs:
           mkdir -p out
           set -o pipefail
           python3 ci/run-core-command.py 120 xcrun simctl list devices available -j > out/devices.json 2>out/simulator-list.log
-          UDID=$(python3 -c 'import json; d=json.load(open("out/devices.json"))["devices"]; print(next(v["udid"] for k,vs in d.items() if k.endswith("iOS-26-2") for v in vs if v["name"] == "iPhone 16 Pro"))')
+          UDID=$(python3 -c 'import json; d=json.load(open("out/devices.json"))["devices"]; print(next(v["udid"] for k,vs in d.items() if k.endswith("iOS-26-2") for v in vs if v["name"] == "iPhone 17 Pro"))')
           uname -m > out/architecture.txt
           printf '%s\n' "$UDID" > out/requested-udid.txt
           echo "UDID=$UDID" >> $GITHUB_ENV

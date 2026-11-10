@@ -1,1 +1,5 @@
-Compile Intel iOS simulator targets before CoreSimulator discovery. Prior run 42899176985 exhausted the existing 120-second list bound with no output; retain readiness gates and all UI acceptance assertions. No entry tests, recording, deployment or paid runner.
+Controlled Intel environment comparison after d888 bootstatus failure.
+Use standard free macos-26-intel, Xcode 26.4.1 and preinstalled iPhone 17 Pro / iOS 26.2.
+Apple Xcode 26.4 release notes fix simulator shared cache creation (170836966) and simdiskimaged hangs (172343027).
+Keep existing boot and UI deadlines, exact-input/full-restoration checks and provider spacing.
+No entry tests, recording, deployment or paid services. This does not establish the original AX root cause.
