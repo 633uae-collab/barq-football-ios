@@ -53,6 +53,22 @@ jobs:
           sw_vers > out/host-version.txt
           system_profiler SPDisplaysDataType SPHardwareDataType > out/host-rendering-hardware.txt
           xcrun simctl list devices available -j > out/simulator-devices.json
+      - name: Test committed-layout readiness before simulator startup
+        run: |
+          set -o pipefail
+          READINESS_PACKAGE="$RUNNER_TEMP/launch-readiness"
+          mkdir -p "$READINESS_PACKAGE"
+          cp BARQ/Views/LaunchCommitReadiness.swift BARQTests/LaunchCommitReadinessTests.swift "$READINESS_PACKAGE/"
+          cat > "$READINESS_PACKAGE/Package.swift" <<'SWIFT'
+          // swift-tools-version: 5.9
+          import PackageDescription
+          let package = Package(name: "LaunchReadiness", targets: [
+              .testTarget(name: "LaunchReadinessTests", path: ".",
+                  sources: ["LaunchCommitReadiness.swift", "LaunchCommitReadinessTests.swift"],
+                  swiftSettings: [.define("LAUNCH_READINESS_STANDALONE")])
+          ])
+          SWIFT
+          swift test --package-path "$READINESS_PACKAGE" 2>&1 | tee out/launch-readiness-tests.log
       - run: brew install xcodegen ffmpeg && xcodegen generate
       - name: Build host-side process birth measurement
         run: mkdir -p out && clang -O2 ci/process-birth.c -o out/process-birth

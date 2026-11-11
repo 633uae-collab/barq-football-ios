@@ -304,8 +304,9 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
     final class ReadinessProbe: UIView {
         var layoutGeneration: () -> Int = { 0 }
         private var link: UIUpdateLink?
-        private var previous: CFTimeInterval?
-        private var previousLayoutGeneration: Int?
+        private var readiness = LaunchCommitReadiness()
+        private var firstCommitAt: CFTimeInterval?
+        private var observedCommits = 0
         private var done = false
         override func layoutSubviews() {
             super.layoutSubviews()
@@ -319,21 +320,14 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
         func stop() { link?.isEnabled = false; link = nil }
         private func destinationDidCommit() {
             guard !done else { return }
-            guard window?.windowScene?.activationState == .foregroundActive else {
-                previous = nil
-                previousLayoutGeneration = nil
-                return
-            }
             let now = CACurrentMediaTime()
-            let generation = layoutGeneration()
-            guard let previous, now - previous < 0.05,
-                  previousLayoutGeneration == generation else {
-                previous = now
-                previousLayoutGeneration = generation
-                return
-            }
+            if firstCommitAt == nil { firstCommitAt = now }
+            observedCommits += 1
+            guard readiness.observe(layoutGeneration: layoutGeneration(),
+                                    isActive: window?.windowScene?.activationState == .foregroundActive) else { return }
             done = true; stop()
             os_signpost(.end, log: SplashDiag.points, name: "Rider destination preparation")
+            SplashDiag.log.notice("READINESS observedCommits=\(self.observedCommits, privacy: .public) firstCommitToReady=\(now - (self.firstCommitAt ?? now), privacy: .public)")
             SplashDiag.log.notice("NEXT layout committed in active scene")
             SplashClock.nextReady = true
         }

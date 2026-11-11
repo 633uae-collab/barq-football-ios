@@ -33,6 +33,12 @@ Animation geometry is prepared once, and Core Animation interpolates layer trans
 
 The measured-reference timeline replaces the old 1.4 s target with 1.8 s. CI duration bounds are 1.8–2.0 s (0.8–1.0 s Reduce Motion). Cadence acceptance is stricter than the inherited 250 ms gap: maximum 50 ms, mean callback rate >=58 Hz, p95 <=20 ms. A passing callback check alone does not imply a visually smooth 60 fps result.
 
+### Committed-layout readiness follow-up — awaiting native validation
+
+The readiness probe previously rejected two identical hosted-layout generations when their completed commits were 50 ms or more apart. On a loaded host, that could repeatedly reset readiness even though layout was already stable, adding avoidable stationary-logo time. Readiness now requires two active-scene commits with the same **nonzero** hosted-layout generation, independently of callback spacing. A changed layout, inactive scene or unlaid-out destination resets the observation. `READINESS observedCommits` and `firstCommitToReady` retain the actual wait cost in diagnostics.
+
+Five regression tests cover stable commits, changing layout, inactive/reactivated scenes, no layout and destination replacement. The same tests run with SwiftPM on the native macOS host before simulator boot as well as within the iOS unit-test target. Host tests do not certify UIKit integration, visual smoothness or device FPS. The 50 ms **motion acceptance** limit, all other cadence/video gates, animation tracks, native Liquid Glass and startup timing remain unchanged. No new performance result is claimed until this source is built and recorded.
+
 Native capture uses an optimized Release build (`ENABLE_TESTABILITY=NO`, simulator active architecture only). Unit-test compilation separately enables testability. Intel and Apple Silicon evidence are retained separately; runner allocation and OS boot are never counted as app launch time. GitHub repository metadata confirms this repository is public, and standard public macOS runners are free under GitHub's published policy. No paid larger runner is enabled. Earlier Debug recordings are diagnostic evidence only and cannot substitute for the newest commit. First-launch and repeated-launch clips are also published before the remaining profiling steps finish. The capture display is kept awake and Simulator is foregrounded before recording. Unrelated live score-association UI tests are not run for this dedicated launch branch.
 
 ## Native evidence required before approval
