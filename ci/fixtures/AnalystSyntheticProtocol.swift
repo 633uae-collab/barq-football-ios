@@ -29,6 +29,25 @@ final class AnalystSyntheticProtocol: URLProtocol {
         }
         // Long mixed Markdown creates real parsing/layout work in the unchanged view.
         let paragraph = "**SYNTHETIC ONLY** — اختبار مصطنع، لا مباراة أو لاعب حقيقي.\n- Artificial football diagnostic content; no provider facts.\n- `fixture` **team** *season* — بيانات غير حقيقية.\n\n"
+        if question == "Synthetic restoration follow-up: verify saved history" {
+            let expectedQuestions = [
+                "اختبار مصطنع: حلل المباراة المنتهية", "Synthetic test: explain the completed match",
+                "اختبار مصطنع: اذكر مصادر الأرقام", "Synthetic test: explain the source limitations"
+            ]
+            guard let history = json["history"] as? [[String: String]], history.count == 8 else {
+                client?.urlProtocol(self, didFailWithError: URLError(.cannotParseResponse)); return
+            }
+            for (index, prior) in expectedQuestions.enumerated() {
+                let raw = "SYNTHETIC SEND CONTROL\n" + prior + "\n\n" + String(repeating: paragraph, count: 24)
+                // All fixture scalars are BMP with no combining sequences; this
+                // independent UTF-16 prefix is the documented request bound.
+                let bounded = String(decoding: Array(raw.utf16.prefix(1000)), as: UTF16.self)
+                guard history[index * 2] == ["role": "user", "content": prior],
+                      history[index * 2 + 1] == ["role": "assistant", "content": bounded] else {
+                    client?.urlProtocol(self, didFailWithError: URLError(.cannotParseResponse)); return
+                }
+            }
+        }
         let answer = "SYNTHETIC SEND CONTROL\n" + question + "\n\n" + String(repeating: paragraph, count: 24)
         let body: [String: Any] = [
             "answer": answer, "model": "openai/gpt-oss-120b", // simulated schema, not Groq
@@ -46,3 +65,4 @@ final class AnalystSyntheticProtocol: URLProtocol {
     }
     override func stopLoading() { queue.async { [self] in stopped = true } }
 }
+

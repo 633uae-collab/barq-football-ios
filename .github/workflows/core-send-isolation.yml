@@ -63,8 +63,8 @@ jobs:
           cp ci/fixtures/analyst-ax-recorded.json "$CONTAINER/Library/Application Support/analyst-conversations.json"
           echo "CHAT_CONTAINER=$CONTAINER" >> "$GITHUB_ENV"
           shasum -a 256 ci/fixtures/analyst-ax-recorded.json > out/fixture-sha256.txt
-          printf '%s\n' 'Synthetic transport only. Three seeded turns plus ten UI sends use real pending, decode, archive and rendering paths. All URLSession requests are intercepted; no provider calls or live acceptance.' > out/evidence-kind.txt
-      - name: Ten synthetic sends with prepared-text candidate
+          printf '%s\n' 'Synthetic transport only. Three seeded turns plus ten UI sends and one post-restoration follow-up use real pending, decode, archive and rendering paths. All URLSession requests are intercepted; no provider calls or live acceptance.' > out/evidence-kind.txt
+      - name: Ten synthetic sends, full UI restoration and saved-history follow-up
         run: |
           set -o pipefail
           xcrun simctl spawn "$UDID" log stream --level debug --style compact --predicate 'subsystem == "ae.barq.transport" OR subsystem == "ae.barq.composer"' >out/transport.log 2>&1 &
@@ -88,15 +88,20 @@ jobs:
           seeded = json.load(open('ci/fixtures/analyst-ax-recorded.json'))[0]
           saved = json.load(open('out/archive-after.json'))[0]
           assert saved['turns'][:3] == seeded['turns'], 'Seeded turns changed'
-          assert len(saved['turns']) == 13, 'Three original plus ten sent turns required'
+          assert len(saved['turns']) == 14, 'Three original plus ten sends plus restored follow-up required'
           for turn in saved['turns'][3:]:
               assert turn['question'] in turn['answer']['answer']
               assert turn['answer']['answer'].startswith('SYNTHETIC SEND CONTROL')
               assert turn['answer']['sources'] == [{'name': 'Synthetic diagnostic fixture — not live'}]
           log = pathlib.Path('out/transport.log').read_text()
-          assert log.count('send invoked') == 10, 'Exactly ten intentional sends required'
-          assert log.count('reply stored') == 10, 'Every synthetic reply must reach persistence'
-          print('13 synthetic turns, unchanged seeded turns and ten send/store events verified')
+          assert log.count('send invoked') == 11, 'Ten initial sends and one restored follow-up required'
+          assert log.count('reply stored') == 11, 'Every synthetic reply must reach persistence'
+          assert saved['turns'][-1]['question'] == 'Synthetic restoration follow-up: verify saved history'
+          ui = pathlib.Path('out/replay.log').read_text()
+          for index in range(1, 11):
+              assert f'FOTIQ_AX_REPLAY restored={index} stage=verified' in ui
+          assert 'stage=full-restore-and-followup-verified' in ui
+          print('14 synthetic turns, full ten-turn UI restoration and history-checked follow-up verified')
           PYVERIFY
             sed -n 's/^FOTIQ_AX_REPLAY actualUDID=//p' out/replay.log | head -1 > out/actual-udid.txt
             cmp out/requested-udid.txt out/actual-udid.txt
@@ -109,4 +114,5 @@ jobs:
             out/
             replay.xcresult
           retention-days: 14
+
 
