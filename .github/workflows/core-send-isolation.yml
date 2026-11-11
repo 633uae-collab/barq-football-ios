@@ -8,6 +8,7 @@ on:
       - BARQUITests/AnalystSyntheticSendUITests.swift
       - ci/fixtures/AnalystSyntheticProtocol.swift
       - ci/prepare-synthetic-send.py
+      - ci/sample-synthetic-send.py
 permissions:
   contents: read
 jobs:
@@ -57,9 +58,6 @@ jobs:
           echo "CHAT_CONTAINER=$CONTAINER" >> "$GITHUB_ENV"
           shasum -a 256 ci/fixtures/analyst-ax-recorded.json > out/fixture-sha256.txt
           printf '%s\n' 'Synthetic transport only. Three seeded turns plus ten UI sends use real pending, decode, archive and rendering paths. All URLSession requests are intercepted; no provider calls or live acceptance.' > out/evidence-kind.txt
-      - name: Prepare Instruments device discovery before the app starts
-        run: |
-          python3 ci/profile-core-replay.py --preflight
       - name: Ten synthetic sends through the unchanged chat view
         run: |
           set -o pipefail
@@ -69,7 +67,7 @@ jobs:
           TAIL_PID=$!
           python3 -u ci/core-host-health.py out/host-health.jsonl &
           HEALTH_PID=$!
-          python3 -u ci/profile-core-replay.py >out/instruments-watcher.log 2>&1 &
+          python3 -u ci/sample-synthetic-send.py >out/send-sample-watcher.log 2>&1 &
           PROFILE_PID=$!
           trap 'wait "$PROFILE_PID" || true; kill "$LOG_PID" "$TAIL_PID" "$HEALTH_PID" 2>/dev/null || true' EXIT
           python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystSyntheticSendUITests -resultBundlePath replay.xcresult 2>&1 | tee out/replay.log

@@ -41,10 +41,6 @@ final class AnalystSyntheticSendUITests: XCTestCase {
             print("FOTIQ_AX_REPLAY question=\(index + 1) stage=verified utc=\(Date().timeIntervalSince1970)")
         }
         XCTAssertEqual(received.count, 10)
-        let captureDeadline = Date().addingTimeInterval(180)
-        while !FileManager.default.fileExists(atPath: "/tmp/fotiq-core-profile-finished") && Date() < captureDeadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
         app.terminate(); app.launch()
         XCTAssertTrue(answer.waitForExistence(timeout: 30))
         XCTAssertEqual(answer.label, try XCTUnwrap(received.last))
