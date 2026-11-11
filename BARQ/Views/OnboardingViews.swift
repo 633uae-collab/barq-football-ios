@@ -5,6 +5,7 @@ import UIKit
 /// Splash diagnostics (subsystem ae.barq.splash): per-frame progress, time-to-first-frame, main-thread hangs.
 enum SplashDiag {
     static let log = Logger(subsystem: "ae.barq.splash", category: "splash")
+    static let points = OSLog(subsystem: "ae.barq.splash", category: .pointsOfInterest)
     static let processStart = Date()   // set when the app struct initialises (first touch of this enum)
     nonisolated(unsafe) private static var watchdog: Thread?
     /// Background thread pings main every 50 ms and logs any gap > 100 ms (= main thread blocked).
@@ -38,8 +39,27 @@ extension View {
 }
 
 @MainActor enum LaunchGate {
-    static var open = false
-    static func wait() async { while !open && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(50)) } }
+    private static var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    static var open = false {
+        didSet {
+            guard open else { return }
+            let pending = Array(waiters.values)
+            waiters.removeAll()
+            for waiter in pending { waiter.resume() }
+        }
+    }
+    static func wait() async {
+        guard !open, !Task.isCancelled else { return }
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                if open || Task.isCancelled { continuation.resume() }
+                else { waiters[id] = continuation }
+            }
+        } onCancel: {
+            Task { @MainActor in waiters.removeValue(forKey: id)?.resume() }
+        }
+    }
 }
 
 // MARK: - Persistence (pure, unit-tested)
@@ -111,9 +131,22 @@ enum Onboarding {
 final class SplashClock {
     nonisolated(unsafe) static var nextReady = false
     nonisolated(unsafe) static var sawFirstFrame = false
+    var onFirstFrame: (() -> Void)?
     private var loggedFirstVisualFrame = false
+    private var firstVisualTime: TimeInterval?
+    private(set) var timelineOffset: Double = 0
+    var activeDuration: Double { max(0, elapsed - timelineOffset) }
+    func displayedFor(at now: TimeInterval) -> Double { max(0, now - (firstVisualTime ?? now)) }
+    func begin(at now: TimeInterval, timelineOffset: Double) {
+        self.timelineOffset = timelineOffset
+        start = now; previous = now
+        SplashDiag.log.notice("START launch +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms timelineOffset=\(timelineOffset, privacy: .public) uptime=\(now, privacy: .public)")
+        os_signpost(.begin, log: SplashDiag.points, name: "Rider motion")
+    }
     private var start: TimeInterval?
     private var previous: TimeInterval?
+    private var startupPrevious: TimeInterval?
+    private(set) var startupLargestFrameGap: Double = 0
     private var frameGaps: [Double] = []
     var sampledFrames: Int { frameGaps.count }
     var meanFrameGap: Double { frameGaps.isEmpty ? 0 : frameGaps.reduce(0, +) / Double(frameGaps.count) }
@@ -125,9 +158,17 @@ final class SplashClock {
     private(set) var elapsed: Double = 0
     var animationCompleted = false
     func tick(_ now: TimeInterval = CACurrentMediaTime(), active: Bool = true) -> Double {
+        if let startupPrevious, now > startupPrevious {
+            startupLargestFrameGap = max(startupLargestFrameGap, now - startupPrevious)
+        }
+        startupPrevious = now
         if !loggedFirstVisualFrame {
             loggedFirstVisualFrame = true
+            firstVisualTime = now
             Self.sawFirstFrame = true
+            let callback = onFirstFrame
+            onFirstFrame = nil
+            callback?()
             SplashDiag.log.notice("FIRST splash frame +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         }
         // Prewarm the destination before the fixed hold-and-fade timeline starts.
@@ -146,18 +187,25 @@ final class SplashClock {
         }
         if let previous, now > previous {
             let gap = now - previous
+            if gap > 1.0 / 30 {
+                SplashDiag.log.notice("FRAME_GAP seconds=\(gap, privacy: .public) fromUptime=\(previous, privacy: .public) toUptime=\(now, privacy: .public)")
+                os_signpost(.event, log: SplashDiag.points, name: "Rider callback gap", "gap=%.6f from=%.6f to=%.6f", gap, previous, now)
+            }
             largestFrameGap = max(largestFrameGap, gap)
             if frameGaps.count < 512 { frameGaps.append(gap) }
         }
         previous = now
-        elapsed = max(0, now - (start ?? now))
+        elapsed = timelineOffset + max(0, now - (start ?? now))
         return elapsed
     }
 }
 
 /// Fixed original mark and opacity-only fallback for Reduce Motion.
 enum LaunchPresentation {
-    static let visibleWidth: CGFloat = 0.15
+    // Attached 1320x2868 screenshot: visible artwork y=1322..<1546 (224 px).
+    // Size comes from that measurement; the crop includes one AA pixel per edge.
+    static let referenceScreenWidth: CGFloat = 1320
+    static let referenceMarkHeight: CGFloat = 224
     static let hold = 0.5, fade = 0.3
     static let duration = hold + fade
     static func opacity(at elapsed: Double) -> Double {
@@ -165,8 +213,9 @@ enum LaunchPresentation {
         return 1 - t * t * (3 - 2 * t)
     }
     static func logoRect(in size: CGSize) -> CGRect {
-        let side = size.width * visibleWidth / 0.442
-        return CGRect(x: (size.width-side)/2, y: (size.height-side)/2, width: side, height: side)
+        let scale = size.width / referenceScreenWidth * referenceMarkHeight / 512
+        let width = 455 * scale, height = 514 * scale
+        return CGRect(x: (size.width-width)/2, y: (size.height-height)/2, width: width, height: height)
     }
 }
 
@@ -176,19 +225,16 @@ struct SplashView: View {
     @State private var clock = SplashClock()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        PremiumLaunchSurface(clock: clock, reduceMotion: reduceMotion)
-            .ignoresSafeArea()
-            .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
-            .task {
-                guard UserDefaults.standard.string(forKey: "splashHold") == nil else { return }
-                while (clock.elapsed < (reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration) || !clock.animationCompleted) && !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(8))
-                }
-                guard !Task.isCancelled else { return }
+        PremiumLaunchSurface(clock: clock, reduceMotion: reduceMotion) {
+                os_signpost(.end, log: SplashDiag.points, name: "Rider motion")
                 SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public) mode=\(reduceMotion ? "reduced" : "premium", privacy: .public)")
+                SplashDiag.log.notice("MOTION committedToCompletion=\(clock.activeDuration, privacy: .public) creditedStaticHold=\(clock.timelineOffset, privacy: .public) finishEpoch=\(Date().timeIntervalSince1970, privacy: .public)")
+                SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public) maxCallbackGapIncludingPreparation=\(clock.startupLargestFrameGap, privacy: .public)")
                 SplashDiag.log.notice("FRAME_STATS samples=\(clock.sampledFrames, privacy: .public) mean=\(clock.meanFrameGap, privacy: .public) p95=\(clock.percentile95Gap, privacy: .public)")
                 onFinish()
             }
+            .ignoresSafeArea()
+            .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
     }
 }
 
@@ -379,6 +425,10 @@ struct ClubPickStep: View {
             .scrollDismissesKeyboard(.immediately)
         }
         .task {
+            // Initial prefetch follows the same launch boundary as visible
+            // cache misses; bundled and decoded images already draw immediately.
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
             await ImageStore.shared.preload(model.popular.compactMap(\.logo))
         }
         .task(id: popularRetry) {
@@ -389,6 +439,8 @@ struct ClubPickStep: View {
             await ImageStore.shared.preload(model.popular.compactMap(\.logo))
         }
         .task(id: "\(q)|\(searchRetry)") {
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
             do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
             await model.search(q)
         }
@@ -488,50 +540,44 @@ struct PickTile: View, Equatable {
     }
 }
 
-/// Wraps the app: splash on every launch, onboarding on first launch only, then the unchanged app.
+/// One native launch container per scene lifetime; returning from the background
+/// retains the destination and cannot recreate the entrance.
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
-    @State private var destinationMounted = false
-    @State private var splash = true
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
     @State private var onboarded = Onboarding.isDone()
     @State private var firstLaunch = !Onboarding.isDone()
     var body: some View {
-        ZStack {
-            Color("LaunchBackground").ignoresSafeArea()
-            // Build and lay out the destination before the first animated splash frame.
-            // iOS keeps the matching static launch screen visible while this initial work
-            // completes, and LaunchGate still prevents network work until the reveal ends.
-            Group {
-                if destinationMounted {
-                if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
-                }
+        LaunchContainer(firstLaunch: firstLaunch,
+                        revision: "\(onboarded)|\(store.lang)|\(colorScheme)",
+                        prepare: prepareDestination) {
+            if onboarded { content() }
+            else {
+                OnboardingView {
+                    withAnimation(.easeInOut(duration: 0.5)) { onboarded = true }
+                }.transition(.opacity)
             }
-            .background {
-                if destinationMounted { LaunchDestinationReadiness() }
+        }
+        .ignoresSafeArea()
+    }
+    @MainActor private func prepareDestination(viewport: CGSize) async {
+        if onboarded {
+            LaunchHomePreparation.snapshot = await LaunchHomeCache.shared.restore(scope: LaunchHomePreparation.scope)
+            if let snapshot = LaunchHomePreparation.snapshot {
+                let favorites = HomeFeed.Favorites(matches: Set(store.savedMatches),
+                    teams: Set(store.favTeams.map(\.id)), leagues: Set(store.favLeagues))
+                let addresses = snapshot.visibleImageAddresses(favorites: favorites, now: Date())
+                LaunchHomePreparation.images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
             }
-            // Prewarm layout without exposing controls beneath the launch cover.
-            // VoiceOver and touch must enter the destination only after reveal.
-            .accessibilityHidden(splash)
-            .allowsHitTesting(!splash)
-            if splash {
-                SplashView(firstLaunch: firstLaunch) {
-                    splash = false
-                    // Yield a frame so the uncovered interface appears before starting data work.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(50))
-                        LaunchGate.open = true
-                    }
-                }.zIndex(1)
-                .task {
-                    // Commit the lightweight original F first, then prewarm the
-                    // destination while the matching mark remains visible.
-                    while !SplashClock.sawFirstFrame && !Task.isCancelled {
-                        try? await Task.sleep(for: .milliseconds(8))
-                    }
-                    guard !Task.isCancelled else { return }
-                    destinationMounted = true
-                }
-            }
+            SplashDiag.log.notice("HOME preparedLocalSnapshot=\(LaunchHomePreparation.snapshot != nil, privacy: .public)")
+        } else {
+            // Reusing locally cached club logos must not enqueue one SwiftUI
+            // state publication per image in the middle of erasure.
+            let draft = Onboarding.loadDraft()
+            let addresses = LaunchClubPreparation.imageAddresses(selected: draft.clubs,
+                popular: ClubDirectory.initial(.standard), viewport: viewport)
+            LaunchHomePreparation.images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
         }
     }
 }

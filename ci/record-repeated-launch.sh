@@ -3,6 +3,8 @@ set -euo pipefail
 # Five real process restarts, in one original recording, with saved onboarding
 # and normal networking. No reinstallation, test bypass, cuts or speed changes.
 mkdir -p out
+open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+caffeinate -d -i -u -t 180 </dev/null >/tmp/fotiq-capture-awake.log 2>&1 &
 xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > out/repeated-timing.log 2>&1 &
 LOG=$!
@@ -20,7 +22,7 @@ for cycle in $(seq 1 5); do
   xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
   sleep 1
   printf 'REOPEN cycle=%s\n' "$cycle" >> out/repeated-cycles.log
-  xcrun simctl launch "$UDID" ae.barq.football -lang ar
+  python3 ci/launch-measured.py out/repeated-timing.log "repeat-$cycle" -lang ar
   for attempt in $(seq 1 45); do
     count=$(grep -c 'FINISH firstLaunch=false' out/repeated-timing.log || true)
     if [[ "$count" -ge "$cycle" ]]; then break; fi

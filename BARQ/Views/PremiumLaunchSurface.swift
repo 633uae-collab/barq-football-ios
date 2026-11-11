@@ -7,7 +7,15 @@ import os
 /// Reference: https://dribbble.com/shots/6991913-Rider-Launch-Transition
 /// The FOTIQ artwork, green accent and native destination remain original.
 enum PremiumLaunchTrack {
-    static let duration = 1.4
+    // Measured from the 361-frame, 60 Hz public reference. The final map hold
+    // and loop reset are not part of an application launch. See docs/RIDER_LAUNCH.md.
+    static let duration = 1.8
+    static let firstErase = 40.0 / 60
+    /// Preparation already displays the exact stationary artwork. Credit only
+    /// that static part; never skip an erasure, contraction or pulse frame.
+    static func holdCredit(displayedFor seconds: Double, reduceMotion: Bool) -> Double {
+        min(max(0, seconds), reduceMotion ? LaunchPresentation.hold : firstErase)
+    }
     static func smooth(_ t: Double) -> CGFloat {
         let x = min(1, max(0, t))
         return CGFloat(x * x * (3 - 2 * x))
@@ -17,36 +25,45 @@ enum PremiumLaunchTrack {
     }
     static func coverRadius(at time: Double, in size: CGSize) -> CGFloat {
         let full = hypot(size.width, size.height) / 2 + 2
-        let t = min(1, max(0, (time - 0.82) / 0.36))
-        return full * CGFloat(pow(1 - t, 3))
+        guard time > 1.033333 else { return full }
+        // Radius samples at frames 65...71 fit this decay with 0.0065 screen-
+        // width RMS error. This is a measured fit, not the designer's source curve.
+        let radius = size.width * CGFloat(1.00878844 * exp(-14.52129531 * (time - 65.0 / 60)))
+        return min(full, radius)
     }
     static func circlePath(radius: CGFloat, in size: CGSize) -> CGPath {
         CGPath(ellipseIn: CGRect(x: size.width / 2 - radius, y: size.height / 2 - radius,
                                 width: radius * 2, height: radius * 2), transform: nil)
     }
-    static func markPath(at time: Double, in size: CGSize) -> CGPath {
-        let path = CGMutablePath()
-        // Fixed topology permits compositor interpolation. Alternating erasure
-        // breaks the silhouette into short strokes without moving the logo.
-        for row in 0..<8 {
-            let width = size.width * markWidth(at: time, row: row)
-            path.addRect(CGRect(x: row.isMultiple(of: 2) ? 0 : size.width - width,
-                                y: size.height * CGFloat(row) / 8,
-                                width: width, height: size.height / 8))
-        }
-        return path
+    struct Segment {
+        let rect: CGRect
+        let anchor: CGPoint
+        let axis: String
+        let start: Double
+        let end: Double
     }
-    static func markWidth(at time: Double, row: Int) -> CGFloat {
-        let start = 0.42 + Double(row % 3) * 0.035
-        return 1 - progress(time, from: start, to: start + 0.29)
+    // Masks expose the ORIGINAL raster pixels; they never redraw or deform F.
+    // Coordinates refer to the 455x514 tight launch crop of the existing artwork.
+    static let segments = [
+        Segment(rect: CGRect(x: 0, y: 0, width: 405, height: 124), anchor: CGPoint(x: 0, y: 0.5), axis: "x", start: 40.0/60, end: 56.0/60),
+        Segment(rect: CGRect(x: 0, y: 124, width: 132, height: 390), anchor: CGPoint(x: 0.5, y: 0), axis: "y", start: 48.0/60, end: 63.0/60),
+        Segment(rect: CGRect(x: 132, y: 216, width: 168, height: 116), anchor: CGPoint(x: 0, y: 0.5), axis: "x", start: 44.0/60, end: 60.0/60),
+        Segment(rect: CGRect(x: 330, y: 205, width: 125, height: 135), anchor: CGPoint(x: 0.5, y: 1), axis: "y", start: 42.0/60, end: 61.0/60)
+    ]
+    static func remaining(at time: Double, segment: Int) -> CGFloat {
+        let item = segments[segment]
+        return 1 - progress(time, from: item.start, to: item.end)
     }
     static func pulseRadius(at time: Double, in size: CGSize) -> CGFloat {
-        let full = hypot(size.width, size.height) / 2
-        let t = min(1, max(0, (time - 0.88) / 0.46))
-        return 5 + (full - 5) * CGFloat(pow(1 - t, 3))
+        let full = hypot(size.width, size.height) / 2 + 2
+        guard time > 1.15 else { return full }
+        return max(size.width * 0.025, size.width * CGFloat(0.62 * exp(-10.5 * (time - 1.2))))
     }
     static func pulseOpacity(at time: Double) -> Float {
-        Float(progress(time, from: 0.86, to: 0.96) * (1 - progress(time, from: 1.23, to: duration))) * 0.22
+        Float(progress(time, from: 1.15, to: 1.23) * (1 - progress(time, from: 1.45, to: 1.65))) * 0.22
+    }
+    static func coverOpacity(at time: Double) -> Float {
+        Float(1 - progress(time, from: 1.18, to: 1.35))
     }
 }
 
@@ -54,7 +71,8 @@ enum PremiumLaunchTrack {
 struct PremiumLaunchSurface: UIViewRepresentable {
     let clock: SplashClock
     let reduceMotion: Bool
-    func makeUIView(context: Context) -> PremiumLaunchLayer { PremiumLaunchLayer(clock: clock, reduceMotion: reduceMotion) }
+    let onComplete: () -> Void
+    func makeUIView(context: Context) -> PremiumLaunchLayer { PremiumLaunchLayer(clock: clock, reduceMotion: reduceMotion, onComplete: onComplete) }
     func updateUIView(_ view: PremiumLaunchLayer, context: Context) {}
     static func dismantleUIView(_ view: PremiumLaunchLayer, coordinator: ()) {
         view.stop()
@@ -65,28 +83,36 @@ struct PremiumLaunchSurface: UIViewRepresentable {
 final class PremiumLaunchLayer: UIView {
     private let cover = CAShapeLayer(), pulse = CAShapeLayer(), mark = CALayer()
     private let markMask = CALayer()
-    private let markBands = (0..<8).map { _ in CALayer() }
+    private let markBands = PremiumLaunchTrack.segments.map { _ in CALayer() }
     private let clock: SplashClock
     private let reduceMotion: Bool
+    private let onComplete: () -> Void
     private var link: CADisplayLink?
-    private var prepared = false, started = false
+    private var commitLink: UIUpdateLink?
+    private var preparedOffset: Double?
+    private var submittedAt: CFTimeInterval?
+    private var prepared = false, started = false, finished = false
     private var tracks: [(CALayer, CAKeyframeAnimation)] = []
     private weak var accessibilityWindow: UIWindow?
     private var previousAccessibilityElements: [Any]?
-    init(clock: SplashClock, reduceMotion: Bool) {
+    init(clock: SplashClock, reduceMotion: Bool, onComplete: @escaping () -> Void) {
         self.clock = clock
         self.reduceMotion = reduceMotion
+        self.onComplete = onComplete
         super.init(frame: .zero)
+        // The contracting cover reveals the native view beneath this surface.
+        isOpaque = false
+        backgroundColor = .clear
         isUserInteractionEnabled = true
         isAccessibilityElement = true
         accessibilityIdentifier = "splash"
         accessibilityLabel = "FOTIQ"
         accessibilityViewIsModal = true
         clipsToBounds = true
-        cover.fillColor = UIColor(named: "LaunchBackground")!.cgColor
+        cover.fillColor = UIColor(named: "RiderLaunchBackground")!.cgColor
         pulse.fillColor = UIColor(red: 0, green: 196 / 255, blue: 106 / 255, alpha: 1).cgColor
         pulse.opacity = 0
-        mark.contents = TransparentBrandMark.image.cgImage
+        mark.contents = UIImage(named: "RiderLaunchMark")?.cgImage
         mark.contentsGravity = .resizeAspect
         for band in markBands {
             band.backgroundColor = UIColor.black.cgColor
@@ -123,37 +149,54 @@ final class PremiumLaunchLayer: UIView {
         mark.frame = LaunchPresentation.logoRect(in: bounds.size)
         markMask.frame = mark.bounds
         mark.mask = markMask
-        for (row, band) in markBands.enumerated() {
-            band.bounds = CGRect(x: 0, y: 0, width: mark.bounds.width, height: mark.bounds.height / 8)
-            band.anchorPoint = CGPoint(x: row.isMultiple(of: 2) ? 0 : 1, y: 0.5)
-            band.position = CGPoint(x: row.isMultiple(of: 2) ? 0 : mark.bounds.width,
-                                    y: mark.bounds.height * (CGFloat(row) + 0.5) / 8)
+        for (index, band) in markBands.enumerated() {
+            let segment = PremiumLaunchTrack.segments[index]
+            let factor = mark.bounds.width / 455
+            let rect = segment.rect.applying(CGAffineTransform(scaleX: factor, y: factor))
+            band.bounds = CGRect(origin: .zero, size: rect.size)
+            band.anchorPoint = segment.anchor
+            band.position = CGPoint(x: rect.minX + rect.width * segment.anchor.x,
+                                    y: rect.minY + rect.height * segment.anchor.y)
         }
-        // Keep geometry static: changing shape paths can require fresh
-        // rasterization. The e83 recording skipped most of the reveal despite
-        // a small main-thread gap; transforms remove that possible source of
-        // render-server work without treating display-link cadence as proof.
+        // Static paths and compositor-only transforms avoid rebuilding geometry
+        // or publishing SwiftUI state on every display frame.
         cover.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size), in: bounds.size)
         pulse.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size), in: bounds.size)
         applyState(at: 0)
-        prepareAnimations()
         CATransaction.commit()
         let display = CADisplayLink(target: self, selector: #selector(frameTick))
         display.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         display.add(to: .main, forMode: .common); link = display
+        let updates = UIUpdateLink(view: self)
+        updates.addAction(to: .beforeCATransactionCommit) { [weak self] _, _ in self?.submitIfReady() }
+        updates.addAction(to: .afterCATransactionCommit) { [weak self] update, _ in
+            guard let self, let submittedAt = self.submittedAt else { return }
+            SplashDiag.log.notice("COMMIT submissionToCommit=\(CACurrentMediaTime() - submittedAt, privacy: .public)")
+            update.isEnabled = false
+        }
+        // UIKit requires an associated phase action before continuous updates.
+        updates.requiresContinuousUpdates = true
+        updates.isEnabled = true
+        commitLink = updates
     }
-    func stop() { link?.invalidate(); link = nil }
+    func stop() {
+        link?.invalidate(); link = nil
+        commitLink?.isEnabled = false; commitLink = nil
+    }
     private func applyState(at time: Double) {
         let motionTime = reduceMotion ? 0 : time
         let coverScale = PremiumLaunchTrack.coverRadius(at: motionTime, in: bounds.size) / PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size)
         cover.transform = CATransform3DMakeScale(coverScale, coverScale, 1)
-        for (row, band) in markBands.enumerated() {
-            band.transform = CATransform3DMakeScale(PremiumLaunchTrack.markWidth(at: motionTime, row: row), 1, 1)
+        for (index, band) in markBands.enumerated() {
+            let value = PremiumLaunchTrack.remaining(at: motionTime, segment: index)
+            let horizontal = PremiumLaunchTrack.segments[index].axis == "x"
+            band.transform = CATransform3DMakeScale(horizontal ? value : 1, horizontal ? 1 : value, 1)
         }
         if reduceMotion {
             let opacity = Float(LaunchPresentation.opacity(at: time))
             cover.opacity = opacity; mark.opacity = opacity; pulse.opacity = 0
         } else {
+            cover.opacity = PremiumLaunchTrack.coverOpacity(at: time)
             let scale = PremiumLaunchTrack.pulseRadius(at: time, in: bounds.size) / PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size)
             pulse.transform = CATransform3DMakeScale(scale, scale, 1)
             pulse.opacity = PremiumLaunchTrack.pulseOpacity(at: time)
@@ -164,12 +207,15 @@ final class PremiumLaunchLayer: UIView {
         animation.values = values
         animation.keyTimes = values.indices.map { NSNumber(value: Double($0) / Double(values.count - 1)) }
         animation.duration = duration
+        animation.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         animation.calculationMode = .linear
         tracks.append((target, animation))
     }
-    private func prepareAnimations() {
-        let duration = reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration
-        let times = (0...168).map { Double($0) / 168 * duration }
+    private func prepareAnimations(offset: Double) {
+        let end = reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration
+        let duration = end - offset
+        let count = Int(ceil(duration * 120))
+        let times = (0...count).map { offset + Double($0) / Double(count) * duration }
         if reduceMotion {
             let values = times.map { LaunchPresentation.opacity(at: $0) }
             track(cover, "opacity", values, duration: duration)
@@ -178,17 +224,44 @@ final class PremiumLaunchLayer: UIView {
             let coverRadius = PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size)
             let pulseRadius = PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size)
             track(cover, "transform.scale", times.map { PremiumLaunchTrack.coverRadius(at: $0, in: bounds.size) / coverRadius }, duration: duration)
-            for (row, band) in markBands.enumerated() {
-                track(band, "transform.scale.x", times.map { PremiumLaunchTrack.markWidth(at: $0, row: row) }, duration: duration)
+            track(cover, "opacity", times.map { PremiumLaunchTrack.coverOpacity(at: $0) }, duration: duration)
+            for (index, band) in markBands.enumerated() {
+                track(band, "transform.scale." + PremiumLaunchTrack.segments[index].axis,
+                      times.map { PremiumLaunchTrack.remaining(at: $0, segment: index) }, duration: duration)
             }
             track(pulse, "transform.scale", times.map { PremiumLaunchTrack.pulseRadius(at: $0, in: bounds.size) / pulseRadius }, duration: duration)
             track(pulse, "opacity", times.map { PremiumLaunchTrack.pulseOpacity(at: $0) }, duration: duration)
         }
     }
     @objc private func frameTick(_ display: CADisplayLink) {
-        if started { _ = clock.tick(); return }
+        if started {
+            _ = clock.tick()
+            finishIfReady()
+            return
+        }
+        _ = clock.tick(active: false)
+        guard preparedOffset == nil, SplashClock.nextReady,
+              window?.windowScene?.activationState == .foregroundActive else { return }
+        let setupStart = CACurrentMediaTime()
+        let offset = PremiumLaunchTrack.holdCredit(displayedFor: clock.displayedFor(at: setupStart), reduceMotion: reduceMotion)
+        prepareAnimations(offset: offset)
+        preparedOffset = offset
+        SplashDiag.log.notice("TRACKS setupSeconds=\(CACurrentMediaTime() - setupStart, privacy: .public)")
+    }
+    private func finishIfReady() {
+        let end = reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration
+        // CA may deliver completion just before the monotonic deadline. Keep
+        // the already-revealed destination until the next real display callback;
+        // never round the measured duration up or release network work early.
+        guard clock.animationCompleted, clock.elapsed >= end, !finished else { return }
+        finished = true
+        stop()
+        onComplete()
+    }
+    private func submitIfReady() {
+        guard !started, let offset = preparedOffset else { return }
         guard window?.windowScene?.activationState == .foregroundActive, SplashClock.nextReady else {
-            _ = clock.tick(active: false); return
+            return
         }
         SplashDiag.log.notice("VISIBLE launch scene active +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         started = true
@@ -198,42 +271,64 @@ final class PremiumLaunchLayer: UIView {
             applyState(at: held == "start" ? 0 : (held == "fade" ? duration * 0.75 : duration))
             CATransaction.commit(); stop(); return
         }
-        CATransaction.setCompletionBlock { [weak self] in self?.clock.animationCompleted = true }
+        let now = CACurrentMediaTime()
+        submittedAt = now
+        // Submit just before UIKit's normal commit, after display-link callbacks.
+        // Preparation no longer consumes the already-running erasure timeline.
+        // Never force-flush unrelated SwiftUI transactions or hide their cost:
+        // COMMIT and startup timing include any remaining commit work.
+        clock.begin(at: now, timelineOffset: offset)
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self else { return }
+            _ = self.clock.tick()
+            self.clock.animationCompleted = true
+            self.finishIfReady()
+        }
         applyState(at: duration)
-        for (target, animation) in tracks { target.add(animation, forKey: animation.keyPath) }
+        for (target, animation) in tracks {
+            animation.beginTime = target.convertTime(now, from: nil)
+            target.add(animation, forKey: animation.keyPath)
+        }
         CATransaction.commit()
-        _ = clock.tick()
+        _ = clock.tick(now)
     }
 }
 
-/// Wait for the destination's actual layout and two display opportunities, not
-/// merely a queued SwiftUI state update. This keeps first text/glass layout out
-/// of the animated interval. No remote data is involved in readiness.
+/// Observe completed UIKit commits after actual destination layout. Display-link
+/// callbacks alone run before commit and cannot establish that layout was sent.
+/// No remote data is involved in readiness.
 struct LaunchDestinationReadiness: UIViewRepresentable {
     func makeUIView(context: Context) -> ReadinessProbe { ReadinessProbe() }
     func updateUIView(_ uiView: ReadinessProbe, context: Context) {}
     static func dismantleUIView(_ view: ReadinessProbe, coordinator: ()) { view.stop() }
     final class ReadinessProbe: UIView {
-        private var link: CADisplayLink?
-        private var previous: CFTimeInterval?
+        var layoutGeneration: () -> Int = { 0 }
+        private var link: UIUpdateLink?
+        private var readiness = LaunchCommitReadiness()
+        private var firstCommitAt: CFTimeInterval?
+        private var observedCommits = 0
         private var done = false
         override func layoutSubviews() {
             super.layoutSubviews()
             guard !done, link == nil, window != nil else { return }
-            let display = CADisplayLink(target: self, selector: #selector(destinationFrameDidDisplay(_:)))
-            display.add(to: .main, forMode: .common); link = display
+            let updates = UIUpdateLink(view: self)
+            updates.addAction(to: .afterCATransactionCommit) { [weak self] _, info in self?.destinationDidCommit(updateTime: info.modelTime) }
+            updates.requiresContinuousUpdates = true
+            updates.isEnabled = true
+            link = updates
         }
-        func stop() { link?.invalidate(); link = nil }
-        @objc private func destinationFrameDidDisplay(_ display: CADisplayLink) {
-            guard window?.windowScene?.activationState == .foregroundActive else {
-                previous = nil
-                return
-            }
-            guard let previous, display.timestamp - previous < 0.05 else {
-                previous = display.timestamp
-                return
-            }
+        func stop() { link?.isEnabled = false; link = nil }
+        private func destinationDidCommit(updateTime: Double) {
+            guard !done else { return }
+            let now = CACurrentMediaTime()
+            if firstCommitAt == nil { firstCommitAt = now }
+            observedCommits += 1
+            guard readiness.observe(layoutGeneration: layoutGeneration(),
+                                    isActive: window?.windowScene?.activationState == .foregroundActive,
+                                    updateTime: updateTime) else { return }
             done = true; stop()
+            os_signpost(.end, log: SplashDiag.points, name: "Rider destination preparation")
+            SplashDiag.log.notice("READINESS observedCommits=\(self.observedCommits, privacy: .public) firstCommitToReady=\(now - (self.firstCommitAt ?? now), privacy: .public)")
             SplashDiag.log.notice("NEXT layout committed in active scene")
             SplashClock.nextReady = true
         }

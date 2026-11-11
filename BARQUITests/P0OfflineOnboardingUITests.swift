@@ -9,11 +9,16 @@ final class P0OfflineOnboardingUITests: XCTestCase {
         app.launchArguments = ["-lang", "ar", "-resetOnboarding", "YES", "-apiOverride", "https://127.0.0.1:9"]
         app.launch()
         func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
-        let club = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'ob-club-'" )).firstMatch
-        XCTAssertTrue(club.waitForExistence(timeout: 30))
+        let firstClub = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'ob-club-'" )).firstMatch
+        XCTAssertTrue(firstClub.waitForExistence(timeout: 30))
+        // Selection moves a tile to the front of the grid. Bind its identity
+        // before tapping instead of re-evaluating a positional firstMatch.
+        let club = element(firstClub.identifier)
         let clubName = club.label
+        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: club)], timeout: 10) == .completed)
         club.tap()
-        XCTAssertEqual(club.value as? String, "on")
+        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "on"), object: club)], timeout: 10) == .completed,
+                      "The same selected club must become on before continuing")
         element("ob-next").tap()
         XCTAssertTrue(element("ob-skip").waitForExistence(timeout: 10))
         element("ob-skip").tap()

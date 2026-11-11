@@ -9,3 +9,6 @@ server/data/
 
 # Deterministic original-logo pixels generated before XcodeGen scans resources.
 BARQ/Resources/PreparedBrandMark.rgba
+
+# Prepared from the original FOTIQ artwork by XcodeGen
+BARQ/Resources/Assets.xcassets/RiderLaunchMark.imageset/RiderLaunchMark.png

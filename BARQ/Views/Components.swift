@@ -50,6 +50,12 @@ final class ImageStore {
                        (response as? HTTPURLResponse)?.statusCode == 200,
                        let image = UIImage(data: data) {
                         let decoded = image.preparingForDisplay() ?? image
+                        let control = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Cache-Control") ?? ""
+                        if !control.lowercased().contains("no-store") {
+                            // Finish the bounded local write before publication,
+                            // so an immediate full reopen can prepare this image.
+                            await LaunchHomeCache.shared.saveImage(data, address: url.absoluteString)
+                        }
                         mem.setObject(decoded, forKey: key)
                         return decoded
                     }
@@ -71,10 +77,11 @@ struct RemoteImage: View {
     var size: CGFloat = 32
     var circle = false
     var waitForLaunch = true
+    @Environment(\.launchPreparedImages) private var prepared
     @State private var img: UIImage?
     var body: some View {
         Group {
-            if let img { Image(uiImage: img).resizable().scaledToFit().transition(.opacity) }
+            if let image = prepared[url ?? ""] ?? img { Image(uiImage: image).resizable().scaledToFit().transition(.opacity) }
             else { Image(systemName: fallback).resizable().scaledToFit().foregroundStyle(.secondary).padding(size * 0.18) }
         }
         .frame(width: size, height: size)
@@ -82,12 +89,22 @@ struct RemoteImage: View {
         .task(id: url) {
             guard !Task.isCancelled else { return }
             guard let s = url, let u = URL(string: s) else { img = nil; return }
-            if let c = ImageStore.shared.mem.object(forKey: s as NSString) { img = c; return }
-            let r = await ImageStore.shared.image(u)
-            // Prefetch/decode may finish while the launch cover is animating.
-            // Hold publication until reveal so image arrival cannot invalidate
-            // the prepared glass grid in the middle of the camera track.
+            // Prepared launch pixels participate in the first body evaluation;
+            // do not enqueue one @State transaction per cached logo afterwards.
+            if prepared[s] != nil { return }
+            if let c = ImageStore.shared.mem.object(forKey: s as NSString) {
+                // A prefetch can populate memory after the immutable preparation
+                // map was built. That late cache hit is still a state mutation.
+                if waitForLaunch { await LaunchGate.wait() }
+                guard !Task.isCancelled else { return }
+                img = c
+                return
+            }
+            // Immutable local/bundled pixels are already present. A cache miss
+            // must not compete with motion for network callbacks or decoding.
             if waitForLaunch { await LaunchGate.wait() }
+            guard !Task.isCancelled else { return }
+            let r = await ImageStore.shared.image(u)
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { img = r }
         }
@@ -137,7 +154,12 @@ struct LivePill: View {
         // An endless repeatForever animation keeps the app from ever reporting "idle" to XCUITest
         // (seen in run 41651134723: "App event loop idle notification not received" after opening Matches with live games),
         // so UI-test launches (FOTIQ_UI_TEST=1) show the same dot without the pulse. Users always get the pulse.
-        .onAppear { if ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] != "1" { pulse = true } }
+        .task {
+            guard ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] != "1" else { return }
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
+            pulse = true
+        }
     }
 }
 
@@ -288,3 +310,4 @@ struct FixtureScore: View {
         }.monospacedDigit()
     }
 }
+
