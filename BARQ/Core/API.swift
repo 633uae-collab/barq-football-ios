@@ -137,13 +137,29 @@ actor API {
             throw error
         }
         guard let http = response as? HTTPURLResponse else { throw APIError.offline }
+        let log = Logger(subsystem: "ae.barq.transport", category: "analyst")
+        log.info("POST response status=\(http.statusCode, privacy: .public)")
         guard (200..<300).contains(http.statusCode) else {
             let code = (try? JSONDecoder().decode(ServerError.self, from: data))?.error ?? "AI_UPSTREAM_UNAVAILABLE"
-            throw AnalystChatError(code: code, retryAfter: Int(http.value(forHTTPHeaderField: "Retry-After") ?? ""))
+            let failure = AnalystChatError(code: code, retryAfter: Int(http.value(forHTTPHeaderField: "Retry-After") ?? ""))
+            // Only fixed, known categories enter diagnostics; arbitrary server text stays private.
+            log.error("POST rejected category=\(failure.diagnosticCode, privacy: .public)")
+            throw failure
         }
-        let reply = try JSONDecoder().decode(AnalystReply.self, from: data)
-        guard !reply.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              reply.responseKind != nil else { throw APIError.badResponse }
+        let reply: AnalystReply
+        do { reply = try JSONDecoder().decode(AnalystReply.self, from: data) }
+        catch {
+            log.error("POST rejected category=MALFORMED_REPLY")
+            throw AnalystChatError(code: "AI_INVALID_RESPONSE", retryAfter: nil)
+        }
+        guard !reply.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            log.error("POST rejected category=EMPTY_ANSWER")
+            throw AnalystChatError(code: "AI_INVALID_RESPONSE", retryAfter: nil)
+        }
+        guard reply.responseKind != nil else {
+            log.error("POST rejected category=UNKNOWN_MODEL")
+            throw AnalystChatError(code: "AI_INVALID_RESPONSE", retryAfter: nil)
+        }
         return reply
     }
 

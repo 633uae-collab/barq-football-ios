@@ -68,6 +68,32 @@ final class AnalystTransportFaultTests: XCTestCase {
             XCTAssertEqual(AnalystFaultProtocol.count(host), 1)
         }
     }
+
+    func testRejectedAndMalformedRepliesRemainFailuresWithoutResending() async {
+        let cases: [(Int, String, String)] = [
+            (502, #"{"error":"AI_FACT_CHECK_FAILED"}"#, "AI_FACT_CHECK_FAILED"),
+            (502, #"{"error":"AI_INCOMPLETE_RESPONSE"}"#, "AI_INCOMPLETE_RESPONSE"),
+            (200, "not JSON", "AI_INVALID_RESPONSE"),
+            (200, #"{"answer":"","model":"openai/gpt-oss-120b","fetchedAt":1,"generatedAt":2}"#, "AI_INVALID_RESPONSE"),
+            (200, #"{"answer":"unverified","model":"unknown","fetchedAt":1,"generatedAt":2}"#, "AI_INVALID_RESPONSE")
+        ]
+        for (status, body, expected) in cases {
+            let host = AnalystFaultProtocol.configure(.status(status, body, nil))
+            do { _ = try await api(host).askAnalyst("Fault-injection test"); XCTFail("Rejected reply must not become an answer") }
+            catch {
+                XCTAssertEqual((error as? AnalystChatError)?.code, expected)
+                XCTAssertEqual((error as? AnalystChatError)?.diagnosticCode, expected)
+                XCTAssertNil((error as? AnalystChatError)?.retryAfter)
+            }
+            XCTAssertEqual(AnalystFaultProtocol.count(host), 1)
+        }
+        XCTAssertEqual(AnalystChatError(code: "private server text", retryAfter: nil).diagnosticCode, "UNRECOGNIZED_SERVER_ERROR")
+        XCTAssertNotEqual(
+            AnalystChatError(code: "AI_FACT_CHECK_FAILED", retryAfter: nil).diagnosticCode,
+            AnalystChatError(code: "AI_INCOMPLETE_RESPONSE", retryAfter: nil).diagnosticCode
+        )
+    }
+
     func testPendingRequestAllowsMainActorProgressAndCanBeCancelled() async {
         let host = AnalystFaultProtocol.configure(.pending)
         let api = api(host)
