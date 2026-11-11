@@ -1,0 +1,28 @@
+name: Core test runner regressions (no app or provider)
+on:
+  push:
+    branches: [codex/core-stability]
+    paths:
+      - ci/run-core-command.py
+      - ci/tests/test_bounded_core.py
+      - .github/workflows/core-tooling-checks.yml
+permissions:
+  contents: read
+jobs:
+  process-boundaries:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify process cleanup and evidence reserve
+        run: |
+          mkdir -p out
+          printf '%s\n' "$GITHUB_SHA" > out/head-sha.txt
+          set -o pipefail
+          python3 -m unittest discover -s ci/tests -p test_bounded_core.py -v 2>&1 | tee out/runner-tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-runner-regressions
+          path: out/
+          retention-days: 14

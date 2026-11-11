@@ -1,4 +1,5 @@
 import SwiftUI
+import OSLog
 
 struct AnalystChatView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -9,6 +10,7 @@ struct AnalystChatView: View {
     @State private var sending = false
     @State private var showingHistory = false
     @FocusState private var writing: Bool
+    private let composerLog = Logger(subsystem: "ae.barq.composer", category: "interaction")
     private var en: Bool { L.lang == "en" }
     var body: some View {
         ScrollViewReader { scroll in
@@ -26,11 +28,20 @@ struct AnalystChatView: View {
                     ForEach(archive.current.turns) { message in
                         VStack(alignment: .leading, spacing: 16) {
                             HStack { Spacer(minLength: 28)
-                                Text(message.question).textSelection(.enabled).padding(14)
+                                Text(verbatim: message.question).textSelection(.enabled).padding(14)
                                     .glassEffect(.regular.tint(.green.opacity(0.08)), in: .rect(cornerRadius: 20))
                             }
                             if let reply = message.answer {
-                                Text((try? AttributedString(markdown: reply.answer, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(reply.answer))
+                                if let kind = reply.responseKind {
+                                    Text(verbatim: kind.label(english: en))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                        .accessibilityIdentifier(message.id == archive.current.turns.last?.id ? "analyst-response-kind" : "analyst-previous-response-kind")
+                                }
+                                let renderedAnswer = (try? AttributedString(markdown: reply.answer, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(reply.answer)
+                                Text(renderedAnswer)
+                                    // Give VoiceOver/XCTest the already resolved text. Do not ask
+                                    // SwiftUI to localize server Markdown while taking a snapshot.
+                                    .accessibilityLabel(Text(verbatim: String(renderedAnswer.characters)))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .environment(\.layoutDirection, reply.answer.range(of: "[\\u0600-\\u06FF]", options: .regularExpression) == nil ? .leftToRight : .rightToLeft)
                                     .textSelection(.enabled).accessibilityIdentifier(message.id == archive.current.turns.last?.id ? "analyst-answer" : "analyst-previous-answer")
@@ -45,7 +56,7 @@ struct AnalystChatView: View {
                                     }
                                 }
                             } else if let error = message.error {
-                                Text(error).foregroundStyle(.red).accessibilityIdentifier(message.id == archive.current.turns.last?.id ? "analyst-error" : "analyst-previous-error")
+                                Text(verbatim: error).foregroundStyle(.red).accessibilityIdentifier(message.id == archive.current.turns.last?.id ? "analyst-error" : "analyst-previous-error")
                             } else if sending {
                                 ProgressView(en ? "Fetching data and analyzing…" : "نجلب البيانات ونجهز الإجابة…").accessibilityIdentifier("analyst-loading")
                             } else {
@@ -56,7 +67,9 @@ struct AnalystChatView: View {
                     Color.clear.frame(height: 1).id("chat-bottom")
                 }.padding()
             }
-            .scrollDismissesKeyboard(.interactively)
+            // Keep a draft focused while the transcript scrolls or adjusts for the keyboard.
+            // Sending still dismisses explicitly through the composer FocusState.
+            .scrollDismissesKeyboard(.never)
             .onAppear { scroll.scrollTo("chat-bottom", anchor: .bottom) }
             .onChange(of: archive.current.turns.count) { _, _ in withAnimation { scroll.scrollTo("chat-bottom", anchor: .bottom) } }
             .onChange(of: sending) { _, value in if !value { withAnimation { scroll.scrollTo("chat-bottom", anchor: .bottom) } } }
@@ -64,6 +77,18 @@ struct AnalystChatView: View {
         }
         .onAppear { visible = true }
         .onDisappear { visible = false }
+        .task { @MainActor in
+            // Diagnostics only: compare main-actor progress with XCTest query times.
+            // No UI mutation, sampling attachment, or test acceptance override.
+            guard ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] == "1" else { return }
+            var previous = ProcessInfo.processInfo.systemUptime
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                composerLog.info("main actor heartbeat gapMs=\(Int((now - previous) * 1000), privacy: .public) focused=\(writing, privacy: .public) busy=\(sending, privacy: .public)")
+                previous = now
+            }
+        }
         .task(id: "\(visible)-\(scenePhase == .active)-\(archive.current.turns.isEmpty)-\(en)") {
             guard visible, scenePhase == .active, archive.current.turns.isEmpty else { return }
             await LaunchGate.wait()
@@ -74,15 +99,20 @@ struct AnalystChatView: View {
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }
             }
         }
+        .onChange(of: writing) { _, focused in
+            composerLog.info("focus changed focused=\(focused, privacy: .public)")
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button(en ? "Conversations" : "المحادثات", systemImage: "clock.arrow.circlepath") { showingHistory = true }
-                    .accessibilityIdentifier("analyst-history").disabled(sending)
+                    .accessibilityIdentifier("analyst-history")
+                    .accessibilityLabel(Text(verbatim: en ? "Conversations" : "المحادثات")).disabled(sending)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(en ? "New conversation" : "محادثة جديدة", systemImage: "square.and.pencil") { newConversation() }
-                    .accessibilityIdentifier("analyst-new-chat").disabled(sending)
+                    .accessibilityIdentifier("analyst-new-chat")
+                    .accessibilityLabel(Text(verbatim: en ? "New conversation" : "محادثة جديدة")).disabled(sending)
             }
         }
         .sheet(isPresented: $showingHistory) {
@@ -109,9 +139,17 @@ struct AnalystChatView: View {
             HStack(alignment: .bottom, spacing: 12) {
                 TextField(en ? "Ask about football…" : "اكتب سؤالك عن كرة القدم…", text: $question, axis: .vertical)
                     .lineLimit(1...5).focused($writing).accessibilityIdentifier("analyst-question")
-                    .onChange(of: question) { _, value in if value.count > 1000 { question = String(value.prefix(1000)) } }
+                    .accessibilityLabel(Text(verbatim: en ? "Football question" : "سؤال عن كرة القدم"))
+                    .onChange(of: question) { _, value in
+                        composerLog.info("text changed characters=\(value.count, privacy: .public)")
+                        // Match the server's JavaScript string.length limit without splitting
+                        // Arabic combining marks or emoji sequences.
+                        if value.utf16.count > 1000 {
+                            question = AnalystConversation.boundedContext(value, utf16Limit: 1000)
+                        }
+                    }
                 Button { Task { await send() } } label: { Image(systemName: "arrow.up").font(.headline).frame(width: 28, height: 28) }
-                    .buttonStyle(.glassProminent).accessibilityLabel(en ? "Send" : "إرسال")
+                    .buttonStyle(.glassProminent).accessibilityLabel(Text(verbatim: en ? "Send" : "إرسال"))
                     .disabled(sending || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("analyst-send")
             }.padding(12).glassEffect(.regular, in: .rect(cornerRadius: 25))
@@ -121,6 +159,7 @@ struct AnalystChatView: View {
         archive.newConversation(); question = ""
     }
     @MainActor private func send() async {
+        composerLog.info("send invoked busy=\(sending, privacy: .public) characters=\(question.count, privacy: .public)")
         guard !sending else { return }
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let conversationID = archive.selectedID else { return }
@@ -129,16 +168,18 @@ struct AnalystChatView: View {
         writing = false; sending = true; question = ""
         let message = AnalystTurn(question: text)
         archive.append(message, context: context)
+        composerLog.info("message appended turns=\(archive.current.turns.count, privacy: .public)")
         defer { sending = false }
         do {
             let reply = try await API.shared.askAnalyst(text, context: context, history: history)
             archive.finish(conversation: conversationID, turn: message.id, reply: reply)
+            composerLog.info("reply stored characters=\(reply.answer.count, privacy: .public) model=\(reply.model, privacy: .public)")
         } catch {
-            let messageText: String
-            if let network = error as? URLError, [.secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate].contains(network.code) {
-                messageText = en ? "A secure connection could not be established. Please try again. Your message is saved; no automatic resend was made." : "تعذّر إنشاء اتصال آمن. حاول مجدداً. سؤالك محفوظ ولم نُعد إرساله تلقائياً."
-            } else { messageText = error.localizedDescription }
+            composerLog.info("reply failed code=\((error as NSError).code, privacy: .public)")
+            let messageText = AnalystNetworkFailure.message(for: error, english: en) ?? error.localizedDescription
             archive.finish(conversation: conversationID, turn: message.id, error: messageText)
+            composerLog.info("failure stored")
         }
     }
 }
+

@@ -38,11 +38,18 @@ struct AnalystConversation: Codable, Identifiable {
     var selectedID: UUID?
     var storageError: String?
     private let url: URL
+    // A failed read must never be followed by a write over the unread archive.
+    private var loadingFailed = false
     init(url: URL? = nil) {
         self.url = url ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("analyst-conversations.json")
         if FileManager.default.fileExists(atPath: self.url.path) {
             do { conversations = try JSONDecoder().decode([AnalystConversation].self, from: Data(contentsOf: self.url)) }
-            catch { storageError = L.lang == "en" ? "Saved conversations could not be opened." : "تعذّر فتح المحادثات المحفوظة." }
+            catch {
+                loadingFailed = true
+                storageError = L.lang == "en"
+                    ? "Saved conversations could not be opened. The original file is preserved; new messages will not be saved."
+                    : "تعذّر فتح المحادثات المحفوظة. الملف الأصلي محفوظ؛ لن تُحفظ الرسائل الجديدة."
+            }
         }
         selectedID = conversations.first?.id
         if conversations.isEmpty { newConversation() }
@@ -66,6 +73,7 @@ struct AnalystConversation: Codable, Identifiable {
         save()
     }
     func save() {
+        guard !loadingFailed else { return }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(conversations)

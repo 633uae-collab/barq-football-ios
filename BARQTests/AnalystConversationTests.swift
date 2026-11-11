@@ -2,6 +2,59 @@ import XCTest
 @testable import BARQ
 
 @MainActor final class AnalystConversationTests: XCTestCase {
+    func testUnreadableArchiveIsNeverOverwrittenByInitializationOrNewMessages() throws {
+        // Both truncated JSON and a valid JSON value with an unsupported schema
+        // must preserve their original bytes for recovery.
+        for original in [Data("[{".utf8), Data(#"{"futureArchiveVersion":2}"#.utf8)] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent("conversations.json")
+            try original.write(to: url)
+
+            let archive = AnalystConversations(url: url)
+            XCTAssertNotNil(archive.storageError, "An unsuccessful load must remain visible")
+            XCTAssertEqual(try Data(contentsOf: url), original, "Initialization must not replace unread data")
+            let loadError = archive.storageError
+            let id = try XCTUnwrap(archive.selectedID)
+            let turn = AnalystTurn(question: "A new question")
+            archive.append(turn, context: AnalystContext(fixtureId: 123))
+            archive.finish(conversation: id, turn: turn.id,
+                           reply: AnalystReply(answer: "An in-memory reply", model: "openai/gpt-oss-120b", fetchedAt: 1, generatedAt: 2))
+            archive.newConversation()
+            archive.save()
+
+            XCTAssertEqual(try Data(contentsOf: url), original, "Later writes must also preserve the unread archive")
+            XCTAssertEqual(archive.storageError, loadError, "A memory-only conversation must not claim successful persistence")
+            XCTAssertEqual(archive.conversations.first(where: { $0.id == id })?.turns.first?.answer?.answer,
+                           "An in-memory reply")
+            let reopened = AnalystConversations(url: url)
+            XCTAssertNotNil(reopened.storageError)
+            XCTAssertEqual(try Data(contentsOf: url), original)
+        }
+    }
+
+    func testEveryReplyKindAndItsSourceSurviveStorage() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let archive = AnalystConversations(url: url)
+        let id = try XCTUnwrap(archive.selectedID)
+        for kind in AnalystResponseKind.allCases {
+            let turn = AnalystTurn(question: "Question")
+            let reply = AnalystReply(answer: "Exact reply", model: kind.rawValue, fetchedAt: 1, generatedAt: 2,
+                                     sources: [AnalystSource(name: "Source", url: "https://example.org/evidence")])
+            archive.append(turn, context: AnalystContext())
+            archive.finish(conversation: id, turn: turn.id, reply: reply)
+        }
+        let restored = AnalystConversations(url: url)
+        XCTAssertEqual(restored.current.turns.count, AnalystResponseKind.allCases.count)
+        for (turn, kind) in zip(restored.current.turns, AnalystResponseKind.allCases) {
+            XCTAssertEqual(turn.answer?.answer, "Exact reply")
+            XCTAssertEqual(turn.answer?.responseKind, kind)
+            XCTAssertEqual(turn.answer?.sources?.first?.link?.absoluteString, "https://example.org/evidence")
+        }
+        XCTAssertNil(restored.storageError)
+    }
     func testLongConversationRestoresWithoutSendingCachedAnswerAndBoundsNetworkHistory() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -51,3 +104,4 @@ import XCTest
         XCTAssertTrue(restored.current.history.isEmpty)
     }
 }
+

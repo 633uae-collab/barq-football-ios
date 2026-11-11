@@ -45,4 +45,27 @@ final class AnalystChatTests: XCTestCase {
             do { _ = try await API(protocolClasses: [StubProtocol.self], fixedBase: "https://stub.local").askAnalyst("Analyze"); XCTFail("Invalid answer accepted") } catch { }
         }
     }
+    func testKnownReplyKindsUseDifferentSourceLabelsAndRejectEmptyContent() async throws {
+        for kind in AnalystResponseKind.allCases {
+            let body = AnalystReply(answer: "بيانات football", model: kind.rawValue, fetchedAt: 1, generatedAt: 2)
+            StubProtocol.mode = .body(String(decoding: try JSONEncoder().encode(body), as: UTF8.self))
+            let reply = try await API(protocolClasses: [StubProtocol.self], fixedBase: "https://stub.local").askAnalyst("Analyze")
+            XCTAssertEqual(reply.responseKind, kind)
+            XCTAssertEqual(reply.model, kind.rawValue)
+            for english in [true, false] {
+                XCTAssertFalse(kind.label(english: english).isEmpty)
+                XCTAssertEqual(kind.label(english: english).contains("Groq"), kind == .groq)
+            }
+            var empty = body
+            empty.answer = " \n\t"
+            StubProtocol.mode = .body(String(decoding: try JSONEncoder().encode(empty), as: UTF8.self))
+            do {
+                _ = try await API(protocolClasses: [StubProtocol.self], fixedBase: "https://stub.local").askAnalyst("Analyze")
+                XCTFail("Every response kind must reject empty content")
+            } catch { }
+        }
+        XCTAssertTrue(AnalystResponseKind.linkDiscovery.label(english: true).contains("Unverified"))
+        XCTAssertTrue(AnalystResponseKind.linkDiscovery.label(english: false).contains("غير مؤكدة"))
+    }
 }
+

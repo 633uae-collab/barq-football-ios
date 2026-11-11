@@ -12,11 +12,26 @@ struct AnalystReply: Codable {
     var generatedAt: Double
     var context: AnalystContext?
     var sources: [AnalystSource]?
+    var responseKind: AnalystResponseKind? { AnalystResponseKind(rawValue: model) }
     var sourceNames: String? {
         let names = (sources ?? []).compactMap(\.displayName)
         var seen = Set<String>()
         let unique = names.filter { seen.insert($0).inserted }
         return unique.isEmpty ? nil : unique.joined(separator: " · ")
+    }
+}
+
+enum AnalystResponseKind: String, CaseIterable {
+    case groq = "openai/gpt-oss-120b"
+    case providerData = "verified-provider-data"
+    case linkDiscovery = "unverified-link-discovery"
+
+    func label(english: Bool) -> String {
+        switch self {
+        case .groq: return english ? "AI analysis · Groq" : "تحليل بالذكاء الاصطناعي · Groq"
+        case .providerData: return english ? "Direct provider data · API-Football" : "بيانات مباشرة من المزوّد · API-Football"
+        case .linkDiscovery: return english ? "Unverified discovery links · GDELT" : "روابط اكتشاف غير مؤكدة · GDELT"
+        }
     }
 }
 struct AnalystSource: Codable {
@@ -38,6 +53,16 @@ struct AnalystSource: Codable {
 struct AnalystChatError: LocalizedError {
     let code: String
     let retryAfter: Int?
+    var diagnosticCode: String {
+        switch code {
+        case "AI_FACT_CHECK_FAILED", "AI_INCOMPLETE_RESPONSE", "AI_INVALID_RESPONSE",
+             "AI_FREE_QUOTA_REACHED", "PLAN_LIMIT", "LOCAL_REQUEST_BUDGET",
+             "AI_BUSY", "AI_CHAT_DISABLED", "AI_AUTH_FAILED", "AI_UPSTREAM_UNAVAILABLE",
+             "AI_EVIDENCE_TOO_LARGE":
+            return code
+        default: return "UNRECOGNIZED_SERVER_ERROR"
+        }
+    }
     var errorDescription: String? {
         let en = L.lang == "en"
         switch code {
@@ -48,6 +73,7 @@ struct AnalystChatError: LocalizedError {
             return en ? "The free usage limit has been reached. The provider did not specify a reset time. Please try later; no paid usage is enabled." : "وصلنا لحد الاستخدام المجاني. مزوّد الخدمة لم يحدد وقت تجدد الحصة. حاول لاحقاً؛ لن يتم تفعيل استخدام مدفوع."
         case "AI_BUSY": return en ? "The analyst is busy. Please try again shortly." : "المحلل مشغول حالياً، حاول بعد قليل."
         case "AI_CHAT_DISABLED": return en ? "AI chat is not enabled on the server yet." : "محادثة الذكاء الاصطناعي غير مفعّلة على الخادم حالياً."
+        case "AI_INVALID_RESPONSE": return en ? "The analysis service returned an invalid answer. Your question remains in this conversation and was not resent automatically." : "وصل رد غير صالح من خدمة التحليل. سؤالك باقٍ في المحادثة ولم نُعد إرساله تلقائياً."
         case "AI_FACT_CHECK_FAILED", "AI_INCOMPLETE_RESPONSE": return en ? "The answer could not be verified or was incomplete. It was not displayed. You can send a new request." : "تعذّر التحقق من الإجابة أو كانت غير مكتملة، لذلك لم نعرضها. تقدر ترسل طلباً جديداً."
         default: return en ? "Unable to complete the analysis. Check your connection and try again." : "تعذّر إكمال التحليل. تأكد من الاتصال وحاول مرة أخرى."
         }
@@ -67,3 +93,27 @@ struct AnalystWelcome: Decodable {
         expiresAt > date.timeIntervalSince1970 * 1000 ? text : Self.fallback(english: english)
     }
 }
+
+enum AnalystNetworkFailure {
+    // Resolve known transport errors without Foundation's localized-description
+    // resource lookup on the UI actor. Never automatically resend a chat POST.
+    static func message(for error: Error, english: Bool) -> String? {
+        let value = error as NSError
+        guard value.domain == NSURLErrorDomain else { return nil }
+        let suffix = english
+            ? " Your question remains in this conversation. It was not resent automatically."
+            : " سؤالك باقٍ في هذه المحادثة، ولم نُعد إرساله تلقائياً."
+        switch value.code {
+        case NSURLErrorNetworkConnectionLost:
+            return (english ? "The connection was interrupted before a complete answer arrived." : "انقطع الاتصال قبل وصول الإجابة كاملة.") + suffix
+        case NSURLErrorTimedOut:
+            return (english ? "The answer did not arrive within the connection time limit." : "لم تصل الإجابة خلال مهلة الاتصال.") + suffix
+        case NSURLErrorNotConnectedToInternet, NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed:
+            return (english ? "The analysis service could not be reached." : "تعذّر الوصول إلى خدمة التحليل.") + suffix
+        case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted, NSURLErrorServerCertificateHasBadDate, NSURLErrorServerCertificateHasUnknownRoot, NSURLErrorServerCertificateNotYetValid:
+            return (english ? "A secure connection could not be established." : "تعذّر إنشاء اتصال آمن.") + suffix
+        default: return nil
+        }
+    }
+}
+
