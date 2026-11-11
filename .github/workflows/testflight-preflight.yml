@@ -21,3 +21,16 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: node ci/testflight-preflight.mjs
+
+  stop-unrequested-simulator-runs:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel automatic legacy runs during device-preview transition
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for RUN in 43023190472 43023190222; do
+            gh api --method POST "repos/${{ github.repository }}/actions/runs/$RUN/cancel" || true
+          done

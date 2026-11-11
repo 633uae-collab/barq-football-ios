@@ -37,6 +37,7 @@ permissions:
   contents: read
 jobs:
   launch-journey:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref != 'codex/fotiq-rider-reference'
     # Validate the final prefetch boundary; the same app source also has an ARM run.
     # Standard public runner only; no larger or paid service.
     runs-on: macos-15-intel
