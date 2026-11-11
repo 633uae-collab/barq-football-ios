@@ -11,6 +11,11 @@ assert old.count('AnalystStageProbe.measure("accessibility-text")') == 1
 assert '.textSelection(.enabled)' in old and '.contextMenu' in old
 replacement = '                                AnalystRenderedAnswer(answer: reply.answer, isLatest: message.id == archive.current.turns.last?.id, english: en)\n'
 modified = original[:a] + replacement + original[b:]
+# Isolate lazy-row materialization from asynchronous text preparation.
+# The failing fifth stored reply never started its rendering task.
+container = "LazyVStack(alignment: .leading, spacing: 22)"
+assert modified.count(container) == 1
+modified = modified.replace(container, "VStack(alignment: .leading, spacing: 22)", 1)
 assert modified.count('.glassEffect') == original.count('.glassEffect')
 assert modified.count('scroll.scrollTo("chat-bottom", anchor: .bottom)') == 4
 path.write_text(modified)
@@ -23,6 +28,6 @@ data["render-candidate"] = {
     "before": hashlib.sha256(original.encode()).hexdigest(),
     "after": hashlib.sha256(modified.encode()).hexdigest(),
     "helper": hashlib.sha256(pathlib.Path("BARQ/Views/AnalystRenderedAnswer.swift").read_bytes()).hexdigest(),
-    "scope": "Markdown/accessibility text prepared off-main per row/answer; exact storage and original scroll retained",
+    "scope": "Markdown/accessibility text prepared off-main per row/answer; eager transcript container diagnostic; exact storage and original scroll handlers retained",
 }
 manifest.write_text(json.dumps(data, indent=2) + "\n")
