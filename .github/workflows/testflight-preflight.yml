@@ -2,7 +2,7 @@ name: TestFlight access preflight
 on:
   workflow_dispatch:
   push:
-    branches: [codex/premium-cinematic]
+    branches: [codex/premium-cinematic, codex/fotiq-rider-reference]
     paths: [ci/testflight-preflight.mjs, .github/workflows/testflight-preflight.yml]
 permissions:
   contents: read
