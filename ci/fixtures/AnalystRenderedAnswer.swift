@@ -29,7 +29,12 @@ struct AnalystRenderedAnswer: View {
                         }
                     }
             } else {
-                ProgressView(english ? "Preparing answer…" : "نجهّز عرض الإجابة…")
+                // Keep the answer's full text footprint while formatting is pending.
+                // A one-line spinner collapses restored rows before their async work finishes.
+                // The acceptance identifier remains exclusive to the prepared representation.
+                Text(verbatim: answer)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
                     .accessibilityIdentifier("analyst-rendering")
             }
         }
@@ -57,7 +62,7 @@ struct AnalystRenderedAnswer: View {
                     worker.cancel()
                 }
                 try Task.checkCancellation()
-                prepared = value
+                AnalystStageProbe.measure("render-install") { prepared = value }
             } catch {
                 // Cancellation on disappearance or a changed answer cannot install
                 // a stale representation into the current row.
