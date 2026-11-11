@@ -312,19 +312,20 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
             super.layoutSubviews()
             guard !done, link == nil, window != nil else { return }
             let updates = UIUpdateLink(view: self)
-            updates.addAction(to: .afterCATransactionCommit) { [weak self] _, _ in self?.destinationDidCommit() }
+            updates.addAction(to: .afterCATransactionCommit) { [weak self] _, info in self?.destinationDidCommit(updateTime: info.modelTime) }
             updates.requiresContinuousUpdates = true
             updates.isEnabled = true
             link = updates
         }
         func stop() { link?.isEnabled = false; link = nil }
-        private func destinationDidCommit() {
+        private func destinationDidCommit(updateTime: Double) {
             guard !done else { return }
             let now = CACurrentMediaTime()
             if firstCommitAt == nil { firstCommitAt = now }
             observedCommits += 1
             guard readiness.observe(layoutGeneration: layoutGeneration(),
-                                    isActive: window?.windowScene?.activationState == .foregroundActive) else { return }
+                                    isActive: window?.windowScene?.activationState == .foregroundActive,
+                                    updateTime: updateTime) else { return }
             done = true; stop()
             os_signpost(.end, log: SplashDiag.points, name: "Rider destination preparation")
             SplashDiag.log.notice("READINESS observedCommits=\(self.observedCommits, privacy: .public) firstCommitToReady=\(now - (self.firstCommitAt ?? now), privacy: .public)")
