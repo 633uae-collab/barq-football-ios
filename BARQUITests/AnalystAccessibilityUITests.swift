@@ -36,7 +36,10 @@ final class AnalystAccessibilityUITests: XCTestCase {
             XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-welcome-logo").firstMatch.exists)
             XCTAssertEqual(answer.label, originalAnswer)
             print("FOTIQ_AX_REPLAY question=\(index + 1) stage=verified utc=\(Date().timeIntervalSince1970)")
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: question.count))
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: question.utf16.count))
+            // UIKit deletion can consume an Arabic combining mark separately.
+            // d5a left the initial letter after Character.count deletes; use
+            // the UTF-16 input bound, keeping the exact-empty assertion.
             // typeText can return before the last deletion reaches SwiftUI/AX.
             // Run 066 captured "C" 8 ms before the app logged zero characters.
             // Wait for the same empty-field condition within the existing 15 s
@@ -56,3 +59,4 @@ final class AnalystAccessibilityUITests: XCTestCase {
         print("FOTIQ_AX_REPLAY stage=complete utc=\(Date().timeIntervalSince1970)")
     }
 }
+

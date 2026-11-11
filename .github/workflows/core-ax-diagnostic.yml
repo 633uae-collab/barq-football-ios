@@ -8,6 +8,7 @@ on:
       - BARQUITests/AnalystAccessibilityUITests.swift
       - ci/fixtures/analyst-ax-recorded.json
       - ci/run-core-command.py
+      - ci/profile-core-replay.py
 permissions:
   contents: read
 jobs:
@@ -65,7 +66,9 @@ jobs:
           TAIL_PID=$!
           python3 -u ci/core-host-health.py out/host-health.jsonl &
           HEALTH_PID=$!
-          trap 'kill "$LOG_PID" "$TAIL_PID" "$HEALTH_PID" 2>/dev/null || true' EXIT
+          python3 -u ci/profile-core-replay.py >out/instruments-watcher.log 2>&1 &
+          PROFILE_PID=$!
+          trap 'wait "$PROFILE_PID" || true; kill "$LOG_PID" "$TAIL_PID" "$HEALTH_PID" 2>/dev/null || true' EXIT
           python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystAccessibilityUITests -resultBundlePath replay.xcresult 2>&1 | tee out/replay.log
       - name: Preserve archive and verify no diagnostic sends
         if: always()
@@ -87,3 +90,4 @@ jobs:
             out/
             replay.xcresult
           retention-days: 14
+
