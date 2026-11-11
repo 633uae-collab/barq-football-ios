@@ -15,10 +15,10 @@ final class AnalystAccessibilityUITests: XCTestCase {
         let answer = app.staticTexts["analyst-answer"]
         XCTAssertTrue(answer.waitForExistence(timeout: 40), "The workflow must seed the recorded transcript")
         let originalAnswer = answer.label
-        XCTAssertTrue(originalAnswer.contains("Kings Cup"))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Recorded diagnostic fixture — not live")).firstMatch.exists)
+        XCTAssertTrue(originalAnswer.contains("SYNTHETIC AX CONTROL"))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Synthetic diagnostic fixture — not live")).firstMatch.exists)
         let questions = [
-            "حلل المباراة مع توضيح البيانات الناقصة", "Explain the same match in English.",
+            "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق", "Explain the same match in English.",
             "قارن ريال مدريد وبرشلونة", "Compare Barcelona and Real Madrid.",
             "ما هي التشكيلة المتحققة؟", "Which lineup information is confirmed?",
             "اذكر البطولة والموسم", "State the competition and season.",

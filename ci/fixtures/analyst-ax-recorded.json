@@ -5,16 +5,46 @@
     "context": {},
     "turns": [
       {
-        "id": "22222222-2222-4222-8222-222222222222",
-        "question": "حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة",
+        "id": "22222222-2222-4222-8222-000000000001",
+        "question": "Synthetic diagnostic question 1",
         "answer": {
-          "answer": "المباراة الحالية  \n- الدوري: Kings Cup – مرحلة المجموعات (المجموعة 4) – موسم 2026  \n- الفريقان: فوكبول (المضيف) – لاود (الضيف)  \n- الوقت الجاري: 12 دقيقة من الشوط الأول (الحالة: First Half)  \n- النتيجة الآن: فوكبول 2 – لاود 1  \n\nالأهداف المسجلة حتى الآن  \n- الدقيقة 1 – هدف لفريق لاود سجله Felipe Viana (event-0)  \n- الدقيقة 4 – هدف لفريق فوكبول سجله V. Alexandre (event-1)  \n- الدقيقة 7 – هدف لفريق فوكبول سجله Joao Choco (event-2)  \n\nملاحظات أولية مستندة إلى البيانات المتوفرة  \n- تسلسل الأهداف يُظهر تسجيل لاود هدفًا مبكرًا ثم استجابة سريعة من فوكبول بأهداف متتالية خلال ثلاث دقائق، ما يمنح فوكبول الصدارة.  \n- لا توجد بيانات مسجلة عن تمريرات حاسمة (assist)؛ لذلك لا يمكن تحديد من ساهم في الأهداف.  \n\nالبيانات الناقصة (محدودة في المصدر)  \n- التشكيلة والبدء: لم تُذكر أي تشكيلة أو تكتيك بدء.  \n- الإحصائيات العامة: لا توجد معلومات عن الاستحواذ، التسديدات، التمريرات، الأخطاء أو البطاقات.  \n- البدلات والتغييرات: لا توجد أحداث بدلاء أو بطاقات مسجلة.  \n- الأداء الفردي: لا توجد إحصاءات عن عدد اللمسات، المسافات المقطوعة أو تقييمات اللاعبين.  \n- تأثير الأحداث: لا يمكن استنتاج أي تأثير تكتيكي للهدف أو لأي تغيير غير موثق.  \n\nتحذير  \n- البيانات التي لدينا تقتصر على الأهداف المذكورة؛ أي تحليل أعمق يتطلب معلومات إضافية غير متوفرة في الوقت الحالي.  \n\nتم استرجاع هذه المعلومات في 2026‑11‑09T23:53:46.269Z.",
+          "answer": "SYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\nSYNTHETIC AX CONTROL\nبيانات اختبار اصطناعية فقط. لا تصف مباراة أو لاعباً حقيقياً.\n\n",
           "model": "openai/gpt-oss-120b",
-          "fetchedAt": 1794268426269,
-          "generatedAt": 1794268440257,
+          "fetchedAt": 0,
+          "generatedAt": 0,
           "sources": [
             {
-              "name": "Recorded diagnostic fixture — not live"
+              "name": "Synthetic diagnostic fixture — not live"
+            }
+          ]
+        }
+      },
+      {
+        "id": "22222222-2222-4222-8222-000000000002",
+        "question": "Synthetic diagnostic question 2",
+        "answer": {
+          "answer": "SYNTHETIC AX CONTROL\nSynthetic diagnostic content only. No real match, player, provider or live answer.\n\nSYNTHETIC AX CONTROL\nSynthetic diagnostic content only. No real match, player, provider or live answer.\n\nSYNTHETIC AX CONTROL\nSynthetic diagnostic content only. No real match, player, provider or live answer.\n\nSYNTHETIC AX CONTROL\nSynthetic diagnostic content only. No real match, player, provider or live answer.\n\nSYNTHETIC AX CONTROL\nSynthetic diagnostic content only. No real match, player, provider or live answer.\n\nSYNTHETIC AX CONTROL\nSynthetic diagnostic content only. No real match, player, provider or live answer.\n\nSYNTHETIC AX CONTROL\nSynthetic diagnostic content only. No real match, player, provider or live answer.\n\n",
+          "model": "openai/gpt-oss-120b",
+          "fetchedAt": 0,
+          "generatedAt": 0,
+          "sources": [
+            {
+              "name": "Synthetic diagnostic fixture — not live"
+            }
+          ]
+        }
+      },
+      {
+        "id": "22222222-2222-4222-8222-000000000003",
+        "question": "Synthetic diagnostic question 3",
+        "answer": {
+          "answer": "SYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\nSYNTHETIC AX CONTROL\nمحتوى اصطناعي لاختبار واجهة المحادثة.\nSynthetic content for conversation accessibility checks.\n\n",
+          "model": "openai/gpt-oss-120b",
+          "fetchedAt": 0,
+          "generatedAt": 0,
+          "sources": [
+            {
+              "name": "Synthetic diagnostic fixture — not live"
             }
           ]
         }
