@@ -1,5 +1,1 @@
-Controlled Intel environment comparison after d888 bootstatus failure.
-Use standard free macos-26-intel, Xcode 26.4.1 and preinstalled iPhone 17 Pro / iOS 26.2.
-Apple Xcode 26.4 release notes fix simulator shared cache creation (170836966) and simdiskimaged hangs (172343027).
-Keep existing boot and UI deadlines, exact-input/full-restoration checks and provider spacing.
-No entry tests, recording, deployment or paid services. This does not establish the original AX root cause.
+Run core acceptance on standard macos-26 ARM after verified isolated boot success in 42941923395. Xcode 26.4.1 / iOS 26.2. Keep all UI assertions, deadlines, provider spacing and entry exclusions; no recording or deploy.
