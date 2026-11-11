@@ -33,7 +33,10 @@ if len(pids)!=1:
     raise SystemExit(1)
 event(stage='target', pid=pids[0], udid=os.environ['UDID'], fixture='synthetic-only')
 run(['xcrun','xctrace','help','record'],30,'instruments-help')
-run(['xcrun','xctrace','record','--template','Time Profiler','--attach',str(pids[0]),'--time-limit','120s','--output','out/core-replay.trace','--no-prompt'],180,'instruments-record')
+record_exit = run(['xcrun','xctrace','record','--template','Time Profiler','--device',os.environ['UDID'],'--attach',str(pids[0]),'--time-limit','120s','--output','out/core-replay.trace','--no-prompt'],180,'instruments-record')
+if record_exit != 0 or not (out/'core-replay.trace').exists():
+    event(stage='capture', error='Instruments did not produce a successful recording')
+    raise SystemExit(1)
 if (out/'core-replay.trace').exists():
     run(['xcrun','xctrace','export','--input','out/core-replay.trace','--toc','--output','out/instruments-toc.xml'],60,'instruments-toc')
     run(['xcrun','xctrace','export','--input','out/core-replay.trace','--xpath','/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]','--output','out/instruments-samples.xml'],90,'instruments-samples')
