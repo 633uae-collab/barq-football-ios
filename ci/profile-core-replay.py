@@ -1,5 +1,5 @@
 """Bounded Instruments capture of synthetic replay after analyst readiness only."""
-import json, os, pathlib, subprocess, time, datetime
+import json, os, pathlib, subprocess, time, datetime, sys
 out = pathlib.Path('out')
 log = out / 'replay.log'
 wrapper = ['python3', 'ci/run-core-command.py']
@@ -12,6 +12,18 @@ def run(args, budget, name):
         r = subprocess.run(wrapper+[str(budget)]+args, stdout=f, stderr=subprocess.STDOUT)
     event(stage=name, state='end', exit=r.returncode)
     return r.returncode
+# Warm device discovery before the test owns a short-lived app PID.
+# The prior run spent 39 s on help, then completed lookup after XCTest teardown.
+if '--preflight' in sys.argv:
+    pathlib.Path('/tmp/fotiq-core-profile-finished').unlink(missing_ok=True)
+    help_exit = run(['xcrun','xctrace','help','record'],120,'instruments-help')
+    device_exit = run(['xcrun','xctrace','list','devices'],120,'instruments-devices')
+    devices = (out/'instruments-devices.log').read_text(errors='replace')
+    if help_exit != 0 or device_exit != 0 or os.environ['UDID'] not in devices:
+        event(stage='preflight', error='Profiler did not enumerate the selected simulator')
+        raise SystemExit(1)
+    event(stage='preflight', selectedDeviceEnumerated=True)
+    raise SystemExit(0)
 # Do not profile entry. XCTest emits this only after answer/source verification.
 end = time.monotonic()+240
 while time.monotonic()<end:
@@ -31,9 +43,9 @@ pids = [int(pid) for pid, path in rows if path.endswith('/BARQ.app/BARQ') and os
 if len(pids)!=1:
     event(stage='pid', error='Expected one app executable on requested simulator', count=len(pids))
     raise SystemExit(1)
-event(stage='target', pid=pids[0], udid=os.environ['UDID'], fixture='synthetic-only')
-run(['xcrun','xctrace','help','record'],30,'instruments-help')
-record_exit = run(['xcrun','xctrace','record','--template','Time Profiler','--device',os.environ['UDID'],'--attach',str(pids[0]),'--time-limit','120s','--output','out/core-replay.trace','--no-prompt'],180,'instruments-record')
+event(stage='target', pid=pids[0], udid=os.environ['UDID'], attachName='BARQ', fixture='synthetic-only')
+record_exit = run(['xcrun','xctrace','record','--template','Time Profiler','--device',os.environ['UDID'],'--attach','BARQ','--time-limit','60s','--output','out/core-replay.trace','--no-prompt'],180,'instruments-record')
+pathlib.Path('/tmp/fotiq-core-profile-finished').write_text(str(record_exit))
 if record_exit != 0 or not (out/'core-replay.trace').exists():
     event(stage='capture', error='Instruments did not produce a successful recording')
     raise SystemExit(1)

@@ -25,6 +25,10 @@ final class AnalystAccessibilityUITests: XCTestCase {
             "هل توجد إحصاءات للاعبين؟", "Which player statistics are missing?"
         ]
         let field = app.textFields["analyst-question"]
+        // Resolve once while the field is empty; polling must not issue a second
+        // synchronous AX query for placeholderValue on every predicate evaluation.
+        let placeholder = try XCTUnwrap(field.placeholderValue)
+        XCTAssertFalse(placeholder.isEmpty)
         for (index, question) in questions.enumerated() {
             print("FOTIQ_AX_REPLAY question=\(index + 1) stage=input-start utc=\(Date().timeIntervalSince1970)")
             XCTAssertTrue(field.waitForExistence(timeout: 15))
@@ -46,11 +50,17 @@ final class AnalystAccessibilityUITests: XCTestCase {
             // element budget; do not send another delete or alter the draft.
             let emptyDraft = NSPredicate { _, _ in
                 guard let value = field.value as? String else { return false }
-                return value.isEmpty || value == field.placeholderValue
+                return value.isEmpty || value == placeholder
             }
             let cleared = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: emptyDraft, object: field)], timeout: 15)
             XCTAssertEqual(cleared, .completed, "Draft must be empty after deletion; AX value: \(String(describing: field.value))")
             XCTAssertFalse(app.buttons["analyst-send"].isEnabled)
+        }
+        // Profiling coordination only. Keep the original process alive until the
+        // bounded capture ends; this does not extend any draft/answer assertion.
+        let captureDeadline = Date().addingTimeInterval(180)
+        while !FileManager.default.fileExists(atPath: "/tmp/fotiq-core-profile-finished") && Date() < captureDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
         app.terminate()
         app.launch()

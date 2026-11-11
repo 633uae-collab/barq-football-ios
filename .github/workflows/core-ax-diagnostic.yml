@@ -57,6 +57,9 @@ jobs:
           echo "CHAT_CONTAINER=$CONTAINER" >> "$GITHUB_ENV"
           shasum -a 256 ci/fixtures/analyst-ax-recorded.json > out/fixture-sha256.txt
           printf '%s\n' 'Three synthetic long replies, not recorded conversation text. Diagnostic control for transcript size only; no chat POST, pending append or live acceptance is exercised.' > out/evidence-kind.txt
+      - name: Prepare Instruments device discovery before the app starts
+        run: |
+          python3 ci/profile-core-replay.py --preflight
       - name: Ten drafts and AX snapshots against recorded content
         run: |
           set -o pipefail
