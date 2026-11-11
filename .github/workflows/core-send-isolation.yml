@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        # Three synthetic long turns; isolate transcript size without chat POSTs.
+        # Matched baseline: synthetic POSTs, original scrolling, no sampling overhead.
         runner: [macos-26]
     runs-on: ${{ matrix.runner }}
     concurrency:
@@ -35,7 +35,7 @@ jobs:
           sw_vers | tee out/host-version.txt
           printf '%s\n' "$GITHUB_SHA" > out/head-sha.txt
           brew install xcodegen
-          python3 ci/prepare-synthetic-send.py
+          python3 ci/prepare-synthetic-send.py --scroll-mode baseline
           xcodegen generate
           python3 ci/run-core-command.py 120 xcrun simctl list devices available -j > out/devices.json
           UDID=$(python3 -c 'import json; d=json.load(open("out/devices.json"))["devices"]; print(next(v["udid"] for k,vs in d.items() if k.endswith("iOS-26-2") for v in vs if v["name"] == "iPhone 17 Pro"))')
@@ -47,7 +47,7 @@ jobs:
         run: |
           set -o pipefail
           python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee out/build.log
-      - name: Install recorded transcript in the disposable simulator
+      - name: Install synthetic transcript in the disposable simulator
         run: |
           APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
           test -n "$APP"
@@ -58,7 +58,7 @@ jobs:
           echo "CHAT_CONTAINER=$CONTAINER" >> "$GITHUB_ENV"
           shasum -a 256 ci/fixtures/analyst-ax-recorded.json > out/fixture-sha256.txt
           printf '%s\n' 'Synthetic transport only. Three seeded turns plus ten UI sends use real pending, decode, archive and rendering paths. All URLSession requests are intercepted; no provider calls or live acceptance.' > out/evidence-kind.txt
-      - name: Ten synthetic sends through the unchanged chat view
+      - name: Ten synthetic sends with original scrolling and no sampler
         run: |
           set -o pipefail
           xcrun simctl spawn "$UDID" log stream --level debug --style compact --predicate 'subsystem == "ae.barq.transport" OR subsystem == "ae.barq.composer"' >out/transport.log 2>&1 &
