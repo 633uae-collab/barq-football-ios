@@ -67,9 +67,7 @@ jobs:
           TAIL_PID=$!
           python3 -u ci/core-host-health.py out/host-health.jsonl &
           HEALTH_PID=$!
-          python3 -u ci/sample-synthetic-send.py >out/send-sample-watcher.log 2>&1 &
-          PROFILE_PID=$!
-          trap 'wait "$PROFILE_PID" || true; kill "$LOG_PID" "$TAIL_PID" "$HEALTH_PID" 2>/dev/null || true' EXIT
+          trap 'kill "$LOG_PID" "$TAIL_PID" "$HEALTH_PID" 2>/dev/null || true' EXIT
           python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystSyntheticSendUITests -resultBundlePath replay.xcresult 2>&1 | tee out/replay.log
       - name: Verify synthetic archive and actual simulator identity
         if: always()
