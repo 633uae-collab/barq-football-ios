@@ -479,7 +479,7 @@ index 973013580194d0da7595e4df74cd78124a54af81..4b56b0168bad69be93110acbd82563de
    app.get('/api/search', async (req, res) => {
      if (typeof req.query.q !== 'string' || req.query.q.trim().length > 80) throw new ServiceError('INVALID_QUERY', 400);
 diff --git a/server/chat-evidence.js b/server/chat-evidence.js
-index 3b5270aca4bfff2c141f789cd83810df7250a9f0..bf3e70fc1d0a388456fc52bcd973e2dad73c8dd0 100644
+index 3b5270aca4bfff2c141f789cd83810df7250a9f0..264c63e34d7e3e5ad6ae1cc8ffb8332301f33da9 100644
 --- a/server/chat-evidence.js
 +++ b/server/chat-evidence.js
 @@ -1,32 +1,159 @@
@@ -818,7 +818,7 @@ index 3b5270aca4bfff2c141f789cd83810df7250a9f0..bf3e70fc1d0a388456fc52bcd973e2da
 +  const seasonTotalsOnly = seasonComparison || singleSeasonTotals;
 +  const matchesRequestedScope = f => (!requestedScope.year || f.league?.season === requestedScope.year)
 +    && (!requestedScope.leagueId || f.league?.id === requestedScope.leagueId);
-+  let fixtureId = newUpcomingMatch || (changesTopic && !sameMatch) ? undefined : context.fixtureId;
++  let fixtureId = seasonTotalsOnly || clubForPlayer || newUpcomingMatch || (changesTopic && !sameMatch) ? undefined : context.fixtureId;
 +  if ((teamIds.length || live || fixtureId) && !seasonTotalsOnly && requestedScope.ambiguous) {
 +    evidence.clubs = [];
 +    missing.push('Specify one supported competition and season; current fixtures were not substituted.');
