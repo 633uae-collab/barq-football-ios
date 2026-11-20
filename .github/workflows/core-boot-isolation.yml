@@ -1,0 +1,34 @@
+name: Core simulator boot isolation (no app)
+on:
+  push:
+    branches: [codex/core-stability]
+    paths:
+      - .github/workflows/core-boot-isolation.yml
+      - ci/core-boot-isolation.py
+permissions:
+  contents: read
+jobs:
+  boot-isolation:
+    runs-on: macos-26
+    timeout-minutes: 15
+    concurrency:
+      group: fotiq-live-provider-review
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record environment
+        run: |
+          mkdir -p out
+          printf '%s\n' "$GITHUB_SHA" > out/head-sha.txt
+          sudo xcode-select -s /Applications/Xcode_26.4.1.app
+          xcodebuild -version > out/xcode-version.txt
+          sw_vers > out/host-version.txt
+          uname -m > out/architecture.txt
+      - name: Compare stock and fresh devices without opening FOTIQ
+        run: python3 -u ci/core-boot-isolation.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-boot-isolation-evidence
+          path: out/
+          retention-days: 14

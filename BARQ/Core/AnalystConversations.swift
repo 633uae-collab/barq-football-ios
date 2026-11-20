@@ -27,10 +27,24 @@ struct AnalystConversation: Codable, Identifiable {
     var history: [AnalystHistoryMessage] {
         // Older messages remain readable locally. Only a bounded recent window is
         // transmitted; previous answers are context, never fresh football evidence.
-        Array(turns.filter { $0.answer != nil }.suffix(4)).flatMap {
-            [AnalystHistoryMessage(role: "user", content: Self.boundedContext($0.question, utf16Limit: 500)),
-             AnalystHistoryMessage(role: "assistant", content: Self.boundedContext($0.answer?.answer ?? "", utf16Limit: 1000))]
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        var messages: [AnalystHistoryMessage] = []
+        var byteCount = 2 // The outer array brackets.
+        for turn in turns.reversed() {
+            guard let reply = turn.answer else { continue }
+            let pair = [
+                AnalystHistoryMessage(role: "user", content: Self.boundedContext(turn.question, utf16Limit: 500)),
+                AnalystHistoryMessage(role: "assistant", content: Self.boundedContext(reply.answer, utf16Limit: 1000))
+            ]
+            guard let encoded = try? encoder.encode(pair) else { break }
+            let additionalBytes = encoded.count - 2 + (messages.isEmpty ? 0 : 1)
+            guard byteCount + additionalBytes <= 18_000 else { break }
+            byteCount += additionalBytes
+            messages.insert(contentsOf: pair, at: 0)
+            if messages.count == 8 { break }
         }
+        return messages
     }
 }
 @MainActor @Observable final class AnalystConversations {
@@ -38,11 +52,18 @@ struct AnalystConversation: Codable, Identifiable {
     var selectedID: UUID?
     var storageError: String?
     private let url: URL
+    // A failed read must never be followed by a write over the unread archive.
+    private var loadingFailed = false
     init(url: URL? = nil) {
         self.url = url ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("analyst-conversations.json")
         if FileManager.default.fileExists(atPath: self.url.path) {
             do { conversations = try JSONDecoder().decode([AnalystConversation].self, from: Data(contentsOf: self.url)) }
-            catch { storageError = L.lang == "en" ? "Saved conversations could not be opened." : "تعذّر فتح المحادثات المحفوظة." }
+            catch {
+                loadingFailed = true
+                storageError = L.lang == "en"
+                    ? "Saved conversations could not be opened. The original file is preserved; new messages will not be saved."
+                    : "تعذّر فتح المحادثات المحفوظة. الملف الأصلي محفوظ؛ لن تُحفظ الرسائل الجديدة."
+            }
         }
         selectedID = conversations.first?.id
         if conversations.isEmpty { newConversation() }
@@ -66,6 +87,7 @@ struct AnalystConversation: Codable, Identifiable {
         save()
     }
     func save() {
+        guard !loadingFailed else { return }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(conversations)

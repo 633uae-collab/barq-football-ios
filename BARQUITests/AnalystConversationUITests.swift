@@ -24,27 +24,13 @@ final class AnalystConversationUITests: XCTestCase {
     }
 
     func testRealBilingualFollowUpsAndConversationRestoration() throws {
-        continueAfterFailure = true
-        let app = XCUIApplication()
-        app.launchEnvironment["FOTIQ_UI_TEST"] = "1"
-        app.launchArguments = ["-lang", "ar", "-resetOnboarding", "YES"]
+        continueAfterFailure = false
+        // Core acceptance begins at the analyst. Entry/onboarding belongs to
+        // the other developer and is not asserted or recorded by this suite.
+        let app = XCUIApplication.fotiq()
+        app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
         app.launch()
         func element(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
-        XCTAssertTrue(element("ob-club-40").waitForExistence(timeout: 40))
-        XCTAssertFalse(element("ob-next").isEnabled)
-        XCTAssertFalse(element("ob-skip").isEnabled)
-        element("ob-club-40").tap()
-        XCTAssertTrue(element("ob-next").isEnabled)
-        element("ob-next").tap()
-        XCTAssertTrue(element("ob-back").waitForExistence(timeout: 10))
-        element("ob-skip").tap()
-        XCTAssertTrue(element("ob-start").waitForExistence(timeout: 10))
-        element("ob-skip").tap()
-        XCTAssertTrue(element("home-notifications").waitForExistence(timeout: 30))
-        let analystTab = app.tabBars.buttons["المحلل"]
-        XCTAssertTrue(analystTab.waitForExistence(timeout: 10)); analystTab.tap()
-        // Reopening later must use saved onboarding, not a test bypass/reset.
-        app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
         let newChat = app.buttons["analyst-new-chat"]
         XCTAssertTrue(newChat.waitForExistence(timeout: 40)); newChat.tap()
         let directory = URL(fileURLWithPath: "/tmp/fotiq-conversation-shots", isDirectory: true)
@@ -52,11 +38,33 @@ final class AnalystConversationUITests: XCTestCase {
         try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("00-welcome.png"))
         XCTAssertTrue(app.staticTexts["analyst-welcome"].exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-entity-picker").firstMatch.exists)
+        try recording("start", phase: "analyst")
+        defer { try? recording("stop") }
         var report = ""
-        let questions = ["حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة", "For the same match, explain the starting lineups and substitutions in English. Use updated data.", "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم", "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق"]
+        var lastVerifiedReply = ""
+        var receivedTurns: [(question: String, answer: String)] = []
+        // Five Arabic and five English questions. Preserve provider spacing.
+        let questions = [
+            "حلل مباراة مباشرة الآن مع توضيح البيانات الناقصة",
+            "For the same match, explain the starting lineups and substitutions in English. Use updated data.",
+            "قارن بين ريال مدريد وبرشلونة بناءً على بيانات الموسم",
+            "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق",
+            "Compare Barcelona and Real Madrid in La Liga 2025/26. Keep each team's statistics separate.",
+            "قارن إحصاءات مبابي وليفاندوفسكي في الدوري الإسباني موسم ٢٠٢٥/٢٦؛ اربط كل لاعب بفريقه ولا تخمّن الأرقام",
+            "Analyze a completed match. State its date, competition, final score and confirmed statistics; distinguish unavailable data.",
+            "للمباراة المنتهية نفسها، وضّح التشكيلة والتبديلات المتحققة فقط",
+            "Compare Real Madrid and Barcelona in La Liga 2025/26. State the competition and season.",
+            "When was FC Barcelona founded? Give the verified foundation date and source."
+        ]
+        XCTAssertEqual(questions.count, 10)
         for (index, question) in questions.enumerated() {
-            let field = app.descendants(matching: .any).matching(identifier: "analyst-question").firstMatch
+            print("FOTIQ_CORE_STEP question=\(index + 1) stage=input-start utc=\(Date().timeIntervalSince1970)")
+            let field = app.textFields["analyst-question"]
             XCTAssertTrue(field.waitForExistence(timeout: 15)); field.tap(); field.typeText(question)
+            // Opening the keyboard alone is not successful text entry.
+            XCTAssertEqual(field.value as? String, question, "The actual question must be present before sending")
+            XCTAssertTrue(app.buttons["analyst-send"].isEnabled, "Verified input must enable Send")
+            print("FOTIQ_CORE_STEP question=\(index + 1) stage=input-verified utc=\(Date().timeIntervalSince1970)")
             let began = Date(); app.buttons["analyst-send"].tap()
             XCTAssertFalse(app.staticTexts["analyst-welcome"].exists, "Welcome must disappear immediately after sending")
             XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "analyst-welcome-logo").firstMatch.exists)
@@ -68,7 +76,12 @@ final class AnalystConversationUITests: XCTestCase {
             try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
             try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("0\(index + 1)-conversation.png"))
             XCTAssertEqual(result, .completed); XCTAssertTrue(answer.exists, response); XCTAssertFalse(error.exists, response)
-            if index == 3 {
+            XCTAssertEqual(app.staticTexts["analyst-response-kind"].label, "تحليل بالذكاء الاصطناعي · Groq", "Live Groq acceptance must not count a different response kind")
+            if answer.exists {
+                lastVerifiedReply = response
+                receivedTurns.append((question, response))
+            }
+            if index == 3 || index == 9 {
                 let source = element("analyst-source-link")
                 XCTAssertTrue(source.waitForExistence(timeout: 10), "Historical answer must expose its real source")
                 XCTAssertEqual(source.label, "Wikidata")
@@ -79,19 +92,96 @@ final class AnalystConversationUITests: XCTestCase {
             }
             if index < questions.count - 1 { sleep(66) }
         }
+        XCTAssertEqual(receivedTurns.count, 10, "Every question requires an actual answer before restoration")
+        try recording("stop")
+        print("FOTIQ_CORE_STEP stage=terminate-for-restoration utc=\(Date().timeIntervalSince1970)")
         app.terminate(); app.launch()
         XCTAssertTrue(app.buttons["analyst-history"].waitForExistence(timeout: 30))
+        try recording("start", phase: "restored")
         app.buttons["analyst-history"].tap()
         let saved = app.buttons.matching(identifier: "analyst-saved-conversation").firstMatch
         XCTAssertTrue(saved.waitForExistence(timeout: 10)); saved.tap()
         let restored = app.staticTexts["analyst-answer"], restoredError = app.staticTexts["analyst-error"]
         XCTAssertTrue(restored.waitForExistence(timeout: 10) || restoredError.exists, "Stored response or failure must survive process termination")
+        XCTAssertFalse(lastVerifiedReply.isEmpty, "Restoration requires an actual received answer")
+        XCTAssertEqual(restored.label, lastVerifiedReply, "Restore the exact received answer after process termination")
         XCTAssertTrue(element("analyst-source-link").waitForExistence(timeout: 10), "Source must survive conversation restoration")
         XCTAssertEqual(element("analyst-source-link").value as? String, "https://www.wikidata.org/wiki/Q7156")
         try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("06-restored.png"))
+        // Verify every saved question and exact received answer, not only the last.
+        // Walk backwards because the restored transcript opens at its bottom.
+        for (offset, turn) in receivedTurns.reversed().enumerated() {
+            let answerText = app.staticTexts.matching(NSPredicate(format: "label == %@", turn.answer)).firstMatch
+            let questionText = app.staticTexts.matching(NSPredicate(format: "label == %@", turn.question)).firstMatch
+            var scrolls = 0
+            while !(answerText.exists && questionText.exists) && scrolls < 12 {
+                app.swipeDown()
+                scrolls += 1
+            }
+            XCTAssertTrue(answerText.exists, "Saved answer \(10 - offset) must match the received text")
+            XCTAssertTrue(questionText.exists, "Saved question \(10 - offset) must survive termination")
+            try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("restored-turn-\(10 - offset).png"))
+        }
+        // A new real request after a full process restart must use the saved
+        // conversation context. Keep the provider spacing for this 11th call.
+        sleep(66)
+        let followUp = "For that same club, repeat its name and verified foundation year. Do not switch clubs."
+        let followUpField = app.textFields["analyst-question"]
+        XCTAssertTrue(followUpField.waitForExistence(timeout: 15))
+        followUpField.tap(); followUpField.typeText(followUp)
+        XCTAssertEqual(followUpField.value as? String, followUp)
+        XCTAssertTrue(app.buttons["analyst-send"].isEnabled)
+        app.buttons["analyst-send"].tap()
+        let followUpAnswer = app.staticTexts["analyst-answer"]
+        let followUpError = app.staticTexts["analyst-error"]
+        let followUpResult = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            followUpAnswer.exists || followUpError.exists
+        }, object: nil)], timeout: 180)
+        XCTAssertEqual(followUpResult, .completed)
+        XCTAssertTrue(followUpAnswer.exists)
+        XCTAssertFalse(followUpError.exists)
+        let followUpText = followUpAnswer.label
+        XCTAssertTrue(followUpText.localizedCaseInsensitiveContains("Barcelona") || followUpText.contains("برشلونة"))
+        XCTAssertTrue(followUpText.contains("1899") || followUpText.contains("١٨٩٩"))
+        report += "\nPost-restoration follow-up\n\(followUp)\n\(followUpText)\n"
+        try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
+        try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("post-restoration-follow-up.png"))
         app.buttons["analyst-new-chat"].tap()
         XCTAssertTrue(app.staticTexts["analyst-welcome"].waitForExistence(timeout: 10))
         app.buttons["analyst-history"].tap()
         XCTAssertTrue(app.buttons.matching(identifier: "analyst-saved-conversation").firstMatch.waitForExistence(timeout: 10))
     }
+    private func recording(_ action: String, phase: String = "") throws {
+        let directory = URL(fileURLWithPath: "/tmp/fotiq-core-recording", isDirectory: true)
+        guard ProcessInfo.processInfo.environment["FOTIQ_RECORD_VIDEO"] == "1" else { return }
+        guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("enabled").path) else {
+            throw NSError(domain: "CoreRecording", code: 3, userInfo: [NSLocalizedDescriptionKey: "Explicit video pass requires a recorder"])
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let id = UUID().uuidString
+        let udid = try XCTUnwrap(ProcessInfo.processInfo.environment["SIMULATOR_UDID"], "Record the actual XCTest simulator")
+        let deadline = Date().addingTimeInterval(20)
+        let request: [String: Any] = ["id": id, "action": action, "phase": phase, "udid": udid,
+                                      "requestedAt": Date().timeIntervalSince1970,
+                                      "expiresAt": deadline.timeIntervalSince1970]
+        try JSONSerialization.data(withJSONObject: request).write(to: directory.appendingPathComponent("request.json"), options: .atomic)
+        while Date() < deadline {
+            if let data = try? Data(contentsOf: directory.appendingPathComponent("ack.json")),
+               let ack = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               ack["id"] as? String == id {
+                guard ack["ok"] as? Bool == true else {
+                    throw NSError(domain: "CoreRecording", code: 1, userInfo: [NSLocalizedDescriptionKey: ack["error"] as? String ?? "Recorder failed"])
+                }
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        // A timed-out start must not begin recording after XCTest tears down the app.
+        try? Data().write(to: directory.appendingPathComponent("cancelled-\(id)"), options: .atomic)
+        throw NSError(domain: "CoreRecording", code: 2, userInfo: [NSLocalizedDescriptionKey: "Recorder acknowledgment missing"])
+    }
+
 }
+
+
+

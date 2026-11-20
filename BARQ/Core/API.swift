@@ -127,7 +127,7 @@ actor API {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try JSONEncoder().encode(Request(question: question, context: context, history: history))
         let data: Data, response: URLResponse
-        do { (data, response) = try await analystSession.data(for: request) }
+        do { (data, response) = try await analystSession.data(for: request, delegate: AnalystTransportMetrics()) }
         catch {
             // Diagnostic codes only: never log URL, question, headers, userInfo,
             // certificate contents, answer or credentials. TLS validation stays on.
@@ -137,13 +137,29 @@ actor API {
             throw error
         }
         guard let http = response as? HTTPURLResponse else { throw APIError.offline }
+        let log = Logger(subsystem: "ae.barq.transport", category: "analyst")
+        log.info("POST response status=\(http.statusCode, privacy: .public)")
         guard (200..<300).contains(http.statusCode) else {
             let code = (try? JSONDecoder().decode(ServerError.self, from: data))?.error ?? "AI_UPSTREAM_UNAVAILABLE"
-            throw AnalystChatError(code: code, retryAfter: Int(http.value(forHTTPHeaderField: "Retry-After") ?? ""))
+            let failure = AnalystChatError(code: code, retryAfter: Int(http.value(forHTTPHeaderField: "Retry-After") ?? ""))
+            // Only fixed, known categories enter diagnostics; arbitrary server text stays private.
+            log.error("POST rejected category=\(failure.diagnosticCode, privacy: .public)")
+            throw failure
         }
-        let reply = try JSONDecoder().decode(AnalystReply.self, from: data)
-        guard !reply.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              reply.model == "openai/gpt-oss-120b" else { throw APIError.badResponse }
+        let reply: AnalystReply
+        do { reply = try JSONDecoder().decode(AnalystReply.self, from: data) }
+        catch {
+            log.error("POST rejected category=MALFORMED_REPLY")
+            throw AnalystChatError(code: "AI_INVALID_RESPONSE", retryAfter: nil)
+        }
+        guard !reply.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            log.error("POST rejected category=EMPTY_ANSWER")
+            throw AnalystChatError(code: "AI_INVALID_RESPONSE", retryAfter: nil)
+        }
+        guard reply.responseKind != nil else {
+            log.error("POST rejected category=UNKNOWN_MODEL")
+            throw AnalystChatError(code: "AI_INVALID_RESPONSE", retryAfter: nil)
+        }
         return reply
     }
 
@@ -186,6 +202,22 @@ actor API {
             if status == 204 { return }
             struct Ack: Decodable { var ok: Bool }
             guard let ack = try? JSONDecoder().decode(Ack.self, from: data), ack.ok else { throw APIError.badResponse }
+        }
+    }
+}
+
+
+/// Phase timings only. Never log endpoints, payloads, headers, addresses or certificates.
+private final class AnalystTransportMetrics: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        let log = Logger(subsystem: "ae.barq.transport", category: "analyst")
+        log.info("POST metrics totalMs=\(Int(metrics.taskInterval.duration * 1000), privacy: .public) transactions=\(metrics.transactionMetrics.count, privacy: .public)")
+        for phase in metrics.transactionMetrics {
+            func milliseconds(_ start: Date?, _ end: Date?) -> Int {
+                guard let start, let end else { return -1 }
+                return Int(end.timeIntervalSince(start) * 1000)
+            }
+            log.info("POST phases dnsMs=\(milliseconds(phase.domainLookupStartDate, phase.domainLookupEndDate), privacy: .public) connectMs=\(milliseconds(phase.connectStartDate, phase.connectEndDate), privacy: .public) tlsMs=\(milliseconds(phase.secureConnectionStartDate, phase.secureConnectionEndDate), privacy: .public) firstByteMs=\(milliseconds(phase.requestEndDate, phase.responseStartDate), privacy: .public) requestStarted=\(phase.requestStartDate != nil, privacy: .public) responseStarted=\(phase.responseStartDate != nil, privacy: .public) reusedConnection=\(phase.isReusedConnection, privacy: .public)")
         }
     }
 }
@@ -286,3 +318,4 @@ final class LocalizedMainBundle: Bundle {
         return super.localizedString(forKey: key, value: value, table: tableName)
     }
 }
+
