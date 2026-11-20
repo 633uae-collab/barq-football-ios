@@ -2,6 +2,26 @@ import XCTest
 @testable import BARQ
 
 @MainActor final class AnalystConversationTests: XCTestCase {
+    func testRestoredHistoryKeepsNewestCompletePairsWithinServerByteLimit() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let archive = AnalystConversations(url: url)
+        let id = try XCTUnwrap(archive.selectedID)
+        for index in 0..<4 {
+            let turn = AnalystTurn(question: String(index) + String(repeating: "界", count: 499))
+            archive.append(turn, context: AnalystContext())
+            let reply = AnalystReply(answer: String(index) + String(repeating: "界", count: 999),
+                                     model: "openai/gpt-oss-120b", fetchedAt: 1, generatedAt: 2)
+            archive.finish(conversation: id, turn: turn.id, reply: reply)
+        }
+        let restored = AnalystConversations(url: url).current
+        XCTAssertEqual(restored.turns.count, 4)
+        let history = restored.history
+        XCTAssertEqual(history.map(\.content), restored.turns.suffix(3).flatMap { [$0.question, $0.answer!.answer] })
+        XCTAssertEqual(history.map(\.role), ["user", "assistant", "user", "assistant", "user", "assistant"])
+        XCTAssertLessThanOrEqual(try JSONEncoder().encode(history).count, 18_000)
+    }
+
     func testUnreadableArchiveIsNeverOverwrittenByInitializationOrNewMessages() throws {
         // Both truncated JSON and a valid JSON value with an unsupported schema
         // must preserve their original bytes for recovery.
