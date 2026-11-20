@@ -19,6 +19,7 @@ process_sources = package / "Sources" / "CorePersistenceProcess"
 process_sources.mkdir(parents=True, exist_ok=True)
 manifest = {}
 for relative, destination in [
+    ("BARQ/Core/Models.swift", sources),
     ("BARQ/Core/AnalystChat.swift", sources),
     ("BARQ/Core/AnalystConversations.swift", sources),
     ("BARQTests/AnalystConversationTests.swift", tests),

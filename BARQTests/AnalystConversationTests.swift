@@ -34,6 +34,33 @@ import XCTest
         }
     }
 
+    func testProviderQueryAndLicenseSurviveReopeningTheArchive() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let wire = Data("""
+            [
+              {"name":"API-Football","path":"/fixtures","parameters":{"team":101,"season":2025,"round":"Final"}},
+              {"name":"Reference","url":"https://example.org/source","license":"CC0","publishedAt":null},
+              {"name":"Dated reference","publishedAt":"2025-01-01"},
+              {"name":"Legacy source"}
+            ]
+            """.utf8)
+        let sources = try JSONDecoder().decode([AnalystSource].self, from: wire)
+        let archive = AnalystConversations(url: url)
+        let turn = AnalystTurn(question: "Synthetic source round trip")
+        let reply = AnalystReply(answer: "Example", model: "verified-provider-data",
+                                 fetchedAt: 1, generatedAt: 2, sources: sources)
+        archive.append(turn, context: AnalystContext())
+        archive.finish(conversation: archive.current.id, turn: turn.id, reply: reply)
+
+        let restored = AnalystConversations(url: url)
+        let restoredSources = try XCTUnwrap(restored.current.turns.first?.answer?.sources)
+        let encoded = try JSONEncoder().encode(restoredSources)
+        let originalRows = try XCTUnwrap(JSONSerialization.jsonObject(with: wire) as? NSArray)
+        let restoredRows = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? NSArray)
+        XCTAssertEqual(restoredRows, originalRows)
+    }
+
     func testEveryReplyKindAndItsSourceSurviveStorage() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: url) }

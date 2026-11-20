@@ -41,6 +41,9 @@ struct AnalystSource: Codable {
     var revision: Int?
     var modifiedAt: String?
     var fetchedAt: Double?
+    var parameters: [String: JSONValue]?
+    var license: String?
+    var publishedAt: JSONValue?
     var displayName: String? {
         if let name, !name.isEmpty { return name }
         return path?.hasPrefix("/") == true ? "API-Football" : nil
@@ -50,6 +53,22 @@ struct AnalystSource: Codable {
         return value
     }
 }
+extension AnalystSource {
+    init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        name = try fields.decodeIfPresent(String.self, forKey: .name)
+        path = try fields.decodeIfPresent(String.self, forKey: .path)
+        url = try fields.decodeIfPresent(String.self, forKey: .url)
+        revision = try fields.decodeIfPresent(Int.self, forKey: .revision)
+        modifiedAt = try fields.decodeIfPresent(String.self, forKey: .modifiedAt)
+        fetchedAt = try fields.decodeIfPresent(Double.self, forKey: .fetchedAt)
+        parameters = try? fields.decode([String: JSONValue].self, forKey: .parameters)
+        license = try? fields.decode(String.self, forKey: .license)
+        // An explicit null publication date is part of the provider's source record.
+        publishedAt = fields.contains(.publishedAt) ? try fields.decode(JSONValue.self, forKey: .publishedAt) : nil
+    }
+}
+
 struct AnalystChatError: LocalizedError {
     let code: String
     let retryAfter: Int?
