@@ -9,6 +9,9 @@ if (process.env.FOTIQ_AI_CHAT_ENABLED === 'true') {
   require('../server/index.js');
 } else {
   const http = require('node:http');
+  if (process.env.GROQ_API_KEY?.trim() && process.env.APISPORTS_KEY?.trim()) {
+    void require('./check-provider-access.cjs').checkProviderAccess();
+  }
   const readiness = JSON.stringify({
     mode: 'staging-preflight',
     groqConfigured: Boolean(process.env.GROQ_API_KEY?.trim()),
