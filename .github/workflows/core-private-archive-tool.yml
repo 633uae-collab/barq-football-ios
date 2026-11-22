@@ -1,0 +1,39 @@
+name: Build private analyst archive verifier
+on:
+  push:
+    branches: [codex/core-stability]
+    paths:
+      - ci/AnalystReceiptArchive.swift
+      - .github/workflows/core-private-archive-tool.yml
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build offline executable from the app's archive and reply models
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          mkdir -p out
+          swiftc -version
+          files=(BARQ/Core/{Models,AnalystChat,AnalystConversations}.swift ci/AnalystReceiptArchive.swift)
+          swiftc -parse-as-library -O -static-stdlib "${files[@]}" -o out/verify-archive
+          strip out/verify-archive
+          mkdir -p out/lib
+          ldd out/verify-archive > out/dependencies.txt
+          while read -r lib; do
+            case "${lib##*/}" in
+              libc.so.*|libm.so.*|libdl.so.*|libpthread.so.*|libgcc_s.so.*|libstdc++.so.*|libresolv.so.*|librt.so.*) continue ;;
+            esac
+            cp -L "$lib" out/lib/
+          done < <(awk '$2 == "=>" && $3 ~ /^\// {print $3}' out/dependencies.txt)
+          sha256sum "${files[@]}" out/verify-archive > out/manifest.sha256
+          printf '%s\n' "$GITHUB_SHA" > out/head.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: private-archive-verifier-linux
+          path: out/
+          retention-days: 1
