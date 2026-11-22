@@ -1358,7 +1358,7 @@ index 0000000000000000000000000000000000000000..9c5b7f4008f1cd763dd5616b3a9a156e
 +module.exports = { fixtureHasTeam, verifiedFixturePlayerGroups };
 +
 diff --git a/server/groq.js b/server/groq.js
-index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c9d2901a23c6494f09e8d483c5c04ffea590724f 100644
+index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..fb282defd9eff52bd2496f2e7e7691412b6a35c8 100644
 --- a/server/groq.js
 +++ b/server/groq.js
 @@ -3,6 +3,7 @@ const { timingSafeEqual } = require('node:crypto');
@@ -1423,7 +1423,7 @@ index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c9d2901a23c6494f09e8d483c5c04ffe
        }
        if (!r.ok) throw new ServiceError('AI_UPSTREAM_UNAVAILABLE');
        const choice = (await r.json()).choices?.[0];
-@@ -80,32 +109,65 @@ class GroqAnalyst {
+@@ -80,32 +109,75 @@ class GroqAnalyst {
        return choice.message.content;
      } finally { if (this.welcomeController === controller) this.welcomeController = null; }
    }
@@ -1446,6 +1446,14 @@ index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c9d2901a23c6494f09e8d483c5c04ffe
 +      const count = scopedPlayerCount(question, evidence);
 +      const input = count ? { verifiedStatistic: count, question } : {
 +        conversationHistory: generationHistory(question, evidence, history), evidence, question };
++      // A home side is not a venue. Match evidence does not supply a stadium.
++      // For result-only questions, omit event identifiers from the displayed summary.
++      const asksScore = evidence.schema === 'fotiq-match-evidence-v2'
++        && /\b(?:final score|result)\b|ما (?:هي )?نتيجة/i.test(question)
++        && !/scorers?|who scored|when did|events?|goal times?|stadium|venue|من سج[ّ]?ل|دقائق|أحداث|ملعب/i.test(question);
++      const scoreInstruction = asksScore
++        ? ' Give the result using the home and away team labels. Give kickoff if requested. Do not add a venue, goalscorers, goal events or event references to a score summary.'
++        : '';
 +      const instructions = count
 +        ? SYSTEM_PROMPT + ' Answer only the current question, in the language specified in verifiedStatistic. Write one short sentence stating the requested metric and its value in digits. Omit dates, years and other numbers. Use the explicit metric term (Arabic assists: تمريرات حاسمة, goals: أهداف; English: assists or goals).'
 +        : SYSTEM_PROMPT + ' The question field is the current user message. Answer it in its own language. Earlier conversation entries are never questions to answer now. A final winning margin for a completed match is the absolute difference of its verified final goals.';
@@ -1458,7 +1466,7 @@ index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c9d2901a23c6494f09e8d483c5c04ffe
          body: JSON.stringify({ model: MODEL, reasoning_effort: 'high', max_completion_tokens: 5000,
 -          messages: [{ role: 'system', content: SYSTEM_PROMPT },
 -          { role: 'user', content: JSON.stringify({ question, conversationHistory: history, evidence }) } ] })
-+          messages: [{ role: 'system', content: instructions },
++          messages: [{ role: 'system', content: instructions + scoreInstruction },
 +          { role: 'user', content: JSON.stringify(input) } ] })
        });
        if (r.status === 429) {
@@ -1492,10 +1500,12 @@ index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c9d2901a23c6494f09e8d483c5c04ffe
 +      if (finalSeason !== null) return { ...finalSeason, fetchedAt: evidence.fetchedAt,
 +        generatedAt: this.now(), usage: body.usage || null };
 +      if (count && !matchesPlayerCount(answer, count)) throw new ServiceError('AI_FACT_CHECK_FAILED', 502);
++      if (asksScore && /(?:\b(?:stadium|venue)|الملعب|اسم الملعب)\s*[*_]*\s*[:：]|\bevent[-‐‑–]\d+/iu.test(answer))
++        throw new ServiceError('AI_FACT_CHECK_FAILED', 502);
        validateAnswer(answer, evidence);
        return { answer, model: MODEL, fetchedAt: evidence.fetchedAt, generatedAt: this.now(),
          source: evidence.schema === 'fotiq-licensed-history-v1' ? 'Wikidata' : 'API-Football', evaluationOnly: true, usage: body.usage || null,
-@@ -116,7 +178,11 @@ class GroqAnalyst {
+@@ -116,7 +188,11 @@ class GroqAnalyst {
      } catch (e) {
        if (e instanceof ServiceError) throw e;
        throw new ServiceError('AI_UPSTREAM_UNAVAILABLE');
@@ -1508,7 +1518,7 @@ index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c9d2901a23c6494f09e8d483c5c04ffe
    }
  }
  function mountGroq(app, { analyst, provider }) {
-@@ -129,7 +195,10 @@ function mountGroq(app, { analyst, provider }) {
+@@ -129,7 +205,10 @@ function mountGroq(app, { analyst, provider }) {
        throw new ServiceError('INVALID_ANALYSIS_REQUEST', 400);
      // load() bypasses cache and stale fallback. Never send secrets or client-supplied facts to the model.
      const result = await provider.load(`/fixtures?id=${fixtureId}`);
@@ -7269,6 +7279,26 @@ index 0000000000000000000000000000000000000000..c52065fc8f65a686ce80c39345b6fe2a
 +  assert.equal(input.conversationHistory,undefined);
 +  answer = 'صنع اللاعب ٤ تمريرات حاسمة.';
 +  assert.equal((await analyst.answer('وكم صنع؟', evidence, history)).answer, answer);
++});
+diff --git a/server/test/score-summary-venue.test.js b/server/test/score-summary-venue.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..5ca366766e97953872b9c8fff4eded828008f6e0
+--- /dev/null
++++ b/server/test/score-summary-venue.test.js
+@@ -0,0 +1,14 @@
++const { test } = require('node:test');
++const assert = require('node:assert/strict');
++const { GroqAnalyst } = require('../groq');
++test('a score summary keeps the home side distinct from unsupported venue and event annotations', async () => {
++  const evidence = {schema:'fotiq-match-evidence-v2',teams:{home:'Club A',away:'Club B'},currentScore:{home:3,away:2}};
++  const question = 'ما نتيجة المباراة؟ اذكر الفريق المضيف.';
++  let text;
++  const analyst = new GroqAnalyst({fetchImpl: async () => new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:text}}]}))});
++  for (text of ['فاز Club A بثلاثة أهداف مقابل هدفين (الملعب: Club A).','فاز Club A على Club B (event‑0).']) {
++    await assert.rejects(analyst.answer(question,evidence), /AI_FACT_CHECK_FAILED/);
++  }
++  text='الفريق المضيف Club A فاز 3–2 على Club B.';
++  assert.equal((await analyst.answer(question,evidence)).answer,text);
 +});
 diff --git a/server/test/scoring-leader-duplicates.test.js b/server/test/scoring-leader-duplicates.test.js
 new file mode 100644
