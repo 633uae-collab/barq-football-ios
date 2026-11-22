@@ -72,6 +72,8 @@ extension AnalystSource {
 struct AnalystChatError: LocalizedError {
     let code: String
     let retryAfter: Int?
+    var rateLimitOrigin: String? = nil
+
     var diagnosticCode: String {
         switch code {
         case "AI_FACT_CHECK_FAILED", "AI_INCOMPLETE_RESPONSE", "AI_INVALID_RESPONSE",
@@ -84,12 +86,28 @@ struct AnalystChatError: LocalizedError {
     }
     var errorDescription: String? {
         let en = L.lang == "en"
+        if code == "AI_FREE_QUOTA_REACHED" {
+            let wait = retryAfter.flatMap { $0 > 0 ? $0 : nil }.map {
+                en ? " Try again in \($0) seconds." : " تقدر تحاول بعد \($0) ثانية."
+            } ?? ""
+            switch rateLimitOrigin {
+            case "server-spacing":
+                return (en ? "FOTIQ spaces consecutive questions." : "في فترة انتظار بين سؤالين في FOTIQ.") + wait
+            case "server-daily", "server-daily, server-spacing":
+                return (en ? "FOTIQ has reached its daily question limit." : "اكتمل عدد الأسئلة اليومي في FOTIQ.") + wait
+            case "groq-upstream", "groq-cooldown":
+                return (en ? "Groq has rate-limited requests." : "Groq قيّد الطلبات مؤقتاً.") + wait
+            case "server-spacing, groq-cooldown", "server-daily, groq-cooldown", "server-daily, server-spacing, groq-cooldown":
+                return (en ? "FOTIQ and Groq are both limiting requests." : "تنطبق حالياً قيود على الطلبات من FOTIQ وGroq.") + wait
+            default: break
+            }
+        }
         switch code {
         case "AI_FREE_QUOTA_REACHED", "PLAN_LIMIT", "LOCAL_REQUEST_BUDGET":
             if let retryAfter, retryAfter > 0 {
                 return en ? "The free usage limit has been reached. Try again in \(retryAfter) seconds. No paid usage is enabled." : "وصلنا لحد الاستخدام المجاني. حاول بعد \(retryAfter) ثانية. لن يتم تفعيل استخدام مدفوع."
             }
-            return en ? "The free usage limit has been reached. The provider did not specify a reset time. Please try later; no paid usage is enabled." : "وصلنا لحد الاستخدام المجاني. مزوّد الخدمة لم يحدد وقت تجدد الحصة. حاول لاحقاً؛ لن يتم تفعيل استخدام مدفوع."
+            return en ? "The free usage limit has been reached. The next available time is unknown. Please try later; no paid usage is enabled." : "وصلنا لحد الاستخدام المجاني. موعد السماح بالطلب التالي غير معروف. حاول لاحقاً؛ لن يتم تفعيل استخدام مدفوع."
         case "AI_BUSY": return en ? "The analyst is busy. Please try again shortly." : "المحلل مشغول حالياً، حاول بعد قليل."
         case "AI_CHAT_DISABLED": return en ? "AI chat is not enabled on the server yet." : "محادثة الذكاء الاصطناعي غير مفعّلة على الخادم حالياً."
         case "AI_INVALID_RESPONSE": return en ? "The analysis service returned an invalid answer. Your question remains in this conversation and was not resent automatically." : "وصل رد غير صالح من خدمة التحليل. سؤالك باقٍ في المحادثة ولم نُعد إرساله تلقائياً."

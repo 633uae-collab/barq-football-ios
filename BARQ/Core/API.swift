@@ -141,7 +141,9 @@ actor API {
         log.info("POST response status=\(http.statusCode, privacy: .public)")
         guard (200..<300).contains(http.statusCode) else {
             let code = (try? JSONDecoder().decode(ServerError.self, from: data))?.error ?? "AI_UPSTREAM_UNAVAILABLE"
-            let failure = AnalystChatError(code: code, retryAfter: Int(http.value(forHTTPHeaderField: "Retry-After") ?? ""))
+            let failure = AnalystChatError(code: code,
+                retryAfter: Int(http.value(forHTTPHeaderField: "Retry-After") ?? ""),
+                rateLimitOrigin: http.statusCode == 429 ? http.value(forHTTPHeaderField: "FOTIQ-Rate-Limit-Origin") : nil)
             // Only fixed, known categories enter diagnostics; arbitrary server text stays private.
             log.error("POST rejected category=\(failure.diagnosticCode, privacy: .public)")
             throw failure

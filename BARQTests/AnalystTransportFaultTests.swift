@@ -3,7 +3,7 @@ import XCTest
 
 // Fault injection only. These responses never come from Render or Groq.
 private final class AnalystFaultProtocol: URLProtocol {
-    enum Fault { case network(URLError.Code), status(Int, String, String?), pending }
+    enum Fault { case network(URLError.Code), status(Int, String, String?, origin: String? = nil), pending }
     private static let lock = NSLock()
     private static var faults: [String: Fault] = [:]
     private static var counts: [String: Int] = [:]
@@ -26,9 +26,10 @@ private final class AnalystFaultProtocol: URLProtocol {
     override func startLoading() {
         switch Self.started(request.url!.host!) {
         case .network(let code): client?.urlProtocol(self, didFailWithError: URLError(code))
-        case .status(let code, let body, let retryAfter):
+        case .status(let code, let body, let retryAfter, let origin):
             var headers = ["Content-Type": "application/json"]
             headers["Retry-After"] = retryAfter
+            headers["FOTIQ-Rate-Limit-Origin"] = origin
             client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: headers)!, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(body.utf8))
             client?.urlProtocolDidFinishLoading(self)
@@ -67,6 +68,18 @@ final class AnalystTransportFaultTests: XCTestCase {
             }
             XCTAssertEqual(AnalystFaultProtocol.count(host), 1)
         }
+    }
+
+    func testLocalSpacingIsNotDisplayedAsAnExhaustedGroqQuota() async {
+        let host = AnalystFaultProtocol.configure(.status(429, #"{"error":"AI_FREE_QUOTA_REACHED"}"#, "2", origin: "server-spacing"))
+        do { _ = try await api(host).askAnalyst("Spacing check"); XCTFail("A rejected request must not become an answer") }
+        catch {
+            let limit = error as? AnalystChatError
+            XCTAssertEqual(limit?.rateLimitOrigin, "server-spacing")
+            XCTAssertEqual(limit?.retryAfter, 2)
+            XCTAssertTrue(limit?.errorDescription?.contains("FOTIQ") == true)
+        }
+        XCTAssertEqual(AnalystFaultProtocol.count(host), 1)
     }
 
     func testRejectedAndMalformedRepliesRemainFailuresWithoutResending() async {

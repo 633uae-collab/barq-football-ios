@@ -1184,10 +1184,10 @@ index 3b5270aca4bfff2c141f789cd83810df7250a9f0..aaa515ac4bf4be28cd0f708c759d9eb9
    evidence.fetchedAt = sources.length ? Math.min(...sources.map(s => s.fetchedAt)) : Date.now();
    evidence.retrievedAtUTC = new Date(evidence.fetchedAt).toISOString();
 diff --git a/server/chat.js b/server/chat.js
-index f3266efc8e9b6f13590cf63371443c4a787bf520..b7b428b6edf71e2540b04664afdbe71223099998 100644
+index f3266efc8e9b6f13590cf63371443c4a787bf520..ce0fe3a7727cad7f6c072a21e2dbab78f3f92e31 100644
 --- a/server/chat.js
 +++ b/server/chat.js
-@@ -1,18 +1,42 @@
+@@ -1,39 +1,93 @@
  'use strict';
  const { ServiceError } = require('./provider');
  const { collectEvidence } = require('./chat-evidence');
@@ -1234,15 +1234,21 @@ index f3266efc8e9b6f13590cf63371443c4a787bf520..b7b428b6edf71e2540b04664afdbe712
      if (!Array.isArray(history) || history.length > 8 || history.some(m =>
        !m || !['user', 'assistant'].includes(m.role) || typeof m.content !== 'string' || m.content.length > 1000 || Object.keys(m).some(k => !['role', 'content'].includes(k))) ||
        Buffer.byteLength(JSON.stringify(history)) > 18000) throw new ServiceError('INVALID_ANALYSIS_HISTORY', 400);
-@@ -20,20 +44,41 @@ function mountChat(app, { analyst, provider }) {
+     const now = analyst.now(), today = new Date(now).toISOString().slice(0,10);
      if (day !== today) { day = today; count = 0; }
      if (active) throw new ServiceError('AI_BUSY', 429);
-     if (count >= 20 || now < nextAt || now < analyst.blockedUntil) {
+-    if (count >= 20 || now < nextAt || now < analyst.blockedUntil) {
 -      const e = new ServiceError('AI_FREE_QUOTA_REACHED', 429);
 -      // Local spacing is not evidence of the provider's unknown reset time.
 -      const unknownProviderReset = now < analyst.blockedUntil && !analyst.quotaResetKnown;
 -      if (!unknownProviderReset && (count >= 20 || now < nextAt || analyst.quotaResetKnown)) e.retryAfter = count >= 20 ? Math.ceil((Date.parse(today) + 86400000-now)/1000) : Math.max(1, Math.ceil((Math.max(nextAt, analyst.blockedUntil)-now)/1000));
 -      throw e;
++    const limits = [];
++    if (count >= 20) limits.push('server-daily');
++    if (now < nextAt) limits.push('server-spacing');
++    if (now < analyst.blockedUntil) limits.push('groq-cooldown');
++    if (limits.length) {
++      res.set('FOTIQ-Rate-Limit-Origin', limits.join(', '));
 +      const error = new ServiceError('AI_FREE_QUOTA_REACHED', 429);
 +      error.retryAfter = retryAfter(now);
 +      throw error;
@@ -1273,6 +1279,10 @@ index f3266efc8e9b6f13590cf63371443c4a787bf520..b7b428b6edf71e2540b04664afdbe712
 +        generatedAt: result.generatedAt, sources: evidence.sources, missing: evidence.missing, context: evidence.followUpContext ?? {} });
 +    } catch (error) {
 +      if (res.destroyed) return;
++      if (error?.code === 'AI_FREE_QUOTA_REACHED' &&
++          ['groq-upstream', 'groq-cooldown'].includes(error.rateLimitOrigin)) {
++        res.set('FOTIQ-Rate-Limit-Origin', error.rateLimitOrigin);
++      }
 +      if (error?.code === 'AI_FREE_QUOTA_REACHED' && error.retryAfter > 0) {
 +        // The upstream response may arrive after local admission and its daily counter update.
 +        error.retryAfter = retryAfter(analyst.now(), error.retryAfter);
@@ -1348,7 +1358,7 @@ index 0000000000000000000000000000000000000000..9c5b7f4008f1cd763dd5616b3a9a156e
 +module.exports = { fixtureHasTeam, verifiedFixturePlayerGroups };
 +
 diff --git a/server/groq.js b/server/groq.js
-index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c66a88fa9cd13571beae01e94663ba8528fa32ab 100644
+index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..9ba3e577a5cf935ff5326227431b313948f8646b 100644
 --- a/server/groq.js
 +++ b/server/groq.js
 @@ -3,6 +3,7 @@ const { timingSafeEqual } = require('node:crypto');
@@ -1359,7 +1369,27 @@ index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c66a88fa9cd13571beae01e94663ba85
  const MODEL = 'openai/gpt-oss-120b';
  const SYSTEM_PROMPT = [
    'You are FOTIQ football analyst. Reply in the language of the user question (Arabic or English).',
-@@ -80,20 +81,29 @@ class GroqAnalyst {
+@@ -50,8 +51,9 @@ class GroqAnalyst {
+     if (this.active) throw new ServiceError('AI_BUSY', 429);
+     if (this.now() < this.blockedUntil) throw this.quotaError();
+   }
+-  quotaError() {
++  quotaError(rateLimitOrigin = 'groq-cooldown') {
+     const e = new ServiceError('AI_FREE_QUOTA_REACHED', 429);
++    e.rateLimitOrigin = rateLimitOrigin;
+     if (this.quotaResetKnown) e.retryAfter = Math.max(1, Math.ceil((this.blockedUntil - this.now()) / 1000));
+     return e;
+   }
+@@ -72,7 +74,7 @@ class GroqAnalyst {
+         const retry = Number(r.headers.get('retry-after'));
+         this.quotaResetKnown = Number.isFinite(retry) && retry > 0;
+         this.blockedUntil = this.now() + (this.quotaResetKnown ? retry : 60) * 1000;
+-        throw this.quotaError();
++        throw this.quotaError('groq-upstream');
+       }
+       if (!r.ok) throw new ServiceError('AI_UPSTREAM_UNAVAILABLE');
+       const choice = (await r.json()).choices?.[0];
+@@ -80,32 +82,58 @@ class GroqAnalyst {
        return choice.message.content;
      } finally { if (this.welcomeController === controller) this.welcomeController = null; }
    }
@@ -1392,8 +1422,11 @@ index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c66a88fa9cd13571beae01e94663ba85
        });
        if (r.status === 429) {
          const retry = Number(r.headers.get('retry-after'));
-@@ -103,9 +113,26 @@ class GroqAnalyst {
-         throw this.quotaError();
+         this.quotaResetKnown = Number.isFinite(retry) && retry > 0;
+         // Unknown reset: a local cooldown prevents hammering; it is NOT a provider reset promise.
+         this.blockedUntil = this.now() + (this.quotaResetKnown ? retry : 60) * 1000;
+-        throw this.quotaError();
++        throw this.quotaError('groq-upstream');
        }
        if (!r.ok) throw new ServiceError(r.status === 401 || r.status === 403 ? 'AI_AUTH_FAILED' : 'AI_UPSTREAM_UNAVAILABLE');
 -      const body = await r.json();
@@ -1420,7 +1453,7 @@ index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c66a88fa9cd13571beae01e94663ba85
        validateAnswer(answer, evidence);
        return { answer, model: MODEL, fetchedAt: evidence.fetchedAt, generatedAt: this.now(),
          source: evidence.schema === 'fotiq-licensed-history-v1' ? 'Wikidata' : 'API-Football', evaluationOnly: true, usage: body.usage || null,
-@@ -116,7 +143,11 @@ class GroqAnalyst {
+@@ -116,7 +144,11 @@ class GroqAnalyst {
      } catch (e) {
        if (e instanceof ServiceError) throw e;
        throw new ServiceError('AI_UPSTREAM_UNAVAILABLE');
@@ -1433,7 +1466,7 @@ index 43d6c18a6c19cc6e2b748e5666cc746b7f5f1ef6..c66a88fa9cd13571beae01e94663ba85
    }
  }
  function mountGroq(app, { analyst, provider }) {
-@@ -129,7 +160,10 @@ function mountGroq(app, { analyst, provider }) {
+@@ -129,7 +161,10 @@ function mountGroq(app, { analyst, provider }) {
        throw new ServiceError('INVALID_ANALYSIS_REQUEST', 400);
      // load() bypasses cache and stale fallback. Never send secrets or client-supplied facts to the model.
      const result = await provider.load(`/fixtures?id=${fixtureId}`);
@@ -1905,10 +1938,10 @@ index 0000000000000000000000000000000000000000..3513d02f54e5b33a4ebf667c3f60eeac
 +module.exports = { finalizeSeasonAnswer };
 diff --git a/server/season-scope.js b/server/season-scope.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..ad206bcdb1d41634bc3bd0dc5526d5f159182efb
+index 0000000000000000000000000000000000000000..a7e2068ed99ebb30f89a7e3218b68fbb03da4620
 --- /dev/null
 +++ b/server/season-scope.js
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,65 @@
 +'use strict';
 +// Entity aliases select provider IDs; they are not a source of football facts.
 +const competitions = [
@@ -1954,6 +1987,12 @@ index 0000000000000000000000000000000000000000..ad206bcdb1d41634bc3bd0dc5526d5f1
 +]);
 +const normalizedName = value => typeof value === 'string'
 +  ? value.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ') : '';
++function sameClubIdentity(team, reference) {
++  if (!team || !reference || team.id !== reference.id) return false;
++  const name = normalizedName(team.name), expected = normalizedName(reference.name);
++  const aliases = knownClubNames.get(reference.id);
++  return !!name && !!expected && (name === expected || (aliases?.has(name) === true && aliases.has(expected)));
++}
 +function verifiedTeamSeason(stats, teamId, league) {
 +  if (![teamId, league?.id, league?.season].every(value => Number.isSafeInteger(value) && value > 0)) return false;
 +  const names = knownClubNames.get(teamId);
@@ -1966,7 +2005,7 @@ index 0000000000000000000000000000000000000000..ad206bcdb1d41634bc3bd0dc5526d5f1
 +    && (!names || names.has(name))
 +    && stats?.league?.id === league?.id && stats?.league?.season === league?.season;
 +}
-+module.exports = { requestedSeasonScope, verifiedTeamSeason };
++module.exports = { requestedSeasonScope, verifiedTeamSeason, sameClubIdentity };
 +
 diff --git a/server/test/analyst-evidence.test.js b/server/test/analyst-evidence.test.js
 index 32f026fdf66af2d5bcbf714ac15f5461f0f49002..cd6a10d619edac50b7db4db51010d5d96bbea261 100644
@@ -2715,10 +2754,10 @@ index 0000000000000000000000000000000000000000..c6d0847ac7d959cd2df4840df2296d50
 +}
 diff --git a/server/test/chat-retry-window.test.js b/server/test/chat-retry-window.test.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..e9c9ffee8b7f8114c566d2239107742f249917aa
+index 0000000000000000000000000000000000000000..7f1c3aec2c78909eb679caaa9e8e0439fc729c03
 --- /dev/null
 +++ b/server/test/chat-retry-window.test.js
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,68 @@
 +'use strict';
 +const { test } = require('node:test');
 +const assert = require('node:assert/strict');
@@ -2727,7 +2766,7 @@ index 0000000000000000000000000000000000000000..e9c9ffee8b7f8114c566d2239107742f
 +
 +async function openChat(t, lastSend, upstreamWait, limitedCall) {
 +  let now = lastSend - (limitedCall - 1) * 65000;
-+  let calls = 0;
++  let calls = 0, origin;
 +  const analyst = new GroqAnalyst({ key: 'synthetic', chatEnabled: true, freePlanConfirmed: true,
 +    now: () => now, fetchImpl: async () => {
 +      calls++;
@@ -2746,13 +2785,14 @@ index 0000000000000000000000000000000000000000..e9c9ffee8b7f8114c566d2239107742f
 +      body: JSON.stringify({ question: 'Analyze', context: { fixtureId: 7 } })
 +    });
 +    await response.json();
++    origin = response.headers.get('FOTIQ-Rate-Limit-Origin');
 +    return [response.status, response.headers.get('retry-after')];
 +  }
 +  for (let i = 1; i < limitedCall; i++) {
 +    assert.deepEqual(await send(), [200, null]);
 +    now += 65000;
 +  }
-+  return { send, advance: ms => { now += ms; }, calls: () => calls };
++  return { send, origin: () => origin, advance: ms => { now += ms; }, calls: () => calls };
 +}
 +
 +for (const [label, upstreamWait, limitedCall, wait] of [
@@ -2766,12 +2806,25 @@ index 0000000000000000000000000000000000000000..e9c9ffee8b7f8114c566d2239107742f
 +  if (upstreamWait === null) assert.deepEqual(await chat.send(), [200, null]);
 +  else assert.deepEqual(await chat.send(), [429, String(wait)]);
 +  assert.deepEqual(await chat.send(), [429, String(wait)]);
++  if (limitedCall === 20) assert.ok(chat.origin().split(', ').includes('server-daily'));
 +  chat.advance(wait * 1000 - 1);
 +  assert.deepEqual(await chat.send(), [429, '1']);
 +  assert.equal(chat.calls(), limitedCall);
 +  chat.advance(1);
 +  assert.deepEqual(await chat.send(), [200, null]);
 +  assert.equal(chat.calls(), limitedCall + 1);
++});
++
++test('chat identifies the upstream 429 and distinguishes it from a local two-second wait', async t => {
++  const chat = await openChat(t, Date.UTC(2026, 10, 22, 15), 2, 1);
++  assert.deepEqual(await chat.send(), [429, '65']);
++  assert.equal(chat.origin(), 'groq-upstream');
++  assert.deepEqual(await chat.send(), [429, '65']);
++  assert.equal(chat.origin(), 'server-spacing, groq-cooldown');
++  chat.advance(63000);
++  assert.deepEqual(await chat.send(), [429, '2']);
++  assert.equal(chat.origin(), 'server-spacing');
++  assert.equal(chat.calls(), 1);
 +});
 diff --git a/server/test/chat.test.js b/server/test/chat.test.js
 index 3b118062d37a12f78a150d9162b32b2f50307be0..999da387f2a9c300efee3bb143d398f7c3e22de6 100644
@@ -7996,13 +8049,13 @@ index 0000000000000000000000000000000000000000..8cbee9ff301f772a8bbf8c25ed6fb828
 +});
 diff --git a/server/season-matchday.js b/server/season-matchday.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..88c7893970c78ef55b47e66c102969a16c6c83c3
+index 0000000000000000000000000000000000000000..abbd16ff1c0703a540055067eb5d7ad1c13649ba
 --- /dev/null
 +++ b/server/season-matchday.js
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,50 @@
 +'use strict';
 +const { fixtureHasTeam } = require('./fixture-player-scope');
-+const { verifiedTeamSeason } = require('./season-scope');
++const { verifiedTeamSeason, sameClubIdentity } = require('./season-scope');
 +
 +const fields = ['played','wins','draws','losses','goalsFor','goalsAgainst','cleanSheets','failedToScore'];
 +
@@ -8015,12 +8068,14 @@ index 0000000000000000000000000000000000000000..88c7893970c78ef55b47e66c102969a1
 +  if (!prior || page.stale || page.paging?.current !== 1 || page.paging?.total !== 1 ||
 +      !Array.isArray(page.data)) return 'unconfirmed';
 +  if (!completeAggregate(prior) || ![prior.played, prior.played + 1].includes(page.data.length)) return 'unconfirmed';
-+  const scope = { id: season.leagueId, season: season.year };
++  const scope = { id: season.leagueId, name: season.league, season: season.year };
 +  const ids = new Set(), rounds = new Set(), times = new Set(), matches = [];
 +  for (const f of page.data) {
 +    if (!fixtureHasTeam(f, club.teamId) || f.fixture.status?.short !== 'FT') return 'unconfirmed';
 +    const home = f.teams.home.id === club.teamId;
-+    if (!verifiedTeamSeason({team: home ? f.teams.home : f.teams.away, league:f.league}, club.teamId, scope)) return 'unconfirmed';
++    const participant = home ? f.teams.home : f.teams.away;
++    if (!sameClubIdentity(participant, club.team) ||
++        !verifiedTeamSeason({team: participant, league:f.league}, club.teamId, scope)) return 'unconfirmed';
 +    const ts = Date.parse(f.fixture.date), round = f.league.round;
 +    const scored = home ? f.goals?.home : f.goals?.away, conceded = home ? f.goals?.away : f.goals?.home;
 +    if (ids.has(f.fixture.id) || !/^Regular Season - (?:[1-9]|[12][0-9]|3[0-8])$/.test(round) ||
@@ -8050,19 +8105,19 @@ index 0000000000000000000000000000000000000000..88c7893970c78ef55b47e66c102969a1
 +module.exports = { completeAggregate, reconcileFinishedSeason };
 diff --git a/server/test/season-matchday.test.js b/server/test/season-matchday.test.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..425eb3faa558afe538a24a268ac102030ca0a882
+index 0000000000000000000000000000000000000000..877b40cc76f371d21eecd468e550aed9b0695ac0
 --- /dev/null
 +++ b/server/test/season-matchday.test.js
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,25 @@
 +const test = require('node:test');
 +const assert = require('node:assert/strict');
 +const { reconcileFinishedSeason } = require('../season-matchday');
 +
 +test('a final updates a lagging aggregate once, only with matching prior totals and unique scoped fixtures', () => {
 +  const totals = { played: 1, wins: 0, draws: 1, losses: 0, goalsFor: 1, goalsAgainst: 1, cleanSheets: 0, failedToScore: 0 };
-+  const club = () => ({ teamId: 1001, season: { leagueId: 140, year: 2026, totals: { ...totals } } });
++  const club = () => ({ teamId: 1001, team: { id: 1001, name: "Test team" }, season: { league: "La Liga", leagueId: 140, year: 2026, totals: { ...totals } } });
 +  const fixture = n => ({ fixture: { id: n, status: { short: 'FT' }, date: '2026-09-0'+n+'T12:00:00Z' },
-+    league: { id:140, season:2026, round:'Regular Season - '+n },
++    league: { name:'La Liga', id:140, season:2026, round:'Regular Season - '+n },
 +    teams:{ home:{id:2000+n,name:'Opponent'},away:{id:1001,name:'Test team'} },
 +    goals:{ home:1, away:n } });
 +  const page = rows => ({ paging:{current:1,total:1},data:rows });
@@ -8072,7 +8127,8 @@ index 0000000000000000000000000000000000000000..425eb3faa558afe538a24a268ac10203
 +  assert.equal(reconcileFinishedSeason(current, records, now),'snapshot');
 +  for (const mutate of [p => {p.paging.total=2}, p => {p.data[0].fixture.id=1},
 +    p => {p.data[1].goals.away=4}, p => {p.data[0].league.season=2025},
-+    p => {p.data[0].fixture.status.short='2H'}]) {
++    p => {p.data[0].fixture.status.short='2H'},
++    p => {p.data[0].teams.away.name='Different club'}, p => {p.data[0].league.name='Other league'}]) {
 +    const faulty=structuredClone(records), untouched=club(); mutate(faulty);
 +    assert.equal(reconcileFinishedSeason(untouched,faulty,now),'unconfirmed');
 +    assert.deepEqual(untouched.season.totals,totals);

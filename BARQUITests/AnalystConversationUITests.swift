@@ -3,7 +3,8 @@ import XCTest
 final class AnalystConversationUITests: XCTestCase {
     func testLiveWelcomeRemainsOutsideTheConversation() throws {
         let app = XCUIApplication.fotiq()
-        app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
+        app.launchArguments = ["-lang", "ar", "-startTab", "ai",
+                               "-apiOverride", "https://fotiq-analyst-pr7-staging-k276.onrender.com"]
         app.launch()
         XCTAssertTrue(app.buttons["analyst-new-chat"].waitForExistence(timeout: 40))
         app.buttons["analyst-new-chat"].tap()
@@ -28,7 +29,8 @@ final class AnalystConversationUITests: XCTestCase {
         // Core acceptance begins at the analyst. Entry/onboarding belongs to
         // the other developer and is not asserted or recorded by this suite.
         let app = XCUIApplication.fotiq()
-        app.launchArguments = ["-lang", "ar", "-startTab", "ai"]
+        app.launchArguments = ["-lang", "ar", "-startTab", "ai",
+                               "-apiOverride", "https://fotiq-analyst-pr7-staging-k276.onrender.com"]
         app.launch()
         func element(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
         let newChat = app.buttons["analyst-new-chat"]
@@ -42,6 +44,7 @@ final class AnalystConversationUITests: XCTestCase {
         defer { try? recording("stop") }
         var report = ""
         var lastVerifiedReply = ""
+        var receivedKinds: [String] = []
         var receivedTurns: [(question: String, answer: String)] = []
         // Five Arabic and five English questions. Preserve provider spacing.
         let questions = [
@@ -51,7 +54,7 @@ final class AnalystConversationUITests: XCTestCase {
             "متى تأسس نادي برشلونة؟ اذكر تاريخ التأسيس والمصدر الموثّق",
             "Compare Barcelona and Real Madrid in La Liga 2025/26. Keep each team's statistics separate.",
             "قارن إحصاءات مبابي وليفاندوفسكي في الدوري الإسباني موسم ٢٠٢٥/٢٦؛ اربط كل لاعب بفريقه ولا تخمّن الأرقام",
-            "Analyze a completed match. State its date, competition, final score and confirmed statistics; distinguish unavailable data.",
+            "Analyze the most recent completed match between Barcelona and Real Madrid. State its date, competition and final score.",
             "للمباراة المنتهية نفسها، وضّح التشكيلة والتبديلات المتحققة فقط",
             "Compare Real Madrid and Barcelona in La Liga 2025/26. State the competition and season.",
             "When was FC Barcelona founded? Give the verified foundation date and source."
@@ -76,7 +79,11 @@ final class AnalystConversationUITests: XCTestCase {
             try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
             try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("0\(index + 1)-conversation.png"))
             XCTAssertEqual(result, .completed); XCTAssertTrue(answer.exists, response); XCTAssertFalse(error.exists, response)
-            XCTAssertEqual(app.staticTexts["analyst-response-kind"].label, "تحليل بالذكاء الاصطناعي · Groq", "Live Groq acceptance must not count a different response kind")
+            let kind = app.staticTexts["analyst-response-kind"]
+            XCTAssertTrue(kind.exists, "Every answer must expose its source kind")
+            receivedKinds.append(kind.label)
+            report += "Response kind: \(kind.label)\n"
+            try report.write(to: directory.appendingPathComponent("results.txt"), atomically: true, encoding: .utf8)
             if answer.exists {
                 lastVerifiedReply = response
                 receivedTurns.append((question, response))
@@ -150,6 +157,12 @@ final class AnalystConversationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["analyst-welcome"].waitForExistence(timeout: 10))
         app.buttons["analyst-history"].tap()
         XCTAssertTrue(app.buttons.matching(identifier: "analyst-saved-conversation").firstMatch.waitForExistence(timeout: 10))
+        // Check generation separately so a correctly labelled provider table cannot
+        // prevent the independent process-restoration checks from running.
+        XCTAssertEqual(receivedKinds.count, questions.count)
+        for (index, kind) in receivedKinds.enumerated() {
+            XCTAssertEqual(kind, "تحليل بالذكاء الاصطناعي · Groq", "Question \(index + 1): live Groq acceptance must not count a different response kind")
+        }
     }
     private func recording(_ action: String, phase: String = "") throws {
         let directory = URL(fileURLWithPath: "/tmp/fotiq-core-recording", isDirectory: true)
