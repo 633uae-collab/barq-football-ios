@@ -479,13 +479,14 @@ index 973013580194d0da7595e4df74cd78124a54af81..4b56b0168bad69be93110acbd82563de
    app.get('/api/search', async (req, res) => {
      if (typeof req.query.q !== 'string' || req.query.q.trim().length > 80) throw new ServiceError('INVALID_QUERY', 400);
 diff --git a/server/chat-evidence.js b/server/chat-evidence.js
-index 3b5270aca4bfff2c141f789cd83810df7250a9f0..264c63e34d7e3e5ad6ae1cc8ffb8332301f33da9 100644
+index 3b5270aca4bfff2c141f789cd83810df7250a9f0..aaa515ac4bf4be28cd0f708c759d9eb9755368bd 100644
 --- a/server/chat-evidence.js
 +++ b/server/chat-evidence.js
-@@ -1,32 +1,159 @@
+@@ -1,32 +1,160 @@
  'use strict';
 -const { historicalKnowledge } = require('./knowledge');
 -const { prepareEvidence } = require('./analyst-evidence');
++const { completeAggregate, reconcileFinishedSeason } = require('./season-matchday');
 +const { historicalKnowledge, barcelonaSC, barcelonaReserve, namesUnmappedWomensClub } = require('./knowledge');
 +const { prepareEvidence, fixtureScore, fixtureStatus, kickoffUTC, preMatchStatuses } = require('./analyst-evidence');
 +const { requestedSeasonScope, verifiedTeamSeason } = require('./season-scope');
@@ -659,7 +660,7 @@ index 3b5270aca4bfff2c141f789cd83810df7250a9f0..264c63e34d7e3e5ad6ae1cc8ffb83323
        basis: f.fixture?.status?.short === 'PEN' ? 'goals before penalty shootout; shootout outcome not inferred' : 'completed match goals' };
    });
  }
-@@ -52,75 +179,243 @@ function relevantVenueSeason(stats, role) {
+@@ -52,81 +180,258 @@ function relevantVenueSeason(stats, role) {
      failedToScore: stats.failed_to_score?.[role] ?? null
    };
  }
@@ -676,7 +677,7 @@ index 3b5270aca4bfff2c141f789cd83810df7250a9f0..264c63e34d7e3e5ad6ae1cc8ffb83323
 +      if (!Number.isSafeInteger(season?.year) || season.year <= 0) continue;
 +      if (requestedYear ? season.year === requestedYear : season.current === true) years.add(season.year);
 +    }
-+    for (const year of years) matches.push({ ...league, season: year });
++    for (const year of years) matches.push({ ...league, season: year, current: row.seasons.some(s => s?.year === year && s.current === true) });
 +  }
 +  return matches.length === 1 ? matches[0] : undefined;
 +}
@@ -939,7 +940,22 @@ index 3b5270aca4bfff2c141f789cd83810df7250a9f0..264c63e34d7e3e5ad6ae1cc8ffb83323
              totals: { played: value(stats.fixtures?.played?.total), wins: value(stats.fixtures?.wins?.total), draws: value(stats.fixtures?.draws?.total), losses: value(stats.fixtures?.loses?.total ?? stats.fixtures?.losses?.total),
                goalsFor: value(stats.goals?.for?.total?.total), goalsAgainst: value(stats.goals?.against?.total?.total), cleanSheets: value(stats.clean_sheet?.total), failedToScore: value(stats.failed_to_score?.total) } };
            const t = club.season.totals;
-@@ -134,83 +429,186 @@ async function collectEvidence(provider, question, context = {}, history = []) {
+           if ([t.played,t.wins,t.draws,t.losses].every(n => n !== null) && t.played !== t.wins+t.draws+t.losses) {
+             club.season.totals = null; missing.push(`Conflicting season totals for club ${team}; do not use them.`);
+           }
++          if (league.current && league.id === 140 && completeAggregate(club.season.totals)) {
++            try {
++              const page = await load('/fixtures', { team, league: league.id, season: league.season, status: 'FT' }, true);
++              club.season.coverage = reconcileFinishedSeason(club, page, Date.now());
++            } catch (error) {
++              if (!['UPSTREAM_TIMEOUT', 'UPSTREAM_UNAVAILABLE'].includes(error.code)) throw error;
++              club.season.coverage = 'unconfirmed';
++            }
++          }
+         }
+         if (upcoming) {
+           const role = fixtures[0]?.teams?.home?.id === team ? 'home' : fixtures[0]?.teams?.away?.id === team ? 'away' : null;
+@@ -134,83 +439,186 @@ async function collectEvidence(provider, question, context = {}, history = []) {
          }
        }
        evidence.clubs.push(club);
@@ -1158,7 +1174,7 @@ index 3b5270aca4bfff2c141f789cd83810df7250a9f0..264c63e34d7e3e5ad6ae1cc8ffb83323
            if (item.lastFiveAppearances.length === 5) break;
          }
          missing.push('Team fixtures may contain non-appearances; only lastFiveAppearances have verified positive minutes.');
-@@ -236,7 +634,7 @@ async function collectEvidence(provider, question, context = {}, history = []) {
+@@ -236,7 +644,7 @@ async function collectEvidence(provider, question, context = {}, history = []) {
    evidence.followUpContext = {
      ...(fixtureId ? { fixtureId } : {}),
      ...(teamIds.length ? { teamIds } : {}),
@@ -1750,10 +1766,10 @@ index e68e337906e12d79170fc6224b8942700c4d9667..2fc2966a7d4144bde54515a95121726b
  module.exports = { Provider, ServiceError };
 diff --git a/server/season-answer.js b/server/season-answer.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..1affe1ef49ca768cf64f36e739c31a4e51a03978
+index 0000000000000000000000000000000000000000..123d60e09ceaa5784495078dbfbeb782539fa750
 --- /dev/null
 +++ b/server/season-answer.js
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,106 @@
 +'use strict';
 +const { verifiedTeamSeason } = require('./season-scope');
 +// Season tables are rendered from identity-bound provider rows, never rewritten
@@ -1823,6 +1839,12 @@ index 0000000000000000000000000000000000000000..1affe1ef49ca768cf64f36e739c31a4e
 +      const value = s.totals[key];
 +      blocks.push(`${ar ? arabic : english}: ${Number.isSafeInteger(value) && value >= 0 ? value : unknown}`);
 +    }
++    if (s.coverage === 'updated') blocks.push(ar
++      ? 'تشمل الأرقام آخر مباراة منتهية بعد مطابقة حصيلة كل المباريات السابقة بإحصاءات الموسم.'
++      : 'Totals include the latest final score. All earlier results match the season aggregate.');
++    if (s.coverage === 'unconfirmed') blocks.push(ar
++      ? 'هذه حصيلة المزوّد؛ تعذّر تأكيد أنها تشمل كل المباريات المنتهية.'
++      : 'Provider snapshot; coverage of all completed matches could not be confirmed.');
 +    blocks.push('');
 +  }
 +  const asksMoreGoals = /who scored more|which (?:team|club) scored more|من سج[ّ]?ل أهداف[ًا]* أكثر|من سج[ّ]?ل أكثر/iu.test(question);
@@ -7971,4 +7993,88 @@ index 0000000000000000000000000000000000000000..8cbee9ff301f772a8bbf8c25ed6fb828
 +    assert.deepEqual(history.followUpContext, {});
 +  }
 +  assert.equal(fetches, 1);
++});
+diff --git a/server/season-matchday.js b/server/season-matchday.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..88c7893970c78ef55b47e66c102969a16c6c83c3
+--- /dev/null
++++ b/server/season-matchday.js
+@@ -0,0 +1,48 @@
++'use strict';
++const { fixtureHasTeam } = require('./fixture-player-scope');
++const { verifiedTeamSeason } = require('./season-scope');
++
++const fields = ['played','wins','draws','losses','goalsFor','goalsAgainst','cleanSheets','failedToScore'];
++
++const completeAggregate = totals => totals && fields.every(k => Number.isSafeInteger(totals[k]) && totals[k] >= 0);
++
++// Reconcile only a one-match lag. The earlier completed fixtures must exactly
++// reproduce the provider's aggregate before the latest final score is included.
++function reconcileFinishedSeason(club, page, now) {
++  const season = club.season, prior = season.totals;
++  if (!prior || page.stale || page.paging?.current !== 1 || page.paging?.total !== 1 ||
++      !Array.isArray(page.data)) return 'unconfirmed';
++  if (!completeAggregate(prior) || ![prior.played, prior.played + 1].includes(page.data.length)) return 'unconfirmed';
++  const scope = { id: season.leagueId, season: season.year };
++  const ids = new Set(), rounds = new Set(), times = new Set(), matches = [];
++  for (const f of page.data) {
++    if (!fixtureHasTeam(f, club.teamId) || f.fixture.status?.short !== 'FT') return 'unconfirmed';
++    const home = f.teams.home.id === club.teamId;
++    if (!verifiedTeamSeason({team: home ? f.teams.home : f.teams.away, league:f.league}, club.teamId, scope)) return 'unconfirmed';
++    const ts = Date.parse(f.fixture.date), round = f.league.round;
++    const scored = home ? f.goals?.home : f.goals?.away, conceded = home ? f.goals?.away : f.goals?.home;
++    if (ids.has(f.fixture.id) || !/^Regular Season - (?:[1-9]|[12][0-9]|3[0-8])$/.test(round) ||
++        rounds.has(round) || times.has(ts) || !Number.isFinite(ts) || ts >= now ||
++        ![scored,conceded].every(n => Number.isSafeInteger(n) && n >= 0)) return 'unconfirmed';
++    ids.add(f.fixture.id); rounds.add(round); times.add(ts);
++    matches.push({ts,scored,conceded});
++  }
++  matches.sort((a,b) => a.ts-b.ts);
++  const totals = Object.fromEntries(fields.map(key => [key,0]));
++  for (const {scored,conceded} of matches) {
++    if (totals.played === prior.played && !fields.every(k => totals[k] === prior[k])) return 'unconfirmed';
++    totals.played++;
++    if (scored > conceded) totals.wins++;
++    else if (scored === conceded) totals.draws++;
++    else totals.losses++;
++    totals.goalsFor += scored;
++    totals.goalsAgainst += conceded;
++    if (scored === 0) totals.failedToScore++;
++    if (conceded === 0) totals.cleanSheets++;
++    if (!Number.isSafeInteger(totals.goalsFor) || !Number.isSafeInteger(totals.goalsAgainst)) return 'unconfirmed';
++  }
++  if (totals.played === prior.played) return fields.every(k => totals[k] === prior[k]) ? 'snapshot' : 'unconfirmed';
++  season.totals = totals;
++  return 'updated';
++}
++module.exports = { completeAggregate, reconcileFinishedSeason };
+diff --git a/server/test/season-matchday.test.js b/server/test/season-matchday.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..425eb3faa558afe538a24a268ac102030ca0a882
+--- /dev/null
++++ b/server/test/season-matchday.test.js
+@@ -0,0 +1,24 @@
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const { reconcileFinishedSeason } = require('../season-matchday');
++
++test('a final updates a lagging aggregate once, only with matching prior totals and unique scoped fixtures', () => {
++  const totals = { played: 1, wins: 0, draws: 1, losses: 0, goalsFor: 1, goalsAgainst: 1, cleanSheets: 0, failedToScore: 0 };
++  const club = () => ({ teamId: 1001, season: { leagueId: 140, year: 2026, totals: { ...totals } } });
++  const fixture = n => ({ fixture: { id: n, status: { short: 'FT' }, date: '2026-09-0'+n+'T12:00:00Z' },
++    league: { id:140, season:2026, round:'Regular Season - '+n },
++    teams:{ home:{id:2000+n,name:'Opponent'},away:{id:1001,name:'Test team'} },
++    goals:{ home:1, away:n } });
++  const page = rows => ({ paging:{current:1,total:1},data:rows });
++  const now = Date.UTC(2026,10,22), records=page([fixture(2),fixture(1)]), current=club();
++  assert.equal(reconcileFinishedSeason(current, records, now),'updated');
++  assert.deepEqual(current.season.totals,{...totals,played:2,wins:1,goalsFor:3,goalsAgainst:2});
++  assert.equal(reconcileFinishedSeason(current, records, now),'snapshot');
++  for (const mutate of [p => {p.paging.total=2}, p => {p.data[0].fixture.id=1},
++    p => {p.data[1].goals.away=4}, p => {p.data[0].league.season=2025},
++    p => {p.data[0].fixture.status.short='2H'}]) {
++    const faulty=structuredClone(records), untouched=club(); mutate(faulty);
++    assert.equal(reconcileFinishedSeason(untouched,faulty,now),'unconfirmed');
++    assert.deepEqual(untouched.season.totals,totals);
++  }
 +});
