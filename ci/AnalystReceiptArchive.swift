@@ -21,23 +21,35 @@ struct AnalystReceiptArchive {
                                userInfo: [NSLocalizedDescriptionKey: message]) }
     }
 
-    @MainActor static func main() throws {
+    @MainActor static func main() {
+        do { try verify() }
+        catch {
+            FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+            exit(1)
+        }
+    }
+
+    @MainActor private static func verify() throws {
         let args = CommandLine.arguments
-        try require(args.count == 4, "Expected write or read, receipts JSONL, and a private archive path.")
+        try require(args.count == 4, "Expected write, read or append, receipts JSONL, and a private archive path.")
         let writing = args[1] == "write"
-        try require(writing || args[1] == "read", "Unknown mode")
+        let appending = args[1] == "append"
+        try require(writing || appending || args[1] == "read", "Unknown mode")
         let url = URL(fileURLWithPath: args[3])
         try require(FileManager.default.fileExists(atPath: url.path) != writing,
                     "Write needs a new archive; read needs an existing archive.")
         let lines = try String(contentsOfFile: args[2], encoding: .utf8).split(separator: "\n")
         try require(!lines.isEmpty, "No receipts")
         let archive = AnalystConversations(url: url)
+        if appending {
+            try require(archive.current.turns.count + 1 == lines.count, "Append requires one new receipt.")
+        }
         let encoder = JSONEncoder()
         for (i, line) in lines.enumerated() {
             let bytes = Data(line.utf8)
             let item = try JSONDecoder().decode(Receipt.self, from: bytes)
             try require(item.index == i + 1 && item.status == 200, "Missing or rejected turn at index \(i + 1)")
-            if writing {
+            if writing || (appending && i == lines.count - 1) {
                 let turn = AnalystTurn(question: item.request.question)
                 let id = archive.current.id
                 archive.append(turn, context: item.request.context)
@@ -51,8 +63,12 @@ struct AnalystReceiptArchive {
             let raw = try requireValue(row["response"] as? [String: Any])
             let saved = try requireValue(JSONSerialization.jsonObject(with: encoder.encode(reply)) as? [String: Any])
             for key in ["answer","model","sources","context","fetchedAt","generatedAt"] {
-                let expected = try requireValue(raw[key] as? NSObject)
-                try require(expected.isEqual(saved[key]), "Turn \(i + 1) changed field \(key)")
+                try require(raw[key] != nil && saved[key] != nil, "Turn \(i + 1) missing field \(key)")
+                // Compare real JSON values directly, including nested nulls and types.
+                // Linux Foundation does not bridge every JSON value to NSObject.
+                let expected = try JSONSerialization.data(withJSONObject: [key: raw[key]!], options: [.sortedKeys])
+                let actual = try JSONSerialization.data(withJSONObject: [key: saved[key]!], options: [.sortedKeys])
+                try require(expected == actual, "Turn \(i + 1) changed field \(key)")
             }
         }
         try require(archive.current.turns.count == lines.count, "Restored turn count changed")
