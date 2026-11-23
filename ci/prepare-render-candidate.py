@@ -2,7 +2,7 @@
 import hashlib, json, pathlib, shutil
 path = pathlib.Path("BARQ/Views/AnalystChatView.swift")
 original = path.read_text()
-start = '                                let renderedAnswer = AnalystStageProbe.measure("markdown")'
+start = '                                let display = answerFormatting.value(for: reply.answer)'
 end = '                                Text((reply.sourceNames'
 assert original.count(start) == 1 and original.count(end) == 1
 a, b = original.index(start), original.index(end)

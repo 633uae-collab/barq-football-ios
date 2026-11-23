@@ -12,6 +12,8 @@ final class AnalystSyntheticSendUITests: XCTestCase {
         let answer = app.staticTexts["analyst-answer"]
         XCTAssertTrue(answer.waitForExistence(timeout: 40))
         XCTAssertTrue(answer.label.contains("SYNTHETIC AX CONTROL"))
+        try recording("start", phase: "analyst")
+        defer { try? recording("stop") }
         let questions = [
             "اختبار مصطنع: حلل نتيجة المباراة", "Synthetic test: explain the same result",
             "اختبار مصطنع: قارن الناديين", "Synthetic test: compare the two clubs",
@@ -41,9 +43,11 @@ final class AnalystSyntheticSendUITests: XCTestCase {
             print("FOTIQ_AX_REPLAY question=\(index + 1) stage=verified utc=\(Date().timeIntervalSince1970)")
         }
         XCTAssertEqual(received.count, 10)
+        try recording("stop")
         app.terminate(); app.launch()
         XCTAssertTrue(answer.waitForExistence(timeout: 30))
         XCTAssertEqual(answer.label, try XCTUnwrap(received.last))
+        try recording("start", phase: "restored")
         // Walk backwards through every received turn after a real process restart.
         for index in questions.indices.reversed() {
             let restoredAnswer = app.staticTexts.matching(NSPredicate(format: "label == %@", received[index])).firstMatch

@@ -6,6 +6,7 @@ struct AnalystChatView: View {
     @State private var welcome: AnalystWelcome?
     @State private var visible = false
     @State private var archive = AnalystConversations()
+    @State private var answerFormatting = AnalystAnswerFormatting()
     @State private var question = ""
     @State private var sending = false
     @State private var showingHistory = false
@@ -37,13 +38,17 @@ struct AnalystChatView: View {
                                         .font(.caption).foregroundStyle(.secondary)
                                         .accessibilityIdentifier(message.id == archive.current.turns.last?.id ? "analyst-response-kind" : "analyst-previous-response-kind")
                                 }
-                                let renderedAnswer = (try? AttributedString(markdown: reply.answer, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(reply.answer)
-                                Text(renderedAnswer)
-                                    // Give VoiceOver/XCTest the already resolved text. Do not ask
-                                    // SwiftUI to localize server Markdown while taking a snapshot.
-                                    .accessibilityLabel(Text(verbatim: String(renderedAnswer.characters)))
+                                let display = answerFormatting.value(for: reply.answer) {
+                                    let renderedAnswer = (try? AttributedString(markdown: reply.answer, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(reply.answer)
+                                    return AnalystAnswerFormatting.Prepared(
+                                        text: renderedAnswer,
+                                        accessibilityText: String(renderedAnswer.characters),
+                                        rightToLeft: reply.answer.range(of: "[\\u0600-\\u06FF]", options: .regularExpression) != nil)
+                                }
+                                Text(display.text)
+                                    .accessibilityLabel(Text(verbatim: display.accessibilityText))
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .environment(\.layoutDirection, reply.answer.range(of: "[\\u0600-\\u06FF]", options: .regularExpression) == nil ? .leftToRight : .rightToLeft)
+                                    .environment(\.layoutDirection, display.rightToLeft ? .rightToLeft : .leftToRight)
                                     .textSelection(.enabled).accessibilityIdentifier(message.id == archive.current.turns.last?.id ? "analyst-answer" : "analyst-previous-answer")
                                     .contextMenu { Button(en ? "Copy" : "نسخ", systemImage: "doc.on.doc") { UIPasteboard.general.string = reply.answer } }
                                 Text((reply.sourceNames ?? (en ? "Source details unavailable" : "تفاصيل المصدر غير متوفرة")) + " · " + (en ? "Data retrieved: " : "وقت جلب البيانات: ") + Date(timeIntervalSince1970: reply.fetchedAt / 1000).formatted(date: .abbreviated, time: .standard))
