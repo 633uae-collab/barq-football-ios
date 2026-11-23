@@ -1,0 +1,81 @@
+name: Package offline iOS chat for Intel and Apple Silicon
+on:
+  push:
+    branches: [codex/core-stability]
+    paths:
+      - .github/workflows/core-ios-simulator-kit.yml
+      - ci/simulator-kit/**
+permissions:
+  contents: read
+jobs:
+  package:
+    if: github.event.repository.private == false
+    runs-on: macos-26-intel
+    timeout-minutes: 55
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check reuse of formatted text on Apple Foundation
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun swiftc -parse-as-library BARQ/Core/AnalystAnswerFormatting.swift ci/simulator-kit/check-formatting.swift -o "$RUNNER_TEMP/format-check"
+          "$RUNNER_TEMP/format-check"
+      - name: Build the simulator package without a device or signing account
+        run: |
+          set -euo pipefail
+          command -v xcodegen || brew install xcodegen
+          python3 ci/prepare-synthetic-send.py --scroll-mode baseline
+          xcodegen generate
+          python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath dd ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO FOTIQ_API_BASE=https://fotiq-synthetic.invalid CODE_SIGN_IDENTITY=- build-for-testing
+          mkdir FOTIQ-iOS-Simulator
+          mv dd/Build/Products FOTIQ-iOS-Simulator/Products
+          cd FOTIQ-iOS-Simulator
+          xcrun lipo Products/Debug-iphonesimulator/BARQ.app/BARQ -verify_arch x86_64 arm64
+          cp ../ci/fixtures/analyst-ax-recorded.json seed.json
+          cp ../ci/{record-core.py,run-core-command.py} ../ci/simulator-kit/run.py ../out/synthetic-adapter.json .
+          echo "$GITHUB_SHA" > head.txt
+          xcodebuild -version > xcode.txt
+          cd ..
+          ditto -c -k --keepParent FOTIQ-iOS-Simulator FOTIQ-iOS-Simulator.zip
+          shasum -a 256 FOTIQ-iOS-Simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FOTIQ-iOS-Simulator
+          path: FOTIQ-iOS-Simulator.zip
+          retention-days: 7
+      - name: Identify a newer preinstalled iOS runtime on this Intel host
+        id: runtime
+        run: |
+          set -euo pipefail
+          python3 ci/run-core-command.py 45 xcrun simctl list runtimes -j > "$RUNNER_TEMP/runtimes.json"
+          python3 - <<'PY'
+          import json, os
+          rows = json.load(open(os.path.join(os.environ['RUNNER_TEMP'],'runtimes.json')))['runtimes']
+          eligible = [r['version'] for r in rows if r.get('isAvailable') and '.iOS-26-' in r['identifier'] and tuple(map(int, r['version'].split('.'))) >= (26, 4)]
+          print('Eligible installed Intel runtimes:', eligible)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+              print('eligible=' + str(bool(eligible)).lower(),file=out)
+          PY
+      - name: Verify shipping SwiftUI with long offline replies on the eligible Intel simulator
+        if: steps.runtime.outputs.eligible == 'true'
+        env:
+          FOTIQ_REQUIRE_NEW_INTEL_RUNTIME: '1'
+        run: python3 FOTIQ-iOS-Simulator/run.py
+      - name: Capture only the analyst after the independent functional pass
+        if: success() && steps.runtime.outputs.eligible == 'true'
+        env:
+          FOTIQ_REQUIRE_NEW_INTEL_RUNTIME: '1'
+        run: python3 FOTIQ-iOS-Simulator/run.py --video
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.runtime.outputs.eligible == 'true'
+        with:
+          name: offline-analyst-outcome
+          path: |
+            FOTIQ-iOS-Simulator/*/test.log
+            FOTIQ-iOS-Simulator/*/result.json
+            FOTIQ-iOS-Simulator/video-*/*.mp4
+            FOTIQ-iOS-Simulator/video-*/recording-events.jsonl
+          if-no-files-found: ignore
+          retention-days: 7

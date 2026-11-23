@@ -1,0 +1,96 @@
+name: Core AX recorded replay (not live acceptance)
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/core-stability]
+    paths:
+      - .github/workflows/core-ax-diagnostic.yml
+      - BARQUITests/AnalystAccessibilityUITests.swift
+      - ci/fixtures/analyst-ax-recorded.json
+      - ci/run-core-command.py
+      - ci/profile-core-replay.py
+permissions:
+  contents: read
+jobs:
+  replay:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        # Three synthetic long turns; isolate transcript size without chat POSTs.
+        runner: [macos-26]
+    runs-on: ${{ matrix.runner }}
+    concurrency:
+      group: fotiq-live-provider-review
+      cancel-in-progress: false
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin Xcode and simulator for environment comparison
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.4.1.app
+          mkdir -p out
+          xcodebuild -version | tee out/xcode-version.txt
+          uname -m | tee out/architecture.txt
+          sw_vers | tee out/host-version.txt
+          printf '%s\n' "$GITHUB_SHA" > out/head-sha.txt
+          brew install xcodegen
+          xcodegen generate
+          python3 ci/run-core-command.py 120 xcrun simctl list devices available -j > out/devices.json
+          UDID=$(python3 -c 'import json; d=json.load(open("out/devices.json"))["devices"]; print(next(v["udid"] for k,vs in d.items() if k.endswith("iOS-26-2") for v in vs if v["name"] == "iPhone 17 Pro"))')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          printf '%s\n' "$UDID" > out/requested-udid.txt
+          python3 ci/run-core-command.py 120 xcrun simctl boot "$UDID" || true
+          python3 ci/run-core-command.py 120 xcrun simctl bootstatus "$UDID" -b
+      - name: Build chat diagnostic without entry tests
+        run: |
+          set -o pipefail
+          python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee out/build.log
+      - name: Install recorded transcript in the disposable simulator
+        run: |
+          APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
+          test -n "$APP"
+          python3 ci/run-core-command.py 120 xcrun simctl install "$UDID" "$APP"
+          CONTAINER=$(python3 ci/run-core-command.py 120 xcrun simctl get_app_container "$UDID" ae.barq.football data)
+          mkdir -p "$CONTAINER/Library/Application Support"
+          cp ci/fixtures/analyst-ax-recorded.json "$CONTAINER/Library/Application Support/analyst-conversations.json"
+          echo "CHAT_CONTAINER=$CONTAINER" >> "$GITHUB_ENV"
+          shasum -a 256 ci/fixtures/analyst-ax-recorded.json > out/fixture-sha256.txt
+          printf '%s\n' 'Three synthetic long replies, not recorded conversation text. Diagnostic control for transcript size only; no chat POST, pending append or live acceptance is exercised.' > out/evidence-kind.txt
+      - name: Prepare Instruments device discovery before the app starts
+        run: |
+          python3 ci/profile-core-replay.py --preflight
+      - name: Ten drafts and AX snapshots against recorded content
+        run: |
+          set -o pipefail
+          xcrun simctl spawn "$UDID" log stream --level debug --style compact --predicate 'subsystem == "ae.barq.transport" OR subsystem == "ae.barq.composer"' >out/transport.log 2>&1 &
+          LOG_PID=$!
+          tail -n +1 -F out/transport.log &
+          TAIL_PID=$!
+          python3 -u ci/core-host-health.py out/host-health.jsonl &
+          HEALTH_PID=$!
+          python3 -u ci/profile-core-replay.py >out/instruments-watcher.log 2>&1 &
+          PROFILE_PID=$!
+          trap 'wait "$PROFILE_PID" || true; kill "$LOG_PID" "$TAIL_PID" "$HEALTH_PID" 2>/dev/null || true' EXIT
+          python3 ci/run-core-command.py 900 xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -parallel-testing-enabled NO -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/AnalystAccessibilityUITests -resultBundlePath replay.xcresult 2>&1 | tee out/replay.log
+      - name: Preserve archive and verify no diagnostic sends
+        if: always()
+        run: |
+          if [ -n "$CHAT_CONTAINER" ]; then
+            # XCTest may reinstall the app and relocate its data container.
+            # Resolve it again after execution instead of retaining the install path.
+            CURRENT_CONTAINER=$(python3 ci/run-core-command.py 120 xcrun simctl get_app_container "$UDID" ae.barq.football data)
+            cp "$CURRENT_CONTAINER/Library/Application Support/analyst-conversations.json" out/archive-after.json
+            python3 -c 'import json; a=json.load(open("ci/fixtures/analyst-ax-recorded.json")); b=json.load(open("out/archive-after.json")); assert a == b, "Recorded archive changed during no-send replay"'
+            sed -n 's/^FOTIQ_AX_REPLAY actualUDID=//p' out/replay.log | head -1 > out/actual-udid.txt
+            cmp out/requested-udid.txt out/actual-udid.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-ax-replay-${{ matrix.runner }}
+          path: |
+            out/
+            replay.xcresult
+          retention-days: 14
+

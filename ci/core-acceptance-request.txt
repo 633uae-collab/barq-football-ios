@@ -1,0 +1,1 @@
+Run core acceptance on standard macos-26 ARM after verified isolated boot success in 42941923395. Xcode 26.4.1 / iOS 26.2. Keep all UI assertions, deadlines, provider spacing and entry exclusions; no recording or deploy.

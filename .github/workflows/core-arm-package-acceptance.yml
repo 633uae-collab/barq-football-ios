@@ -1,0 +1,61 @@
+name: Verify prebuilt FOTIQ chat on Apple Silicon
+on:
+  push:
+    branches: [codex/core-stability]
+    paths:
+      - .github/workflows/core-arm-package-acceptance.yml
+      - ci/verify-arm-chat.py
+permissions:
+  contents: read
+  actions: read
+jobs:
+  offline-chat:
+    if: github.event.repository.private == false
+    runs-on: macos-26
+    timeout-minutes: 48
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the existing Intel and ARM universal simulator binary
+        uses: actions/download-artifact@v4
+        with:
+          name: FOTIQ-iOS-Simulator
+          run-id: 45271286431
+          github-token: ${{ github.token }}
+          path: incoming
+      - name: Verify the exact kit and native host
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          echo 'f3d4fde3fa33fe69df6a21ea1abe7914901a93e9f7b3342f139f7a805f0423d2  incoming/FOTIQ-iOS-Simulator.zip' | shasum -a 256 -c -
+          ditto -x -k incoming/FOTIQ-iOS-Simulator.zip .
+          test "$(cat FOTIQ-iOS-Simulator/head.txt)" = e98ff73c661b76b5c5982d9ccaea90f49bcf8402
+          xcodebuild -version
+          xcrun lipo FOTIQ-iOS-Simulator/Products/Debug-iphonesimulator/BARQ.app/BARQ -verify_arch arm64
+      - name: Run ten messages, restore, follow up, and measure application RSS
+        run: python3 ci/verify-arm-chat.py FOTIQ-iOS-Simulator arm-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm-functional-evidence
+          path: |
+            arm-evidence/
+            FOTIQ-iOS-Simulator/functional-*/test.log
+            FOTIQ-iOS-Simulator/functional-*/result.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Record the analyst and restored conversation after acceptance
+        if: success()
+        run: python3 FOTIQ-iOS-Simulator/run.py --video
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm-video-evidence
+          path: |
+            FOTIQ-iOS-Simulator/video-*/test.log
+            FOTIQ-iOS-Simulator/video-*/recording-events.jsonl
+            FOTIQ-iOS-Simulator/video-*/result.json
+            FOTIQ-iOS-Simulator/video-*/*.mp4
+          if-no-files-found: ignore
+          retention-days: 7

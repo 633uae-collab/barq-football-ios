@@ -1,0 +1,38 @@
+# Apply only to the nonproduction analyst service during a reviewed test run.
+services:
+  - type: web
+    name: fotiq-analyst-pr7-staging
+    runtime: node
+    plan: free
+    region: oregon
+    repo: https://github.com/633uae-collab/barq-football-ios
+    branch: codex/core-stability
+    autoDeployTrigger: "off"
+    buildCommand: >-
+      git apply --check review/analyst-server.patch &&
+      git apply review/analyst-server.patch &&
+      npm ci --prefix server --ignore-scripts --no-audit --no-fund
+    startCommand: node review/start-analyst-staging.cjs
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24.22.3"
+      - key: FOTIQ_STORAGE_MODE
+        value: preview
+      - key: GROQ_API_KEY
+        fromService:
+          type: web
+          name: barq-football-ios
+          envVarKey: GROQ_API_KEY
+      - key: APISPORTS_KEY
+        fromService:
+          type: web
+          name: barq-football-ios
+          envVarKey: APISPORTS_KEY
+      - key: GROQ_FREE_PLAN_CONFIRMED
+        fromService:
+          type: web
+          name: barq-football-ios
+          envVarKey: GROQ_FREE_PLAN_CONFIRMED
+      - key: FOTIQ_AI_CHAT_ENABLED
+        value: "false"
