@@ -32,9 +32,7 @@ jobs:
           mkdir FOTIQ-iOS-Simulator
           mv dd/Build/Products FOTIQ-iOS-Simulator/Products
           cd FOTIQ-iOS-Simulator
-          for arch in x86_64 arm64; do
-            xcrun lipo -verify_arch "$arch" Products/Debug-iphonesimulator/BARQ.app/BARQ
-          done
+          xcrun lipo Products/Debug-iphonesimulator/BARQ.app/BARQ -verify_arch x86_64 arm64
           cp ../ci/fixtures/analyst-ax-recorded.json seed.json
           cp ../ci/{record-core.py,run-core-command.py} ../ci/simulator-kit/run.py ../out/synthetic-adapter.json .
           echo "$GITHUB_SHA" > head.txt
