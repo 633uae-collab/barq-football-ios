@@ -12,7 +12,9 @@ permissions:
 jobs:
   capture:
     if: github.event.repository.private == false
-    runs-on: macos-15
+    runs-on: macos-26
+    outputs:
+      originals: ${{ steps.originals.outputs.artifact-id }}
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
@@ -21,13 +23,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
-          sudo xcode-select -s /Applications/Xcode_26.3.app
+          sudo xcode-select -s /Applications/Xcode_26.6.app
           mkdir -p out
           git rev-parse HEAD > out/head.txt
           uname -m > out/architecture.txt
           xcodebuild -version > out/xcode.txt
           xcrun simctl list devices available -j > out/devices.json
-          UDID=$(python3 -c "import json; print(next(x['udid'] for k,v in json.load(open('out/devices.json'))['devices'].items() if 'iOS-26' in k for x in v if x['name'] in ('iPhone 16 Pro','iPhone 17 Pro')))")
+          UDID=$(python3 -c "import json; print(next(x['udid'] for k,v in json.load(open('out/devices.json'))['devices'].items() if k.endswith('iOS-26-5') for x in v if x['name'] == 'iPhone 17 Pro'))")
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           echo "$UDID" > out/recorded-udid.txt
           xcrun simctl boot "$UDID"
@@ -80,6 +82,7 @@ jobs:
           python3 ci/launch-measured.py out/reduced-timing.log reduced -lang ar
           grep -q 'FINISH firstLaunch=false .*mode=reduced' out/reduced-timing.log
       - name: Preserve original screen recordings
+        id: originals
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -107,7 +110,7 @@ jobs:
 
   review-originals:
     needs: capture
-    if: '!cancelled() && github.event.repository.private == false'
+    if: ${{ !cancelled() && github.event.repository.private == false && needs.capture.outputs.originals != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
