@@ -1,6 +1,6 @@
 # FOTIQ Rider launch
 
-The stationary original F and green dot span 38% of the phone width. Four staggered strokes erase while a slim green edge follows the white pixels. The navy field then contracts around the screen center, uncovering the actual club picker or Home from the outside in. As in the Rider clip, the central disk changes to the accent color while a larger translucent halo contracts around it. Native Reduce Motion uses a stationary dissolve.
+The stationary original F and green dot span 14% of the phone width, slightly smaller than the 15% mark in the supplied size reference. Four staggered strokes erase while a slim green edge follows the white pixels. The navy field then contracts around the screen center, uncovering the actual club picker or Home from the outside in. As in the Rider clip, the central disk changes to the accent color while a larger translucent halo contracts around it. Native Reduce Motion uses a stationary dissolve.
 
 The horizontal and vertical centerlines of the 224 px phone in the public 60 Hz reference supplied the radius samples. At frame 76 the dark-to-accent disk radius is approximately 19 px and the translucent halo radius is approximately 91 px. Both disappear by frame 88. The first forty frames are stationary, including any credit from destination preparation. OS startup can extend the visible hold. The native destination keeps its own layout and controls.
 

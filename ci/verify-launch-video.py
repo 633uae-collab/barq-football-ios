@@ -53,7 +53,9 @@ for index, time in enumerate(timestamps):
         return tuple(frame[i:i+3])
     field = all(max(rgb(x, y)) < 35 for x in (12, 147) for y in (62, 272))
     count = sum(min(rgb(x, y)) > 180 for x in range(48, 112) for y in range(137, 211))
-    if field and 1800 <= count <= 2000 and rgb(101, 177)[1] - rgb(101, 177)[0] > 100:
+    # At this analysis resolution the 14%-wide mark covers ~240 white pixels.
+    # Its green dot is centered near (88,175) in the 160x348 frame.
+    if field and 225 <= count <= 255 and rgb(88, 175)[1] - rgb(88, 175)[0] > 100:
         if active is None or time - active['lastFull'] > 2:
             active = {'lastFull': time, 'peak': count, 'partial': [], 'disk': []}
             groups.append(active)

@@ -99,7 +99,7 @@ final class PremiumExperienceTests: XCTestCase {
             let rect = LaunchPresentation.logoRect(in: size)
             XCTAssertEqual(rect.midX, size.width/2, accuracy: 0.001)
             XCTAssertEqual(rect.midY, size.height/2, accuracy: 0.001)
-            XCTAssertEqual(rect.width, size.width * 0.38, accuracy: 0.001)
+            XCTAssertEqual(rect.width, size.width * 0.14, accuracy: 0.001)
         }
         XCTAssertEqual(LaunchPresentation.opacity(at: 0), 1)
         XCTAssertEqual(LaunchPresentation.opacity(at: 0.5), 1)

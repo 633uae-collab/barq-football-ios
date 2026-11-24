@@ -209,7 +209,7 @@ enum LaunchPresentation {
         return 1 - t * t * (3 - 2 * t)
     }
     static func logoRect(in size: CGSize) -> CGRect {
-        let width = size.width * 0.38
+        let width = size.width * 0.14
         let height = width * 514 / 455
         return CGRect(x: (size.width-width)/2, y: (size.height-height)/2, width: width, height: height)
     }
