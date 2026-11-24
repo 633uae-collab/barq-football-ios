@@ -1,4 +1,4 @@
-name: Rider portal native capture
+name: Rider reference native capture
 on:
   push:
     branches: [codex/fotiq-rider-reference]
@@ -83,7 +83,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rider-portal-originals
+          name: rider-reference-originals
           retention-days: 30
           path: |
             out/*.mp4
@@ -91,12 +91,12 @@ jobs:
             out/*.log
             out/*.txt
             out/*.json*
-      - name: Verify portal geometry and committed readiness on iOS
+      - name: Verify reference motion and committed readiness on iOS
         if: '!cancelled() && steps.first.outcome == ''success'''
         timeout-minutes: 8
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -parallel-testing-enabled NO test -only-testing:BARQTests/PremiumExperienceTests -only-testing:BARQTests/LaunchCommitReadinessTests 2>&1 | tee out/portal-tests.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -parallel-testing-enabled NO test -only-testing:BARQTests/PremiumExperienceTests -only-testing:BARQTests/LaunchCommitReadinessTests 2>&1 | tee out/rider-tests.log
 
       - name: Verify a background return does not replay the launch
         if: ${{ !cancelled() && steps.journey.outcome == 'success' }}
@@ -114,12 +114,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: rider-portal-originals
+          name: rider-reference-originals
           path: out
-      - name: Check original camera frames and callback timing
+      - name: Check original erasure frames and callback timing
         run: |
           set -euo pipefail
           command -v ffmpeg >/dev/null || { sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg; }
-          python3 ci/verify-launch-video.py out/first-launch-uncut.mp4
-          cat out/first-timing.log out/quick-timing.log out/reduced-timing.log > out/portal-timing.log
-          python3 ci/verify-launch-timing.py out/portal-timing.log
+          failed=0
+          python3 ci/verify-launch-video.py out/first-launch-uncut.mp4 || failed=1
+          python3 ci/verify-launch-video.py out/quick-launch-uncut.mp4 || failed=1
+          cat out/first-timing.log out/quick-timing.log out/reduced-timing.log > out/rider-timing.log
+          python3 ci/verify-launch-timing.py out/rider-timing.log || failed=1
+          exit "$failed"

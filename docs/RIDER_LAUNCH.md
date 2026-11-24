@@ -1,10 +1,10 @@
-# FOTIQ portal launch
+# FOTIQ Rider launch
 
-The current launch holds the original white F and green dot at 38% of the screen width for 0.30 s of the animation timeline. Two eased camera angles show the extruded edges. The camera aligns to the gap between the upper and middle arms, where an expanding aperture reveals the already committed native destination. The nominal timeline is 1.50 s. Reduce Motion retains the stationary opacity transition. The system launch screen and destination preparation can extend wall-clock startup.
+The stationary original F and green dot span 38% of the phone width. Four staggered strokes erase while a slim green edge follows the white pixels. The navy field then contracts around the screen center, uncovering the actual club picker or Home from the outside in. As in the Rider clip, the central disk changes to the accent color while a larger translucent halo contracts around it. Native Reduce Motion uses a stationary dissolve.
 
-The native capture workflow records the clean installation and the completed-user reopen separately on an Apple Silicon iPhone simulator. Source recordings are uncut H.264 MP4s. Real-device presented FPS requires a separate measurement.
+The horizontal and vertical centerlines of the 224 px phone in the public 60 Hz reference supplied the radius samples. At frame 76 the dark-to-accent disk radius is approximately 19 px and the translucent halo radius is approximately 91 px. Both disappear by frame 88. The first forty frames are stationary, including any credit from destination preparation. OS startup can extend the visible hold. The native destination keeps its own layout and controls.
 
-## Previous stationary-mark design and measurements
+## Earlier measurements and design history
 
 # FOTIQ Rider launch implementation — pending native visual acceptance
 

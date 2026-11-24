@@ -2,83 +2,93 @@ import SwiftUI
 import UIKit
 import os
 
-/// A single 1.5-second camera track, independent of refresh rate. Coordinates
-/// describe the existing bitmap; the aperture stays inside the F's actual gap.
+/// Rider Launch Transition sequence: stationary mark, staggered erase, then
+/// the dark field contracts to a central dot over the prepared destination.
+/// Reference: https://dribbble.com/shots/6991913-Rider-Launch-Transition
+/// The FOTIQ artwork, green accent and native destination remain original.
 enum PremiumLaunchTrack {
-    static let duration = 1.5
-    static let hold = 0.30
-    static let passage = 0.90
-
+    // Measured from the 361-frame, 60 Hz public reference. The final map hold
+    // and loop reset are not part of an application launch. See docs/RIDER_LAUNCH.md.
+    static let duration = 1.8
+    static let firstErase = 40.0 / 60
+    /// Preparation already displays the exact stationary artwork. Credit only
+    /// that static part; never skip an erasure, contraction or pulse frame.
     static func holdCredit(displayedFor seconds: Double, reduceMotion: Bool) -> Double {
-        min(max(0, seconds), reduceMotion ? LaunchPresentation.hold : hold)
-    }
-    static let aperture = CGRect(x: 0.35, y: 0.28, width: 0.27, height: 0.10)
-    struct Pose {
-        var scale: CGFloat
-        var pitch: CGFloat
-        var yaw: CGFloat
-        var center: CGPoint
+        min(max(0, seconds), reduceMotion ? LaunchPresentation.hold : firstErase)
     }
     static func smooth(_ t: Double) -> CGFloat {
         let x = min(1, max(0, t))
         return CGFloat(x * x * (3 - 2 * x))
     }
-    static func pose(at elapsed: Double, in size: CGSize) -> Pose {
-        let rect = LaunchPresentation.logoRect(in: size)
-        let start = CGPoint(x: rect.minX + rect.width * aperture.midX,
-                            y: rect.minY + rect.height * aperture.midY)
-        let target = CGPoint(x: size.width / 2, y: size.height / 2)
-        let approach = smooth((elapsed - hold) / (passage - hold))
-        let firstAngle = sin(.pi * smooth((elapsed - hold) / 0.34))
-        let reverseAngle = sin(.pi * smooth((elapsed - hold - 0.34) / (passage - hold - 0.34)))
-        let travel = smooth((elapsed - passage) / (duration - passage))
-        let fullScale = max((size.width + 80) / (rect.width * aperture.width),
-                            (size.height + 80) / (rect.height * aperture.height))
-        // Move towards the gap while the perspective settles; then continue
-        // through that same gap. No crossfade, replacement image or page cut.
-        return Pose(scale: 1 + approach * 0.7 + travel * travel * (fullScale - 1.7),
-                    pitch: firstAngle * 0.14 - reverseAngle * 0.06,
-                    yaw: firstAngle * -0.40 + reverseAngle * 0.20,
-                    center: CGPoint(x: start.x + (target.x - start.x) * approach,
-                                    y: start.y + (target.y - start.y) * approach))
+    static func progress(_ time: Double, from start: Double, to end: Double) -> CGFloat {
+        smooth((time - start) / (end - start))
     }
-    static func transform(_ pose: Pose) -> CATransform3D {
-        var matrix = CATransform3DIdentity
-        matrix.m34 = -1 / 700
-        matrix = CATransform3DRotate(matrix, pose.yaw, 0, 1, 0)
-        matrix = CATransform3DRotate(matrix, pose.pitch, 1, 0, 0)
-        return CATransform3DScale(matrix, pose.scale, pose.scale, 1)
+    // Centerline radii in the 224 px wide Rider viewport, sampled at 60 Hz.
+    // Interpolate in screen widths so the logo and the circles share a center.
+    private static let diskSamples: [CGFloat] = [225, 180, 138, 108, 86, 69, 56, 45, 37, 30, 24, 19, 15, 11, 8, 5, 1, 0]
+    private static let haloSamples: [CGFloat] = [234, 189, 155, 127, 107, 91, 77, 65, 55, 47, 40, 34, 29, 23, 18, 13, 5, 0]
+    private static func radius(_ samples: [CGFloat], firstFrame: Int, at time: Double, in size: CGSize) -> CGFloat {
+        let full = hypot(size.width, size.height) / 2 + 2
+        let frame = time * 60 - Double(firstFrame)
+        guard frame > -1 else { return full }
+        let unit = size.width / 224
+        if frame < 0 { return full + CGFloat(frame + 1) * (min(full, samples[0] * unit) - full) }
+        guard frame < Double(samples.count - 1) else { return samples.last! * unit }
+        let index = Int(frame)
+        let interpolated = samples[index] + CGFloat(frame - Double(index)) * (samples[index + 1] - samples[index])
+        return min(full, interpolated * unit)
     }
-    /// Project one texture at its physical depth onto the screen. Keeping the
-    /// output Z at zero prevents the navy cover from clipping half a tilted F.
-    static func faceTransform(_ camera: CATransform3D, depth: CGFloat) -> CATransform3D {
-        let w = camera.m44 + depth * camera.m34
-        var flat = CATransform3DIdentity
-        flat.m11 = camera.m11 / w
-        flat.m12 = camera.m12 / w
-        flat.m21 = camera.m21 / w
-        flat.m22 = camera.m22 / w
-        flat.m14 = camera.m14 / w
-        flat.m24 = camera.m24 / w
-        flat.m41 = (camera.m41 + depth * camera.m31) / w
-        flat.m42 = (camera.m42 + depth * camera.m32) / w
-        return flat
+    static func coverRadius(at time: Double, in size: CGSize) -> CGFloat {
+        radius(diskSamples, firstFrame: 65, at: time, in: size)
     }
-    static func apertureCorners(at elapsed: Double, in size: CGSize) -> [CGPoint] {
-        let pose = pose(at: elapsed, in: size)
-        let rect = LaunchPresentation.logoRect(in: size)
-        let matrix = transform(pose)
-        return [CGPoint(x: aperture.minX, y: aperture.minY),
-                CGPoint(x: aperture.maxX, y: aperture.minY),
-                CGPoint(x: aperture.maxX, y: aperture.maxY),
-                CGPoint(x: aperture.minX, y: aperture.maxY)].map { point in
-            let x = (point.x - aperture.midX) * rect.width
-            let y = (point.y - aperture.midY) * rect.height
-            let w = x * matrix.m14 + y * matrix.m24 + matrix.m44
-            return CGPoint(x: pose.center.x + (x * matrix.m11 + y * matrix.m21 + matrix.m41) / w,
-                           y: pose.center.y + (x * matrix.m12 + y * matrix.m22 + matrix.m42) / w)
-        }
+    static func circlePath(radius: CGFloat, in size: CGSize) -> CGPath {
+        CGPath(ellipseIn: CGRect(x: size.width / 2 - radius, y: size.height / 2 - radius,
+                                width: radius * 2, height: radius * 2), transform: nil)
     }
+    struct Segment {
+        let rect: CGRect
+        let anchor: CGPoint
+        let axis: String
+        let start: Double
+        let end: Double
+    }
+    // Masks expose the ORIGINAL raster pixels; they never redraw or deform F.
+    // Coordinates refer to the 455x514 tight launch crop of the existing artwork.
+    static let segments = [
+        Segment(rect: CGRect(x: 0, y: 0, width: 405, height: 124), anchor: CGPoint(x: 0, y: 0.5), axis: "x", start: 40.0/60, end: 56.0/60),
+        Segment(rect: CGRect(x: 0, y: 124, width: 132, height: 390), anchor: CGPoint(x: 0.5, y: 0), axis: "y", start: 48.0/60, end: 63.0/60),
+        Segment(rect: CGRect(x: 132, y: 216, width: 168, height: 116), anchor: CGPoint(x: 0, y: 0.5), axis: "x", start: 44.0/60, end: 60.0/60),
+        Segment(rect: CGRect(x: 330, y: 205, width: 125, height: 135), anchor: CGPoint(x: 0.5, y: 1), axis: "y", start: 42.0/60, end: 61.0/60)
+    ]
+    static func remaining(at time: Double, segment: Int) -> CGFloat {
+        let item = segments[segment]
+        return 1 - progress(time, from: item.start, to: item.end)
+    }
+    static func pulseRadius(at time: Double, in size: CGSize) -> CGFloat {
+        radius(haloSamples, firstFrame: 71, at: time, in: size)
+    }
+    static func pulseOpacity(at time: Double) -> Float {
+        Float(progress(time, from: 69.0/60, to: 76.0/60) * (1 - progress(time, from: 85.0/60, to: 88.0/60))) * 0.32
+    }
+    static func coverOpacity(at time: Double) -> Float {
+        Float(1 - progress(time, from: 79.0/60, to: 82.0/60))
+    }
+    static let accent = UIColor(red: 0, green: 196 / 255, blue: 106 / 255, alpha: 1)
+    private static let navyComponents: (CGFloat, CGFloat, CGFloat) = {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        UIColor(named: "RiderLaunchBackground")!.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return (r, g, b)
+    }()
+    static func diskColor(at time: Double) -> CGColor {
+        let mix = progress(time, from: 69.0/60, to: 78.0/60)
+        let (r, g, b) = navyComponents
+        return UIColor(red: r * (1 - mix), green: g + (196 / 255 - g) * mix,
+                       blue: b + (106 / 255 - b) * mix, alpha: 1).cgColor
+    }
+    static func edgeOpacity(at time: Double) -> Float {
+        Float(progress(time, from: firstErase, to: 42.0/60) * (1 - progress(time, from: 62.0/60, to: 64.0/60)))
+    }
+
 }
 
 /// Core Animation owns motion; CADisplayLink measures main-thread cadence only.
@@ -95,10 +105,13 @@ struct PremiumLaunchSurface: UIViewRepresentable {
 }
 
 final class PremiumLaunchLayer: UIView {
-    private let cover = CALayer(), plane = CALayer(), mark = CALayer()
-    private let bevel = CALayer()
-    private var faces: [(layer: CALayer, depth: CGFloat)] = []
-    private let apertureMask = CAShapeLayer()
+    private let cover = CAShapeLayer(), pulse = CAShapeLayer(), mark = CALayer()
+    private let markMask = CALayer()
+    // The trailing silhouette sits behind the white artwork for two reference frames.
+    // Both masks use the original image alpha, including the green dot.
+    private let edge = CALayer(), edgeSilhouette = CALayer()
+    private let edgeBands = PremiumLaunchTrack.segments.map { _ in CALayer() }
+    private let markBands = PremiumLaunchTrack.segments.map { _ in CALayer() }
     private let clock: SplashClock
     private let reduceMotion: Bool
     private let onComplete: () -> Void
@@ -115,7 +128,7 @@ final class PremiumLaunchLayer: UIView {
         self.reduceMotion = reduceMotion
         self.onComplete = onComplete
         super.init(frame: .zero)
-        // The aperture in the cover reveals the native view beneath this surface.
+        // The contracting cover reveals the native view beneath this surface.
         isOpaque = false
         backgroundColor = .clear
         isUserInteractionEnabled = true
@@ -124,15 +137,27 @@ final class PremiumLaunchLayer: UIView {
         accessibilityLabel = "FOTIQ"
         accessibilityViewIsModal = true
         clipsToBounds = true
-        cover.backgroundColor = UIColor(named: "RiderLaunchBackground")!.cgColor
+        cover.fillColor = UIColor(named: "RiderLaunchBackground")!.cgColor
+        pulse.fillColor = UIColor(red: 0, green: 196 / 255, blue: 106 / 255, alpha: 1).cgColor
+        pulse.opacity = 0
         mark.contents = UIImage(named: "RiderLaunchMark")?.cgImage
         mark.contentsGravity = .resizeAspect
-        apertureMask.fillRule = .evenOdd
-        apertureMask.fillColor = UIColor.black.cgColor
+        for band in markBands {
+            band.backgroundColor = UIColor.black.cgColor
+            markMask.addSublayer(band)
+        }
+        layer.addSublayer(pulse)
         layer.addSublayer(cover)
-        layer.addSublayer(plane)
-        plane.addSublayer(bevel)
-        plane.addSublayer(mark)
+        edge.opacity = 0
+        edgeSilhouette.contents = mark.contents
+        edgeSilhouette.contentsGravity = .resizeAspect
+        edge.mask = edgeSilhouette
+        for band in edgeBands {
+            band.backgroundColor = PremiumLaunchTrack.accent.cgColor
+            edge.addSublayer(band)
+        }
+        layer.addSublayer(edge)
+        layer.addSublayer(mark)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func didMoveToWindow() {
@@ -157,36 +182,28 @@ final class PremiumLaunchLayer: UIView {
         guard !prepared, bounds.width > 0, bounds.height > 0 else { return }
         prepared = true
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        let rect = LaunchPresentation.logoRect(in: bounds.size)
-        cover.frame = bounds
-        plane.bounds = CGRect(origin: .zero, size: rect.size)
-        plane.anchorPoint = CGPoint(x: PremiumLaunchTrack.aperture.midX, y: PremiumLaunchTrack.aperture.midY)
-        bevel.frame = plane.bounds
-        mark.anchorPoint = plane.anchorPoint
-        mark.frame = plane.bounds
-        faces = [(mark, 0)]
-        if !reduceMotion {
-            apertureMask.frame = cover.bounds
-            cover.mask = apertureMask
-            // The faces of the bevel use the original alpha, including the dot.
-            for slice in (1...4).reversed() {
-                let side = CAGradientLayer()
-                side.anchorPoint = plane.anchorPoint
-                side.frame = plane.bounds
-                let depth = -CGFloat(slice) * rect.width * 0.012
-                side.colors = [UIColor(white: 0.20, alpha: 1).cgColor,
-                               UIColor(white: 0.76, alpha: 1).cgColor,
-                               UIColor(white: 0.29, alpha: 1).cgColor]
-                side.startPoint = CGPoint(x: 0, y: 0)
-                side.endPoint = CGPoint(x: 1, y: 1)
-                let silhouette = CALayer()
-                silhouette.frame = side.bounds
-                silhouette.contents = mark.contents
-                side.mask = silhouette
-                bevel.addSublayer(side)
-                faces.append((side, depth))
-            }
+        cover.frame = bounds; pulse.frame = bounds
+        mark.frame = LaunchPresentation.logoRect(in: bounds.size)
+        markMask.frame = mark.bounds
+        mark.mask = markMask
+        edge.frame = mark.frame
+        edgeSilhouette.frame = edge.bounds
+        for (index, band) in markBands.enumerated() {
+            let segment = PremiumLaunchTrack.segments[index]
+            let factor = mark.bounds.width / 455
+            let rect = segment.rect.applying(CGAffineTransform(scaleX: factor, y: factor))
+            band.bounds = CGRect(origin: .zero, size: rect.size)
+            band.anchorPoint = segment.anchor
+            band.position = CGPoint(x: rect.minX + rect.width * segment.anchor.x,
+                                    y: rect.minY + rect.height * segment.anchor.y)
+            edgeBands[index].bounds = band.bounds
+            edgeBands[index].anchorPoint = band.anchorPoint
+            edgeBands[index].position = band.position
         }
+        // Static paths and compositor-only transforms avoid rebuilding geometry
+        // or publishing SwiftUI state on every display frame.
+        cover.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size), in: bounds.size)
+        pulse.path = PremiumLaunchTrack.circlePath(radius: PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size), in: bounds.size)
         applyState(at: 0)
         CATransaction.commit()
         let display = CADisplayLink(target: self, selector: #selector(frameTick))
@@ -208,39 +225,28 @@ final class PremiumLaunchLayer: UIView {
         link?.invalidate(); link = nil
         commitLink?.isEnabled = false; commitLink = nil
     }
-    private func maskPath(at time: Double) -> CGPath {
-        let path = CGMutablePath()
-        path.addRect(bounds)
-        // A degenerate hole before reveal retains an identical CGPath topology
-        // for interpolation, without showing the page early.
-        let corners = PremiumLaunchTrack.apertureCorners(at: time, in: bounds.size)
-        let center = PremiumLaunchTrack.pose(at: time, in: bounds.size).center
-        let opening = PremiumLaunchTrack.smooth((time - PremiumLaunchTrack.passage) / 0.08)
-        let points = corners.map { CGPoint(x: center.x + ($0.x - center.x) * opening,
-                                          y: center.y + ($0.y - center.y) * opening) }
-        path.move(to: points[0])
-        points.dropFirst().forEach { path.addLine(to: $0) }
-        path.closeSubpath()
-        return path
-    }
     private func applyState(at time: Double) {
-        let pose = PremiumLaunchTrack.pose(at: reduceMotion ? 0 : time, in: bounds.size)
-        plane.position = pose.center
-        let camera = PremiumLaunchTrack.transform(pose)
-        for face in faces {
-            face.layer.transform = PremiumLaunchTrack.faceTransform(camera, depth: face.depth)
+        let motionTime = reduceMotion ? 0 : time
+        let coverScale = PremiumLaunchTrack.coverRadius(at: motionTime, in: bounds.size) / PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size)
+        cover.transform = CATransform3DMakeScale(coverScale, coverScale, 1)
+        for (index, band) in markBands.enumerated() {
+            let value = PremiumLaunchTrack.remaining(at: motionTime, segment: index)
+            let horizontal = PremiumLaunchTrack.segments[index].axis == "x"
+            band.transform = CATransform3DMakeScale(horizontal ? value : 1, horizontal ? 1 : value, 1)
+            let trailing = PremiumLaunchTrack.remaining(at: motionTime - 2.0 / 60, segment: index)
+            edgeBands[index].transform = CATransform3DMakeScale(horizontal ? trailing : 1, horizontal ? 1 : trailing, 1)
         }
-        bevel.opacity = bevelOpacity(pose)
+        edge.opacity = PremiumLaunchTrack.edgeOpacity(at: motionTime)
+        cover.fillColor = PremiumLaunchTrack.diskColor(at: motionTime)
         if reduceMotion {
             let opacity = Float(LaunchPresentation.opacity(at: time))
-            cover.opacity = opacity
-            mark.opacity = opacity
+            cover.opacity = opacity; mark.opacity = opacity; pulse.opacity = 0
         } else {
-            apertureMask.path = maskPath(at: time)
+            cover.opacity = PremiumLaunchTrack.coverOpacity(at: time)
+            let scale = PremiumLaunchTrack.pulseRadius(at: time, in: bounds.size) / PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size)
+            pulse.transform = CATransform3DMakeScale(scale, scale, 1)
+            pulse.opacity = PremiumLaunchTrack.pulseOpacity(at: time)
         }
-    }
-    private func bevelOpacity(_ pose: PremiumLaunchTrack.Pose) -> Float {
-        Float(min(1, (abs(pose.yaw) + abs(pose.pitch)) * 12))
     }
     private func track(_ target: CALayer, _ property: String, _ values: [Any], duration: Double) {
         let animation = CAKeyframeAnimation(keyPath: property)
@@ -261,15 +267,20 @@ final class PremiumLaunchLayer: UIView {
             track(cover, "opacity", values, duration: duration)
             track(mark, "opacity", values, duration: duration)
         } else {
-            let poses = times.map { PremiumLaunchTrack.pose(at: $0, in: bounds.size) }
-            track(plane, "position", poses.map { NSValue(cgPoint: $0.center) }, duration: duration)
-            let cameras = poses.map(PremiumLaunchTrack.transform)
-            for face in faces {
-                let frames = cameras.map { NSValue(caTransform3D: PremiumLaunchTrack.faceTransform($0, depth: face.depth)) }
-                track(face.layer, "transform", frames, duration: duration)
+            let coverRadius = PremiumLaunchTrack.coverRadius(at: 0, in: bounds.size)
+            let pulseRadius = PremiumLaunchTrack.pulseRadius(at: 0, in: bounds.size)
+            track(cover, "transform.scale", times.map { PremiumLaunchTrack.coverRadius(at: $0, in: bounds.size) / coverRadius }, duration: duration)
+            track(cover, "opacity", times.map { PremiumLaunchTrack.coverOpacity(at: $0) }, duration: duration)
+            track(cover, "fillColor", times.map { PremiumLaunchTrack.diskColor(at: $0) }, duration: duration)
+            track(edge, "opacity", times.map { PremiumLaunchTrack.edgeOpacity(at: $0) }, duration: duration)
+            for (index, band) in markBands.enumerated() {
+                track(edgeBands[index], "transform.scale." + PremiumLaunchTrack.segments[index].axis,
+                      times.map { PremiumLaunchTrack.remaining(at: $0 - 2.0 / 60, segment: index) }, duration: duration)
+                track(band, "transform.scale." + PremiumLaunchTrack.segments[index].axis,
+                      times.map { PremiumLaunchTrack.remaining(at: $0, segment: index) }, duration: duration)
             }
-            track(bevel, "opacity", poses.map(bevelOpacity), duration: duration)
-            track(apertureMask, "path", times.map { maskPath(at: $0) }, duration: duration)
+            track(pulse, "transform.scale", times.map { PremiumLaunchTrack.pulseRadius(at: $0, in: bounds.size) / pulseRadius }, duration: duration)
+            track(pulse, "opacity", times.map { PremiumLaunchTrack.pulseOpacity(at: $0) }, duration: duration)
         }
     }
     @objc private func frameTick(_ display: CADisplayLink) {
@@ -313,7 +324,7 @@ final class PremiumLaunchLayer: UIView {
         let now = CACurrentMediaTime()
         submittedAt = now
         // Submit just before UIKit's normal commit, after display-link callbacks.
-        // Preparation no longer consumes the camera timeline.
+        // Preparation no longer consumes the already-running erasure timeline.
         // Never force-flush unrelated SwiftUI transactions or hide their cost:
         // COMMIT and startup timing include any remaining commit work.
         clock.begin(at: now, timelineOffset: offset)
