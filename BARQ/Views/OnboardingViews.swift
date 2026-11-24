@@ -289,7 +289,7 @@ struct OnboardingView: View {
         }
         .task {
             guard editing, !compsReady else { return }
-            let catalog = (try? await API.shared.get("/api/catalog", maxAge: 3600, attempts: 1) as CatalogResponse)?.leagues ?? []
+            let catalog = (try? await API.shared.get("/api/catalog", maxAge: 3600, attempts: 1) as CatalogResponse)?.leagues ?? ClubDirectory.snapshot.competitions
             let parts = Onboarding.partition(store.favLeagues, catalog: catalog)
             leagues = parts.leagues
             cups = parts.cups
@@ -366,18 +366,21 @@ struct OnboardingView: View {
 struct ClubPickStep: View {
     @Binding var selected: [TeamRef]
     @State private var model = ClubPickerModel()
-    @State private var directoryReady = true
+    @FocusState private var searchFocused: Bool
     @State private var q = ""
     @State private var popularRetry = 0
     @State private var searchRetry = 0
     let cols = [GridItem(.adaptive(minimum: 100), spacing: 12)]
 
+    private var term: String { q.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     var shown: [TeamRef] {
-        guard directoryReady else { return [] }
-        let base = q.trimmingCharacters(in: .whitespaces).count >= 2 ? model.results : model.popular
-        // keep chosen clubs visible at the top when not searching
-        if q.isEmpty { return selected + base.filter { b in !selected.contains { $0.id == b.id } } }
-        return base
+        if !term.isEmpty {
+            let local = ClubDirectory.matching(model.popular + selected, query: term)
+            return ClubDirectory.unique(local + (model.resultsTerm == term ? model.results : []))
+        }
+        // Changing the star must not move the tile under the user's finger.
+        return ClubDirectory.unique(model.popular + selected)
     }
 
     var body: some View {
@@ -385,21 +388,14 @@ struct ClubPickStep: View {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("ابحث عن نادٍ", text: $q).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .focused($searchFocused)
                     .accessibilityIdentifier("ob-search")
                 if !q.isEmpty { Button { q = "" } label: { Image(systemName: "xmark.circle.fill") }.foregroundStyle(.secondary) }
             }
             .padding(12).diagGlass(.regular, in: .capsule).padding(.horizontal)
             ScrollView {
-                if let message = q.trimmingCharacters(in: .whitespaces).count >= 2 ? model.searchError : model.error {
-                    VStack(spacing: 8) {
-                        Text(message).font(.footnote).multilineTextAlignment(.center)
-                        Button("إعادة المحاولة") {
-                            if q.trimmingCharacters(in: .whitespaces).count >= 2 { searchRetry += 1 } else { popularRetry += 1 }
-                        }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
-                    }.padding()
-                }
                 if shown.isEmpty {
-                    if model.searching || !directoryReady {
+                    if model.searching || (term.isEmpty && model.loading) {
                         ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading")
                     } else if model.searchError == nil {
                         Text("ما لقينا نتائج").foregroundStyle(.secondary).padding(.top, 40)
@@ -410,6 +406,7 @@ struct ClubPickStep: View {
                     LazyVGrid(columns: cols, spacing: 12) {
                         ForEach(shown) { t in
                             PickTile(id: "ob-club-\(t.id)", name: t.name, logo: t.logo, on: selected.contains { $0.id == t.id }) {
+                                searchFocused = false
                                 if let i = selected.firstIndex(where: { $0.id == t.id }) { selected.remove(at: i) } else { selected.append(t) }
                             }
                             .equatable()
@@ -417,27 +414,28 @@ struct ClubPickStep: View {
                     }
                 }
                 .padding()
+                if let message = term.isEmpty ? model.error : (model.resultsTerm == term ? model.searchError : nil) {
+                    VStack(spacing: 8) {
+                        Text(message).font(.footnote).multilineTextAlignment(.center)
+                        Button("إعادة المحاولة") {
+                            if term.isEmpty { popularRetry += 1 } else { searchRetry += 1 }
+                        }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
+                    }.padding()
+                }
             }
             .scrollDismissesKeyboard(.immediately)
-        }
-        .task {
-            // Initial prefetch follows the same launch boundary as visible
-            // cache misses; bundled and decoded images already draw immediately.
-            await LaunchGate.wait()
-            guard !Task.isCancelled else { return }
-            await ImageStore.shared.preload(model.popular.compactMap(\.logo))
         }
         .task(id: popularRetry) {
             await LaunchGate.wait()
             guard !Task.isCancelled else { return }
-            directoryReady = true
             await model.loadPopular()
-            await ImageStore.shared.preload(model.popular.compactMap(\.logo))
         }
         .task(id: "\(q)|\(searchRetry)") {
             await LaunchGate.wait()
             guard !Task.isCancelled else { return }
-            do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
+            if term.count >= 3 {
+                do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
+            }
             await model.search(q)
         }
     }
@@ -455,6 +453,12 @@ struct CompetitionPickStep: View {
     @State private var retry = 0
     let cols = [GridItem(.adaptive(minimum: 100), spacing: 12)]
 
+    init(kind: String, selected: Binding<Set<Int>>) {
+        self.kind = kind
+        _selected = selected
+        _items = State(initialValue: CompetitionOrder.sorted(ClubDirectory.snapshot.competitions, kind: kind))
+    }
+
     var shown: [LeagueMeta] {
         let s = q.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty else { return items }
@@ -471,12 +475,7 @@ struct CompetitionPickStep: View {
             .padding(12).diagGlass(.regular, in: .capsule).padding(.horizontal)
             ScrollView {
                 if loading && items.isEmpty { ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading") }
-                if let error {
-                    VStack(spacing: 8) {
-                        Text(error).font(.footnote).multilineTextAlignment(.center)
-                        Button("إعادة المحاولة") { retry += 1 }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
-                    }.padding()
-                } else if !loading && shown.isEmpty {
+                if error == nil && !loading && shown.isEmpty {
                     Text("ما لقينا نتائج").foregroundStyle(.secondary).padding()
                 }
                 LazyVGrid(columns: cols, spacing: 12) {
@@ -488,6 +487,12 @@ struct CompetitionPickStep: View {
                     }
                 }
                 .padding()
+                if let error {
+                    VStack(spacing: 8) {
+                        Text(error).font(.footnote).multilineTextAlignment(.center)
+                        Button("إعادة المحاولة") { retry += 1 }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
+                    }.padding()
+                }
             }
             .scrollDismissesKeyboard(.immediately)
         }
@@ -499,10 +504,12 @@ struct CompetitionPickStep: View {
             do {
                 let c: CatalogResponse = try await API.shared.get("/api/catalog", maxAge: 3600, attempts: 1)
                 guard !Task.isCancelled else { return }
-                items = CompetitionOrder.sorted(c.leagues, kind: kind)
+                let refreshed = CompetitionOrder.sorted(c.leagues, kind: kind)
+                guard !refreshed.isEmpty else { throw APIError.badResponse }
+                items = refreshed
             } catch {
                 guard !Task.isCancelled else { return }
-                self.error = error.localizedDescription
+                self.error = items.isEmpty ? error.localizedDescription : L.s("تعذر البحث عبر الإنترنت. النتائج الظاهرة من القائمة المحفوظة")
             }
         }
     }
@@ -528,6 +535,7 @@ struct PickTile: View, Equatable {
             .frame(maxWidth: .infinity).padding(.vertical, 12)
             .diagGlass(on ? .regular.tint(Color("BrandGreen").opacity(0.25)) : .regular, in: .rect(cornerRadius: 18))
             .overlay { RoundedRectangle(cornerRadius: 18).stroke(on ? Color("BrandGreen") : .clear, lineWidth: 1.5) }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)

@@ -7,6 +7,10 @@ on:
       - BARQ/Views/PremiumLaunchSurface.swift
       - BARQ/Views/OnboardingViews.swift
       - BARQ/Resources/LaunchScreen.storyboard
+      - BARQ/Resources/onboarding-directory.json
+      - BARQ/Core/ClubDirectory.swift
+      - BARQUITests/OnboardingUITests.swift
+      - ci/record-club-journey.sh
 permissions:
   contents: read
 jobs:
@@ -94,12 +98,23 @@ jobs:
             out/*.log
             out/*.txt
             out/*.json*
+      - name: Record real club, league and cup selections through Home
+        if: ${{ !cancelled() && steps.journey.outcome == 'success' }}
+        timeout-minutes: 9
+        run: bash ci/record-club-journey.sh
+      - name: Preserve original onboarding walkthrough
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-selection-to-home
+          path: out/picker/
+          retention-days: 30
       - name: Verify reference motion and committed readiness on iOS
         if: '!cancelled() && steps.first.outcome == ''success'''
         timeout-minutes: 8
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -parallel-testing-enabled NO test -only-testing:BARQTests/PremiumExperienceTests -only-testing:BARQTests/LaunchCommitReadinessTests 2>&1 | tee out/rider-tests.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -parallel-testing-enabled NO test -only-testing:BARQTests/PremiumExperienceTests -only-testing:BARQTests/LaunchCommitReadinessTests -only-testing:BARQTests/P0OnboardingTests 2>&1 | tee out/rider-tests.log
 
       - name: Verify a background return does not replay the launch
         if: ${{ !cancelled() && steps.journey.outcome == 'success' }}
