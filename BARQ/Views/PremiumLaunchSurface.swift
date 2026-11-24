@@ -49,6 +49,21 @@ enum PremiumLaunchTrack {
         matrix = CATransform3DRotate(matrix, pose.pitch, 1, 0, 0)
         return CATransform3DScale(matrix, pose.scale, pose.scale, 1)
     }
+    /// Project one texture at its physical depth onto the screen. Keeping the
+    /// output Z at zero prevents the navy cover from clipping half a tilted F.
+    static func faceTransform(_ camera: CATransform3D, depth: CGFloat) -> CATransform3D {
+        let w = camera.m44 + depth * camera.m34
+        var flat = CATransform3DIdentity
+        flat.m11 = camera.m11 / w
+        flat.m12 = camera.m12 / w
+        flat.m21 = camera.m21 / w
+        flat.m22 = camera.m22 / w
+        flat.m14 = camera.m14 / w
+        flat.m24 = camera.m24 / w
+        flat.m41 = (camera.m41 + depth * camera.m31) / w
+        flat.m42 = (camera.m42 + depth * camera.m32) / w
+        return flat
+    }
     static func apertureCorners(at elapsed: Double, in size: CGSize) -> [CGPoint] {
         let pose = pose(at: elapsed, in: size)
         let rect = LaunchPresentation.logoRect(in: size)
@@ -80,7 +95,9 @@ struct PremiumLaunchSurface: UIViewRepresentable {
 }
 
 final class PremiumLaunchLayer: UIView {
-    private let cover = CALayer(), plane = CATransformLayer(), mark = CALayer()
+    private let cover = CALayer(), plane = CALayer(), mark = CALayer()
+    private let bevel = CALayer()
+    private var faces: [(layer: CALayer, depth: CGFloat)] = []
     private let apertureMask = CAShapeLayer()
     private let clock: SplashClock
     private let reduceMotion: Bool
@@ -98,7 +115,7 @@ final class PremiumLaunchLayer: UIView {
         self.reduceMotion = reduceMotion
         self.onComplete = onComplete
         super.init(frame: .zero)
-        // The contracting cover reveals the native view beneath this surface.
+        // The aperture in the cover reveals the native view beneath this surface.
         isOpaque = false
         backgroundColor = .clear
         isUserInteractionEnabled = true
@@ -114,6 +131,7 @@ final class PremiumLaunchLayer: UIView {
         apertureMask.fillColor = UIColor.black.cgColor
         layer.addSublayer(cover)
         layer.addSublayer(plane)
+        plane.addSublayer(bevel)
         plane.addSublayer(mark)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -143,15 +161,19 @@ final class PremiumLaunchLayer: UIView {
         cover.frame = bounds
         plane.bounds = CGRect(origin: .zero, size: rect.size)
         plane.anchorPoint = CGPoint(x: PremiumLaunchTrack.aperture.midX, y: PremiumLaunchTrack.aperture.midY)
+        bevel.frame = plane.bounds
+        mark.anchorPoint = plane.anchorPoint
         mark.frame = plane.bounds
+        faces = [(mark, 0)]
         if !reduceMotion {
             apertureMask.frame = cover.bounds
             cover.mask = apertureMask
             // The faces of the bevel use the original alpha, including the dot.
-            for slice in 1...6 {
+            for slice in (1...4).reversed() {
                 let side = CAGradientLayer()
+                side.anchorPoint = plane.anchorPoint
                 side.frame = plane.bounds
-                side.zPosition = -CGFloat(slice) * rect.width * 0.008
+                let depth = -CGFloat(slice) * rect.width * 0.012
                 side.colors = [UIColor(white: 0.20, alpha: 1).cgColor,
                                UIColor(white: 0.76, alpha: 1).cgColor,
                                UIColor(white: 0.29, alpha: 1).cgColor]
@@ -161,7 +183,8 @@ final class PremiumLaunchLayer: UIView {
                 silhouette.frame = side.bounds
                 silhouette.contents = mark.contents
                 side.mask = silhouette
-                plane.insertSublayer(side, below: mark)
+                bevel.addSublayer(side)
+                faces.append((side, depth))
             }
         }
         applyState(at: 0)
@@ -203,7 +226,11 @@ final class PremiumLaunchLayer: UIView {
     private func applyState(at time: Double) {
         let pose = PremiumLaunchTrack.pose(at: reduceMotion ? 0 : time, in: bounds.size)
         plane.position = pose.center
-        plane.transform = PremiumLaunchTrack.transform(pose)
+        let camera = PremiumLaunchTrack.transform(pose)
+        for face in faces {
+            face.layer.transform = PremiumLaunchTrack.faceTransform(camera, depth: face.depth)
+        }
+        bevel.opacity = bevelOpacity(pose)
         if reduceMotion {
             let opacity = Float(LaunchPresentation.opacity(at: time))
             cover.opacity = opacity
@@ -211,6 +238,9 @@ final class PremiumLaunchLayer: UIView {
         } else {
             apertureMask.path = maskPath(at: time)
         }
+    }
+    private func bevelOpacity(_ pose: PremiumLaunchTrack.Pose) -> Float {
+        Float(min(1, (abs(pose.yaw) + abs(pose.pitch)) * 12))
     }
     private func track(_ target: CALayer, _ property: String, _ values: [Any], duration: Double) {
         let animation = CAKeyframeAnimation(keyPath: property)
@@ -233,7 +263,12 @@ final class PremiumLaunchLayer: UIView {
         } else {
             let poses = times.map { PremiumLaunchTrack.pose(at: $0, in: bounds.size) }
             track(plane, "position", poses.map { NSValue(cgPoint: $0.center) }, duration: duration)
-            track(plane, "transform", poses.map { NSValue(caTransform3D: PremiumLaunchTrack.transform($0)) }, duration: duration)
+            let cameras = poses.map(PremiumLaunchTrack.transform)
+            for face in faces {
+                let frames = cameras.map { NSValue(caTransform3D: PremiumLaunchTrack.faceTransform($0, depth: face.depth)) }
+                track(face.layer, "transform", frames, duration: duration)
+            }
+            track(bevel, "opacity", poses.map(bevelOpacity), duration: duration)
             track(apertureMask, "path", times.map { maskPath(at: $0) }, duration: duration)
         }
     }

@@ -36,6 +36,8 @@ touch out/window-capture.stop
 wait "$REC"
 kill "$LOG" 2>/dev/null || true
 trap - EXIT
-ffprobe -v error -show_streams -show_format -of json out/window-launch-uncut.mp4 > out/window-capture-metadata.json
+if command -v ffprobe >/dev/null; then
+  ffprobe -v error -show_streams -show_format -of json out/window-launch-uncut.mp4 > out/window-capture-metadata.json
+fi
 # The MP4 is ScreenCaptureKit's original output, with original timestamps.
 # No interpolation, repeated-frame synthesis, speed changes, or replacement.

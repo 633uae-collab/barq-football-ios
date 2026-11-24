@@ -50,10 +50,17 @@ for index, timestamp in enumerate(timestamps):
     xs = [x for y in range(48, height - 48) for x in range(width) if frame[y * width + x] > 190]
     if xs:
         samples.append((timestamp, min(xs), max(xs), len(xs)))
-static = next((t for t, left, right, area in samples
-               if 48 <= left <= 53 and 100 <= right <= 109 and 900 < area < 3200), None)
-if static is None:
+full = [t for t, left, right, area in samples
+        if 48 <= left <= 53 and 100 <= right <= 109 and 900 < area < 3200]
+if not full:
     raise SystemExit('Missing centered original-size launch mark')
+# Static frames can span the OS launch screen and destination preparation.
+# Anchor the motion window at the last matching static frame before growth.
+start = next((t for t, left, right, area in samples
+              if t > full[0] and right-left+1 >= 60 and area > 1700), None)
+if start is None:
+    raise SystemExit('The centered launch mark never enlarged')
+static = max(t for t in full if t < start)
 moving = [(t, right-left+1) for t,left,right,area in samples
           if static < t <= static + 3.0 and 60 <= right-left+1 < width-2 and area > 1700]
 report = dict(encodedFrames=len(timestamps), centeredLogoPTS=static, enlargingMark=moving,

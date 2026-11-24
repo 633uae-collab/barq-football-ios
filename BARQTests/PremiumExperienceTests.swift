@@ -129,6 +129,27 @@ final class PremiumExperienceTests: XCTestCase {
             XCTAssertGreaterThan(corners[2].y, size.height)
         }
     }
+    func testTiltedArtworkProjectsAtItsOriginalDepthWithoutCrossingTheCover() {
+        let size = CGSize(width: 402, height: 874)
+        for time in [0.30, 0.47, 0.77, 1.20] {
+            let camera = PremiumLaunchTrack.transform(PremiumLaunchTrack.pose(at: time, in: size))
+            for z: CGFloat in [0, -2, -7] {
+                let face = PremiumLaunchTrack.faceTransform(camera, depth: z)
+                XCTAssertEqual(face.m13, 0)
+                XCTAssertEqual(face.m23, 0)
+                XCTAssertEqual(face.m43, 0)
+                for point in [CGPoint(x: -72, y: -83), CGPoint(x: 72, y: 83)] {
+                    let x = point.x, y = point.y
+                    let w = x * camera.m14 + y * camera.m24 + z * camera.m34 + camera.m44
+                    let flatW = x * face.m14 + y * face.m24 + face.m44
+                    let px = (x * camera.m11 + y * camera.m21 + z * camera.m31 + camera.m41) / w
+                    let py = (x * camera.m12 + y * camera.m22 + z * camera.m32 + camera.m42) / w
+                    XCTAssertEqual((x * face.m11 + y * face.m21 + face.m41) / flatW, px, accuracy: 0.00001)
+                    XCTAssertEqual((x * face.m12 + y * face.m22 + face.m42) / flatW, py, accuracy: 0.00001)
+                }
+            }
+        }
+    }
     func testLaunchMaskDoesNotClipAnyOriginalArtwork() throws {
         let cg = try XCTUnwrap(TransparentBrandMark.image.cgImage)
         let bytes = try XCTUnwrap(cg.dataProvider?.data) as Data
