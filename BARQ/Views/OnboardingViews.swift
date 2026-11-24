@@ -202,10 +202,6 @@ final class SplashClock {
 
 /// Fixed original mark and opacity-only fallback for Reduce Motion.
 enum LaunchPresentation {
-    // Attached 1320x2868 screenshot: visible artwork y=1322..<1546 (224 px).
-    // Size comes from that measurement; the crop includes one AA pixel per edge.
-    static let referenceScreenWidth: CGFloat = 1320
-    static let referenceMarkHeight: CGFloat = 224
     static let hold = 0.5, fade = 0.3
     static let duration = hold + fade
     static func opacity(at elapsed: Double) -> Double {
@@ -213,8 +209,8 @@ enum LaunchPresentation {
         return 1 - t * t * (3 - 2 * t)
     }
     static func logoRect(in size: CGSize) -> CGRect {
-        let scale = size.width / referenceScreenWidth * referenceMarkHeight / 512
-        let width = 455 * scale, height = 514 * scale
+        let width = size.width * 0.38
+        let height = width * 514 / 455
         return CGRect(x: (size.width-width)/2, y: (size.height-height)/2, width: width, height: height)
     }
 }

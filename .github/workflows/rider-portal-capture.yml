@@ -1,0 +1,84 @@
+name: Rider portal native capture
+on:
+  push:
+    branches: [codex/fotiq-rider-reference]
+    paths:
+      - .github/workflows/rider-portal-capture.yml
+      - BARQ/Views/PremiumLaunchSurface.swift
+      - BARQ/Views/OnboardingViews.swift
+      - BARQ/Resources/LaunchScreen.storyboard
+permissions:
+  contents: read
+jobs:
+  capture:
+    if: github.event.repository.private == false
+    runs-on: macos-15
+    timeout-minutes: 50
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Apple Silicon and start iPhone
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          mkdir -p out
+          git rev-parse HEAD > out/head.txt
+          uname -m > out/architecture.txt
+          xcodebuild -version > out/xcode.txt
+          xcrun simctl list devices available -j > out/devices.json
+          UDID=$(python3 -c "import json; print(next(x['udid'] for k,v in json.load(open('out/devices.json'))['devices'].items() if 'iOS-26' in k for x in v if x['name'] in ('iPhone 16 Pro','iPhone 17 Pro')))")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          echo "$UDID" > out/recorded-udid.txt
+          xcrun simctl boot "$UDID"
+      - name: Prepare original resources and compile the recording build
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          command -v xcodegen >/dev/null || brew install xcodegen
+          command -v ffprobe >/dev/null || brew install ffmpeg
+          xcodegen generate
+          clang -O2 ci/process-birth.c -o out/process-birth
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing > out/build.log 2>&1 || { tail -80 out/build.log; exit 1; }
+          codesign --verify --deep --strict dd/Build/Products/Release-iphonesimulator/BARQ.app
+          xcrun simctl bootstatus "$UDID" -b
+      - name: Record fresh installation to club selection
+        id: first
+        timeout-minutes: 5
+        run: |
+          bash ci/record-launch.sh first
+          grep -q 'FINISH firstLaunch=true .*ready=true .*mode=premium' out/first-timing.log
+      - name: Complete onboarding and verify the native home on reopen
+        id: journey
+        if: success() || steps.first.outcome == 'failure'
+        timeout-minutes: 9
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release -parallel-testing-enabled NO test-without-building -only-testing:BARQUITests/LaunchJourneyUITests 2>&1 | tee out/journey.log
+      - name: Record real process reopen to home
+        if: '!cancelled() && steps.journey.outcome == ''success'''
+        timeout-minutes: 6
+        run: bash ci/record-launch.sh quick
+      - name: Preserve original screen recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rider-portal-originals
+          retention-days: 30
+          path: |
+            out/*.mp4
+            out/*.png
+            out/*.log
+            out/*.txt
+            out/*.json*
+      - name: Check original encoded camera motion
+        if: '!cancelled() && steps.first.outcome == ''success'''
+        run: python3 ci/verify-launch-video.py out/first-launch-uncut.mp4
+      - name: Verify portal geometry and committed readiness on iOS
+        if: '!cancelled() && steps.first.outcome == ''success'''
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -parallel-testing-enabled NO test -only-testing:BARQTests/PremiumExperienceTests -only-testing:BARQTests/LaunchCommitReadinessTests 2>&1 | tee out/portal-tests.log

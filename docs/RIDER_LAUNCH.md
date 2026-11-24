@@ -1,3 +1,11 @@
+# FOTIQ portal launch
+
+The current launch holds the original white F and green dot at 38% of the screen width for 0.30 s of the animation timeline. Two eased camera angles show the extruded edges. The camera aligns to the gap between the upper and middle arms, where an expanding aperture reveals the already committed native destination. The nominal timeline is 1.50 s. Reduce Motion retains the stationary opacity transition. The system launch screen and destination preparation can extend wall-clock startup.
+
+The native capture workflow records the clean installation and the completed-user reopen separately on an Apple Silicon iPhone simulator. Source recordings are uncut H.264 MP4s. Real-device presented FPS requires a separate measurement.
+
+## Previous stationary-mark design and measurements
+
 # FOTIQ Rider launch implementation — pending native visual acceptance
 
 Source: https://dribbble.com/shots/6991913-Rider-Launch-Transition

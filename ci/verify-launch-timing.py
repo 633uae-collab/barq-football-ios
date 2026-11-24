@@ -13,7 +13,7 @@ if not any(not r['firstLaunch'] for r in rows): errors.append('Missing completed
 if not any(r['mode']=='reduced' for r in rows): errors.append('Missing real Reduce Motion completion')
 if len(rows) != len(cadence): errors.append('Missing cadence sample records')
 for i, r in enumerate(rows):
-    low, high = (1.8,2.0) if r['mode']=='premium' else (0.8,1.0)
+    low, high = (1.5,1.6) if r['mode']=='premium' else (0.8,1.0)
     if not r['ready']: errors.append(f'{i}: destination not ready')
     if not low <= r['elapsed'] < high: errors.append(f'{i}: duration {r["elapsed"]:.4f}s outside {low}-{high}s')
     if r['maxFrameGap'] > .050: errors.append(f'{i}: frame gap {r["maxFrameGap"]:.4f}s exceeds 50ms')
@@ -25,4 +25,5 @@ report = dict(measurement='Main-thread display-link callbacks; not proof of pres
 Path('out/timing-report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps(report,indent=2))
 if errors: raise SystemExit(1)
+
 

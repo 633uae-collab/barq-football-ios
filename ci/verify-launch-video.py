@@ -10,7 +10,7 @@ import subprocess
 import sys
 import json
 from pathlib import Path
-from statistics import pstdev
+from statistics import median
 
 if len(sys.argv) != 2:
     raise SystemExit("expected the original cold-launch MP4")
@@ -26,9 +26,6 @@ if intervals:
     raise SystemExit("launch video failed: sustained black viewport; inspect original recording")
 print("No >=250ms near-black viewport interval detected; visual review is still required.")
 
-# A valid file can still omit the entire Core Animation interval: run 42707577250
-# had only 34 encoded frames in 23.6 s and no partially erased mark. Inspect the
-# actual encoded frames (never interpolate/duplicate them to manufacture 60 fps).
 metadata = json.loads(subprocess.check_output([
     'ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_frames',
     '-show_entries', 'frame=best_effort_timestamp_time', '-of', 'json', sys.argv[1]
@@ -41,28 +38,27 @@ raw = subprocess.check_output([
 ])
 stride = width * height
 assert len(raw) == len(timestamps) * stride, 'Decoded frames must match original timestamps'
+# The static original F occupies ~0.34 viewport widths in white pixels,
+# with its separate green dot bringing the full silhouette to 0.38.
+# Track the uncut departure from that measured size in the same short shot.
 samples = []
 for index, timestamp in enumerate(timestamps):
     frame = raw[index * stride:(index + 1) * stride]
-    # Static launch field away from the logo; excludes status/home indicators.
-    background = [frame[y * width + x] for y in range(52, 122) for x in range(8, 50)]
-    if pstdev(background) > 12 or sum(background) / len(background) > 30:
+    border = [frame[y * width + x] for y in (60, 90, 253, 281) for x in (4, 12, 147, 155)]
+    if median(border) > 30:
         continue
-    mark = [frame[y * width + x] for y in range(156, 192) for x in range(64, 96)]
-    samples.append((timestamp, sum(value > 180 for value in mark)))
-full_mark = max((count for _, count in samples), default=0)
-full_times = [time for time, count in samples if full_mark and count >= full_mark * .95]
-first_full = min(full_times, default=float('inf'))
-partial = [(time, count) for time, count in samples
-           if time > first_full and full_mark * .06 < count < full_mark * .94]
-report = {
-    'measurement': 'Original encoded MP4 frames; minimum phase visibility, not rendered-FPS certification',
-    'encodedFrames': len(timestamps), 'fullMarkWhitePixelsAt160px': full_mark,
-    'partialMarkFrames': [{'pts': time, 'whitePixels': count} for time, count in partial],
-    'distinctPartialStates': len({count for _, count in partial}),
-}
-Path('out').mkdir(exist_ok=True)
+    xs = [x for y in range(48, height - 48) for x in range(width) if frame[y * width + x] > 190]
+    if xs:
+        samples.append((timestamp, min(xs), max(xs), len(xs)))
+static = next((t for t, left, right, area in samples
+               if 48 <= left <= 53 and 100 <= right <= 109 and 900 < area < 3200), None)
+if static is None:
+    raise SystemExit('Missing centered original-size launch mark')
+moving = [(t, right-left+1) for t,left,right,area in samples
+          if static < t <= static + 3.0 and 60 <= right-left+1 < width-2 and area > 1700]
+report = dict(encodedFrames=len(timestamps), centeredLogoPTS=static, enlargingMark=moving,
+              distinctWidths=len(set(span for _,span in moving)))
 Path('out/frame-review.json').write_text(json.dumps(report, indent=2))
 print(json.dumps(report, indent=2))
-if len(partial) < 6 or report['distinctPartialStates'] < 4:
-    raise SystemExit('Recording omitted too much of the logo-erasure phase; do not approve visually')
+if len(moving) < 6 or report['distinctWidths'] < 4:
+    raise SystemExit('Insufficient distinct camera approach frames in the original recording')
