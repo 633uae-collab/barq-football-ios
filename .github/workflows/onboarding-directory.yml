@@ -1,0 +1,22 @@
+name: Export offline onboarding directory
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/fotiq-rider-reference]
+    paths: [ci/export-onboarding-directory.py]
+permissions:
+  contents: read
+jobs:
+  directory:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect official club and competition identities from the configured FOTIQ service
+        run: python3 ci/export-onboarding-directory.py onboarding-directory.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-onboarding-directory
+          path: onboarding-directory.json
+          if-no-files-found: error
