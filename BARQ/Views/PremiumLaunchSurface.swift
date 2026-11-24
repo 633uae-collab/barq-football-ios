@@ -118,6 +118,7 @@ final class PremiumLaunchLayer: UIView {
     private var link: CADisplayLink?
     private var commitLink: UIUpdateLink?
     private var preparedOffset: Double?
+    var clubsPresentationBoundary: (() -> CFTimeInterval?)?
     private var submittedAt: CFTimeInterval?
     private var prepared = false, started = false, finished = false
     private var tracks: [(CALayer, CAKeyframeAnimation)] = []
@@ -292,6 +293,12 @@ final class PremiumLaunchLayer: UIView {
         _ = clock.tick(active: false)
         guard preparedOffset == nil, SplashClock.nextReady,
               window?.windowScene?.activationState == .foregroundActive else { return }
+        // Two layout commits on a cold install can arrive within the same refresh.
+        // Let the clubs host appear and cross a display refresh after that commit.
+        if let boundary = clubsPresentationBoundary {
+            guard let readyAt = boundary(), display.timestamp > readyAt else { return }
+            SplashDiag.log.notice("CLUBS readyToRefresh=\(display.timestamp - readyAt, privacy: .public)")
+        }
         let setupStart = CACurrentMediaTime()
         let offset = PremiumLaunchTrack.holdCredit(displayedFor: clock.displayedFor(at: setupStart), reduceMotion: reduceMotion)
         prepareAnimations(offset: offset)
@@ -336,7 +343,11 @@ final class PremiumLaunchLayer: UIView {
         }
         applyState(at: duration)
         for (target, animation) in tracks {
-            animation.beginTime = target.convertTime(now, from: nil)
+            // On the first clubs reveal, let CA start the entire group on attachment.
+            // An explicit pre-commit timestamp ages the erase while the first scene is submitted.
+            if clubsPresentationBoundary == nil {
+                animation.beginTime = target.convertTime(now, from: nil)
+            }
             target.add(animation, forKey: animation.keyPath)
         }
         CATransaction.commit()
@@ -356,6 +367,7 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
         private var link: UIUpdateLink?
         private var readiness = LaunchCommitReadiness()
         private var firstCommitAt: CFTimeInterval?
+        private(set) var committedAt: CFTimeInterval?
         private var observedCommits = 0
         private var done = false
         override func layoutSubviews() {
@@ -376,6 +388,7 @@ struct LaunchDestinationReadiness: UIViewRepresentable {
             guard readiness.observe(layoutGeneration: layoutGeneration(),
                                     isActive: window?.windowScene?.activationState == .foregroundActive,
                                     updateTime: updateTime) else { return }
+            committedAt = now
             done = true; stop()
             os_signpost(.end, log: SplashDiag.points, name: "Rider destination preparation")
             SplashDiag.log.notice("READINESS observedCommits=\(self.observedCommits, privacy: .public) firstCommitToReady=\(now - (self.firstCommitAt ?? now), privacy: .public)")

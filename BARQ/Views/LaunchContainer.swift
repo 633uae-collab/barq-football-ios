@@ -56,6 +56,7 @@ final class LaunchContainerController: UIViewController {
     private var released = false
     private var coveredRootUpdates = 0
     private var motionRootUpdates = 0
+    private var appearedAt: CFTimeInterval?
 
     init(firstLaunch: Bool, reduceMotion: Bool, revision: String,
          prepare: @escaping (CGSize) async -> Void, render: @escaping () -> AnyView) {
@@ -72,11 +73,27 @@ final class LaunchContainerController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = UIColor(named: "RiderLaunchBackground")
         let cover = PremiumLaunchLayer(clock: clock, reduceMotion: reduceMotion) { [weak self] in self?.finish() }
+        if firstLaunch && !reduceMotion && Onboarding.loadDraft().step == 0 {
+            cover.clubsPresentationBoundary = { [weak self] in
+                guard let appeared = self?.appearedAt, let committed = self?.readiness?.committedAt else { return nil }
+                return max(appeared, committed)
+            }
+        }
         cover.frame = view.bounds
         cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(cover)
         surface = cover
         clock.onFirstFrame = { [weak self] in self?.prepareDestination() }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        appearedAt = CACurrentMediaTime()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        appearedAt = nil
     }
 
     func update(revision: String, render: @escaping () -> AnyView, transaction: Transaction) {
