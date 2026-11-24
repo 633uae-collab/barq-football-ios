@@ -10,6 +10,8 @@ import subprocess
 import sys
 import json
 from pathlib import Path
+from bisect import bisect_left
+from math import hypot
 
 if len(sys.argv) != 2:
     raise SystemExit("expected the original cold-launch MP4")
@@ -57,15 +59,36 @@ for index, time in enumerate(timestamps):
             groups.append(active)
         active['lastFull'] = time
         active['peak'] = max(active['peak'], count)
-    elif active is not None and time - active['lastFull'] < 1.2:
+    elif active is not None and time - active['lastFull'] < 0.8:
         if field and active['peak'] * .06 < count < active['peak'] * .94:
             active['partial'].append((time, count))
-        if active['partial']:
-            # The two-dimensional navy field becomes a centered dark disk.
+        if active['partial'] and .25 < time - active['lastFull'] < .75:
+            # Compare the current frame to the actual settled destination from this launch.
+            # A blank dark patch on a fully visible Home screen is not a contracting disk.
+            final_index = min(len(timestamps) - 1, bisect_left(timestamps, active['lastFull'] + 1.5))
+            end_frame = memoryview(raw)[final_index * stride:(final_index + 1) * stride]
             mid = rgb(80,174)
-            upper, lower = rgb(80,76), rgb(80,272)
-            if max(mid) <= 44 and all(sum(abs(a-b) for a,b in zip(c,mid)) > 27 for c in (upper, lower)):
-                active['disk'].append(time)
+            if max(mid) > 42:
+                continue
+            hidden, revealed = [], []
+            for y in range(32, 317, 5):
+                for x in range(5, 157, 5):
+                    offset = (y * width + x) * 3
+                    final = end_frame[offset:offset + 3]
+                    now = rgb(x, y)
+                    if sum(abs(a-b) for a,b in zip(final, mid)) < 58:
+                        continue
+                    distance = hypot(x - 79.5, y - 173.5)
+                    if max(abs(a-b) for a,b in zip(now, mid)) < 7:
+                        hidden.append(distance)
+                    elif sum(abs(a-b) for a,b in zip(now, final)) < 42:
+                        revealed.append(distance)
+            # Both parts of the destination must contain recognizable detail.
+            if len(hidden) >= 12 and len(revealed) >= 12:
+                hidden.sort()
+                revealed.sort()
+                if hidden[int(.9 * len(hidden))] < revealed[int(.1 * len(revealed))]:
+                    active['disk'].append(time)
 partial = groups[-1]['partial'] if groups else []
 disk = groups[-1]['disk'] if groups else []
 report = {
