@@ -14,8 +14,6 @@ jobs:
     if: github.event.repository.private == false
     runs-on: macos-15
     timeout-minutes: 50
-    env:
-      HOMEBREW_NO_AUTO_UPDATE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Select Apple Silicon and start iPhone
@@ -37,9 +35,12 @@ jobs:
         timeout-minutes: 15
         run: |
           set -euo pipefail
-          command -v xcodegen >/dev/null || brew install xcodegen
-          command -v ffprobe >/dev/null || brew install ffmpeg
-          xcodegen generate
+          curl -fsSL https://github.com/yonaskolb/XcodeGen/releases/download/2.48.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo "620c9f0dc10849f94728ab5df52d225ebab8187439dd6fee1925e59e80dff892  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          ditto -x -k "$RUNNER_TEMP/xcodegen.zip" "$RUNNER_TEMP/rider-tools"
+          GENERATOR=$(find "$RUNNER_TEMP/rider-tools" -type f -path '*/bin/xcodegen' -print -quit)
+          test -x "$GENERATOR"
+          "$GENERATOR" generate
           clang -O2 ci/process-birth.c -o out/process-birth
           xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing > out/build.log 2>&1 || { tail -80 out/build.log; exit 1; }
           codesign --verify --deep --strict dd/Build/Products/Release-iphonesimulator/BARQ.app
@@ -61,6 +62,19 @@ jobs:
         if: '!cancelled() && steps.journey.outcome == ''success'''
         timeout-minutes: 6
         run: bash ci/record-launch.sh quick
+      - name: Verify the system Reduce Motion launch
+        if: '!cancelled() && steps.journey.outcome == ''success'''
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          xcrun simctl terminate "$UDID" ae.barq.football || true
+          xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool YES
+          xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > out/reduced-timing.log 2>&1 &
+          LOG=$!
+          trap 'kill "$LOG" 2>/dev/null || true; xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool NO' EXIT
+          sleep 2
+          python3 ci/launch-measured.py out/reduced-timing.log reduced -lang ar
+          grep -q 'FINISH firstLaunch=false .*mode=reduced' out/reduced-timing.log
       - name: Preserve original screen recordings
         if: always()
         uses: actions/upload-artifact@v4
@@ -73,12 +87,28 @@ jobs:
             out/*.log
             out/*.txt
             out/*.json*
-      - name: Check original encoded camera motion
-        if: '!cancelled() && steps.first.outcome == ''success'''
-        run: python3 ci/verify-launch-video.py out/first-launch-uncut.mp4
       - name: Verify portal geometry and committed readiness on iOS
         if: '!cancelled() && steps.first.outcome == ''success'''
         timeout-minutes: 8
         run: |
           set -o pipefail
           xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -parallel-testing-enabled NO test -only-testing:BARQTests/PremiumExperienceTests -only-testing:BARQTests/LaunchCommitReadinessTests 2>&1 | tee out/portal-tests.log
+
+  review-originals:
+    needs: capture
+    if: '!cancelled() && github.event.repository.private == false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rider-portal-originals
+          path: out
+      - name: Check original camera frames and callback timing
+        run: |
+          set -euo pipefail
+          command -v ffmpeg >/dev/null || { sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg; }
+          python3 ci/verify-launch-video.py out/first-launch-uncut.mp4
+          cat out/first-timing.log out/quick-timing.log out/reduced-timing.log > out/portal-timing.log
+          python3 ci/verify-launch-timing.py out/portal-timing.log

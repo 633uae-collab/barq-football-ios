@@ -65,4 +65,16 @@ grep -q 'FINISH firstLaunch=' "out/$MODE-timing.log"
 cleanup
 trap - EXIT
 # Reject recordings that missed startup instead of accepting log success alone.
-ffprobe -v error -show_entries format=duration -of csv=p=0 "out/$MODE-launch-uncut.mp4" | python3 -c 'import sys; d=float(sys.stdin.read()); assert d >= 5, f"Recording missed launch: {d}s"'
+if command -v ffprobe >/dev/null; then
+  duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "out/$MODE-launch-uncut.mp4")
+else
+  # Read the same original asset duration with the macOS framework.
+  duration=$(swift - "out/$MODE-launch-uncut.mp4" <<'SWIFT'
+import AVFoundation
+let asset = AVURLAsset(url: URL(fileURLWithPath: CommandLine.arguments[1]))
+let duration = try await asset.load(.duration)
+print(CMTimeGetSeconds(duration))
+SWIFT
+)
+fi
+python3 -c 'import sys; d=float(sys.argv[1]); assert d >= 5, f"Recording missed launch: {d}s"' "$duration"
