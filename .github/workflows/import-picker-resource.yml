@@ -1,0 +1,40 @@
+name: Import verified picker image resource
+on:
+  push:
+    branches: [codex/fotiq-rider-reference]
+    paths: [.github/workflows/import-picker-resource.yml]
+permissions: {}
+jobs:
+  import:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download the previously validated image export
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14978698669/zip" > verified.zip
+          echo 'f84de7f9421139878182afc14a342b6eb580cd78f903ab10ee5a4ec1a62cc8f0  verified.zip' | sha256sum -c -
+          unzip -p verified.zip PickerCrests.sqlite > export.sqlite
+      - name: Build the read-only crest index
+        run: |
+          python3 -m venv /tmp/picker
+          /tmp/picker/bin/pip -q install pillow==11.3.0
+          /tmp/picker/bin/python ci/package-picker-crests.py export.sqlite PickerCrests.sqlite
+      - name: Transfer only the verified binary as a Git blob
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          expected=$(git hash-object PickerCrests.sqlite)
+          python3 -c 'import base64,json;print(json.dumps({"encoding":"base64","content":base64.b64encode(open("PickerCrests.sqlite","rb").read()).decode()}))' | gh api -X POST "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha > blob.txt
+          test "$(cat blob.txt)" = "$expected"
+          echo "VERIFIED_CREST_BLOB=$expected"
