@@ -1,0 +1,27 @@
+name: Prepare picker artwork
+on:
+  push:
+    branches: [codex/fotiq-rider-reference]
+    paths:
+      - ci/export-picker-crests.py
+      - .github/workflows/onboarding-artwork.yml
+permissions:
+  contents: read
+jobs:
+  export:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package public artwork for the checked-in catalog
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/picker-artwork
+          /tmp/picker-artwork/bin/pip -q install pillow==11.3.0
+          /tmp/picker-artwork/bin/python ci/export-picker-crests.py BARQ/Resources/onboarding-directory.json PickerCrests.sqlite
+      - uses: actions/upload-artifact@v4
+        with:
+          name: picker-crests
+          path: PickerCrests.sqlite
+          retention-days: 7
