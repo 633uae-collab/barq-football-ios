@@ -4,12 +4,15 @@ import json
 import sqlite3
 import sys
 import time
+from threading import Event
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
+
+rate_limited = Event()
 
 def fetch(entry):
     kind, identity, url = entry
@@ -17,21 +20,30 @@ def fetch(entry):
     if url != expected:
         raise ValueError(f"Unexpected artwork address for {kind}/{identity}")
     for attempt in range(2):
+        if rate_limited.is_set():
+            raise RuntimeError("Image service requested a cooldown")
         try:
             with urlopen(Request(url, headers={"Accept": "image/png"}), timeout=20) as response:
                 data = response.read(2_000_001)
-                if len(data) > 2_000_000 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
-                    raise ValueError(f"Non-PNG response for {kind}/{identity}")
+                if len(data) > 2_000_000:
+                    raise ValueError(f"Oversized response for {kind}/{identity}")
             with Image.open(io.BytesIO(data)) as original:
+                if original.format not in ("PNG", "JPEG", "WEBP", "GIF") or max(original.size) > 2048:
+                    return kind, identity, None
                 original.load()
                 image = original.convert("RGBA")
                 if not image.getbbox():
-                    raise ValueError(f"Empty artwork for {kind}/{identity}")
+                    return kind, identity, None
                 image.thumbnail((156, 156), Image.Resampling.LANCZOS)
                 output = io.BytesIO()
                 image.save(output, "WEBP", lossless=True, method=4)
                 return kind, identity, output.getvalue()
+        except UnidentifiedImageError:
+            print(f"Undecodable {kind}/{identity}: {response.headers.get('Content-Type')}", flush=True)
+            return kind, identity, None
         except HTTPError as error:
+            if error.code == 429:
+                rate_limited.set()
             if error.code in (404, 410):
                 return kind, identity, None
             if error.code not in (500, 502, 503, 504) or attempt:
