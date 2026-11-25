@@ -8,6 +8,8 @@ on:
       - BARQ/Views/OnboardingViews.swift
       - BARQ/Resources/LaunchScreen.storyboard
       - BARQ/Resources/onboarding-directory.json
+      - BARQ/Resources/PickerCrests.sqlite
+      - BARQ/Views/PickerCrestStore.swift
       - BARQ/Core/ClubDirectory.swift
       - BARQUITests/OnboardingUITests.swift
       - ci/record-club-journey.sh
@@ -114,7 +116,7 @@ jobs:
         timeout-minutes: 8
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -parallel-testing-enabled NO test -only-testing:BARQTests/PremiumExperienceTests -only-testing:BARQTests/LaunchCommitReadinessTests -only-testing:BARQTests/P0OnboardingTests 2>&1 | tee out/rider-tests.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -parallel-testing-enabled NO test -only-testing:BARQTests/PremiumExperienceTests -only-testing:BARQTests/LaunchCommitReadinessTests -only-testing:BARQTests/P0OnboardingTests -only-testing:BARQTests/LaunchImageCacheTests 2>&1 | tee out/rider-tests.log
 
       - name: Verify a background return does not replay the launch
         if: ${{ !cancelled() && steps.journey.outcome == 'success' }}

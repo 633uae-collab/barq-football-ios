@@ -526,7 +526,10 @@ struct PickTile: View, Equatable {
     var body: some View {
         Button { if !on { Haptics.favoriteAdded() }; toggle() } label: {
             VStack(spacing: 8) {
-                RemoteImage(url: logo, size: 52)
+                // Both navy and white transparent crests need contrast on the picker.
+                RemoteImage(url: logo, size: 44, fallbackName: name)
+                    .frame(width: 52, height: 52)
+                    .background(Circle().fill(Color(red: 0.54, green: 0.58, blue: 0.63)))
                 Text(name).font(.footnote.weight(.semibold)).lineLimit(2).multilineTextAlignment(.center).frame(height: 34)
                 Image(systemName: on ? "star.fill" : "star").font(.title3)
                     .foregroundStyle(on ? Color("BrandGreen") : .secondary)

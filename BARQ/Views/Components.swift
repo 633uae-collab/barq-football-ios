@@ -6,7 +6,11 @@ import SwiftUI
 /// failure/cancellation, which left placeholder shields in fast-scrolling carousels).
 final class ImageStore {
     static let shared = ImageStore()
-    let mem = NSCache<NSString, UIImage>()
+    let mem: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 256
+        return cache
+    }()
     private let pendingLock = NSLock()
     private var pending: [URL: Task<UIImage?, Never>] = [:]
     let session: URLSession = {
@@ -45,6 +49,10 @@ final class ImageStore {
             if let task = pending[url] { return task }
             let task = Task.detached(priority: .userInitiated) { [self] () -> UIImage? in
                 defer { pendingLock.withLock { _ = pending.removeValue(forKey: url) } }
+                if let local = PickerCrestStore.shared.image(for: url) {
+                    mem.setObject(local, forKey: key)
+                    return local
+                }
                 for attempt in 0..<3 {
                     if let (data, response) = try? await session.data(from: url),
                        (response as? HTTPURLResponse)?.statusCode == 200,
@@ -77,18 +85,23 @@ struct RemoteImage: View {
     var size: CGFloat = 32
     var circle = false
     var waitForLaunch = true
+    var fallbackName: String? = nil
     @Environment(\.launchPreparedImages) private var prepared
-    @State private var img: UIImage?
+    @State private var loaded: (address: String, image: UIImage)?
     var body: some View {
         Group {
-            if let image = prepared[url ?? ""] ?? img { Image(uiImage: image).resizable().scaledToFit().transition(.opacity) }
+            if let image = prepared[url ?? ""] ?? (loaded?.address == url ? loaded?.image : nil) { Image(uiImage: image).resizable().scaledToFit().transition(.opacity) }
+            else if let fallbackName {
+                let initials = fallbackName.split(whereSeparator: { $0.isWhitespace }).prefix(3).compactMap(\.first)
+                Text(verbatim: String(initials)).font(.footnote.bold()).foregroundStyle(.black.opacity(0.8))
+            }
             else { Image(systemName: fallback).resizable().scaledToFit().foregroundStyle(.secondary).padding(size * 0.18) }
         }
         .frame(width: size, height: size)
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(Rectangle()))
         .task(id: url) {
             guard !Task.isCancelled else { return }
-            guard let s = url, let u = URL(string: s) else { img = nil; return }
+            guard let s = url, let u = URL(string: s) else { loaded = nil; return }
             // Prepared launch pixels participate in the first body evaluation;
             // do not enqueue one @State transaction per cached logo afterwards.
             if prepared[s] != nil { return }
@@ -97,7 +110,7 @@ struct RemoteImage: View {
                 // map was built. That late cache hit is still a state mutation.
                 if waitForLaunch { await LaunchGate.wait() }
                 guard !Task.isCancelled else { return }
-                img = c
+                loaded = (s, c)
                 return
             }
             // Immutable local/bundled pixels are already present. A cache miss
@@ -106,7 +119,7 @@ struct RemoteImage: View {
             guard !Task.isCancelled else { return }
             let r = await ImageStore.shared.image(u)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { img = r }
+            withAnimation(.easeOut(duration: 0.2)) { loaded = r.map { (s, $0) } }
         }
     }
 }

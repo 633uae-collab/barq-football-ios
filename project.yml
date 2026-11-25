@@ -20,7 +20,9 @@ targets:
     platform: iOS
     sources:
       - path: BARQ
-        excludes: [Resources/PreparedBrandMark.rgba]
+        excludes: [Resources/PreparedBrandMark.rgba, Resources/PickerCrests.sqlite]
+      - path: BARQ/Resources/PickerCrests.sqlite
+        buildPhase: resources
       - path: BARQ/Resources/PreparedBrandMark.rgba
         buildPhase: resources
       - Shared

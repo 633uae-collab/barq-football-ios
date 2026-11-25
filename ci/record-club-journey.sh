@@ -4,6 +4,7 @@ set -euo pipefail
 mkdir -p out/picker
 marker="/tmp/fotiq-picker-$UDID.home"
 rm -f "$marker"
+for label in clubs barcelona leagues cups; do rm -f "/tmp/fotiq-picker-$UDID-$label.png"; done
 xcrun simctl uninstall "$UDID" ae.barq.football
 app=$(find dd/Build/Products/Release-iphonesimulator -maxdepth 1 -name BARQ.app -print -quit)
 test -d "$app"
@@ -40,6 +41,11 @@ watcher=""
 wait "$rec"
 trap - EXIT
 test -s out/picker/Clubs-to-Home.mp4
+for label in clubs barcelona leagues cups; do
+  shot="/tmp/fotiq-picker-$UDID-$label.png"
+  test -s "$shot"
+  cp "$shot" "out/picker/$label.png"
+done
 printf '%s\n' "$UDID" > out/picker/simulator-udid.txt
 git rev-parse HEAD > out/picker/head.txt
 container=$(xcrun simctl get_app_container "$UDID" ae.barq.football data)

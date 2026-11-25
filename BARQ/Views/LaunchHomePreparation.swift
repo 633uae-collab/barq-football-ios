@@ -84,25 +84,18 @@ actor LaunchHomeCache {
     func prepareCachedImages(_ addresses: [String]) -> [String: UIImage] {
         var prepared: [String: UIImage] = [:]
         var diskHits = 0, bundledHits = 0
-        // Original provider PNGs for the six identities already bundled by
-        // ClubDirectory. Fresh installation can reveal their real logos even
-        // without a prior disk cache or any internet connection.
-        let bundled = Dictionary(uniqueKeysWithValues: [40, 50, 33, 42, 49, 85].map {
-            ("https://media.api-sports.io/football/teams/\($0).png", "LaunchClub\($0)")
-        })
         for address in addresses {
             if let image = ImageStore.shared.mem.object(forKey: address as NSString) {
                 prepared[address] = image
                 continue
             }
-            if let name = bundled[address], let image = UIImage(named: name) {
-                let decoded = image.preparingForDisplay() ?? image
-                prepared[address] = decoded
-                ImageStore.shared.mem.setObject(decoded, forKey: address as NSString)
+            guard let url = URL(string: address) else { continue }
+            if let local = PickerCrestStore.shared.image(for: url) {
+                prepared[address] = local
+                ImageStore.shared.mem.setObject(local, forKey: address as NSString)
                 bundledHits += 1
                 continue
             }
-            guard let url = URL(string: address) else { continue }
             let data: Data?
             if let durableData = imageDisk.load(address) {
                 data = durableData

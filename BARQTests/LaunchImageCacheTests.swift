@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import BARQ
 
@@ -52,5 +53,22 @@ final class LaunchImageCacheTests: XCTestCase {
         for address in addresses {
             XCTAssertGreaterThan(images[address]?.size.width ?? 0, 0)
         }
+    }
+
+    func testPickerCrestsDecodeOfflineAndKeepTeamAndCompetitionIDsSeparate() throws {
+        let base = "https://media.api-sports.io/football"
+        func crest(_ path: String) throws -> UIImage {
+            let url = try XCTUnwrap(URL(string: base + "/" + path))
+            return try XCTUnwrap(PickerCrestStore.shared.image(for: url), path)
+        }
+        _ = try crest("teams/529.png")
+        _ = try crest("teams/2865.png")
+        _ = try crest("leagues/140.png")
+        _ = try crest("leagues/2.png")
+        let arsenal = try crest("teams/42.png")
+        let leagueTwo = try crest("leagues/42.png")
+        XCTAssertNotEqual(try XCTUnwrap(arsenal.pngData()), try XCTUnwrap(leagueTwo.pngData()))
+        let otherHost = try XCTUnwrap(URL(string: "https://example.org/football/teams/529.png"))
+        XCTAssertNil(PickerCrestStore.shared.image(for: otherHost))
     }
 }
