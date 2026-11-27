@@ -405,7 +405,7 @@ struct ClubPickStep: View {
                 GlassEffectContainer(spacing: 12) {
                     LazyVGrid(columns: cols, spacing: 12) {
                         ForEach(shown) { t in
-                            PickTile(id: "ob-club-\(t.id)", name: t.name, logo: t.logo, on: selected.contains { $0.id == t.id }) {
+                            PickTile(id: "ob-club-\(t.id)", name: t.name, logo: t.logo, on: selected.contains { $0.id == t.id }, showsCrestBackdrop: false) {
                                 searchFocused = false
                                 if let i = selected.firstIndex(where: { $0.id == t.id }) { selected.remove(at: i) } else { selected.append(t) }
                             }
@@ -517,19 +517,25 @@ struct CompetitionPickStep: View {
 }
 
 struct PickTile: View, Equatable {
-    static func == (a: PickTile, b: PickTile) -> Bool { a.id == b.id && a.on == b.on && a.name == b.name && a.logo == b.logo }
+    static func == (a: PickTile, b: PickTile) -> Bool {
+        a.id == b.id && a.on == b.on && a.name == b.name && a.logo == b.logo && a.showsCrestBackdrop == b.showsCrestBackdrop
+    }
     let id: String
     let name: String
     let logo: String?
     let on: Bool
+    var showsCrestBackdrop = true
     var toggle: () -> Void
     var body: some View {
         Button { if !on { Haptics.favoriteAdded() }; toggle() } label: {
             VStack(spacing: 8) {
-                // Both navy and white transparent crests need contrast on the picker.
-                RemoteImage(url: logo, size: 44, fallbackName: name)
+                RemoteImage(url: logo, size: 44, fallbackName: showsCrestBackdrop ? name : nil)
                     .frame(width: 52, height: 52)
-                    .background(Circle().fill(Color(red: 0.54, green: 0.58, blue: 0.63)))
+                    .background {
+                        if showsCrestBackdrop {
+                            Circle().fill(Color(red: 0.54, green: 0.58, blue: 0.63))
+                        }
+                    }
                 Text(name).font(.footnote.weight(.semibold)).lineLimit(2).multilineTextAlignment(.center).frame(height: 34)
                 Image(systemName: on ? "star.fill" : "star").font(.title3)
                     .foregroundStyle(on ? Color("BrandGreen") : .secondary)
