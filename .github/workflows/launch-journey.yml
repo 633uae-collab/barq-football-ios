@@ -1,6 +1,14 @@
 name: Launch journey validation and video
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [codex/premium-cinematic]
+    paths:
+      - BARQ/**
+      - BARQTests/**
+      - BARQUITests/**
+      - ci/**
+      - .github/workflows/launch-journey.yml
   push:
     branches: [codex/fotiq-development, codex/backend-rebuild, codex/premium-cinematic]
     paths:
@@ -29,17 +37,51 @@ permissions:
   contents: read
 jobs:
   launch-journey:
-    # Try the separate standard Intel pool after macOS 26 and 15 ARM jobs
-    # stalled provisioning. Public-repository runner; Xcode26/iOS26 and all
-    # original recording, unit, UI and performance checks remain unchanged.
+    if: github.event_name == 'workflow_dispatch' || github.head_ref != 'codex/fotiq-rider-reference'
+    # Validate the final prefetch boundary; the same app source also has an ARM run.
+    # Standard public runner only; no larger or paid service.
     runs-on: macos-15-intel
-    timeout-minutes: 60
+    # Retain time for raw profiling after native tests; app timing gates are unchanged.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 26
+      - name: Select the verified Xcode 26.3 profiler
         run: |
-          X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); sudo xcode-select -s "$X"; xcodebuild -version
+          test -d /Applications/Xcode_26.3.app
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          mkdir -p out
+          xcodebuild -version | tee out/xcode-version.txt
+          sw_vers > out/host-version.txt
+          system_profiler SPDisplaysDataType SPHardwareDataType > out/host-rendering-hardware.txt
+          xcrun simctl list devices available -j > out/simulator-devices.json
+      - name: Test committed-layout readiness before simulator startup
+        run: |
+          set -o pipefail
+          READINESS_PACKAGE="$RUNNER_TEMP/launch-readiness"
+          mkdir -p "$READINESS_PACKAGE"
+          cp BARQ/Views/LaunchCommitReadiness.swift BARQTests/LaunchCommitReadinessTests.swift "$READINESS_PACKAGE/"
+          cat > "$READINESS_PACKAGE/Package.swift" <<'SWIFT'
+          // swift-tools-version: 5.9
+          import PackageDescription
+          let package = Package(name: "LaunchReadiness", targets: [
+              .testTarget(name: "LaunchReadinessTests", path: ".",
+                  sources: ["LaunchCommitReadiness.swift", "LaunchCommitReadinessTests.swift"],
+                  swiftSettings: [.define("LAUNCH_READINESS_STANDALONE")])
+          ])
+          SWIFT
+          swift test --package-path "$READINESS_PACKAGE" 2>&1 | tee out/launch-readiness-tests.log
       - run: brew install xcodegen ffmpeg && xcodegen generate
+      - name: Build host-side process birth measurement
+        run: mkdir -p out && clang -O2 ci/process-birth.c -o out/process-birth
+      - name: Keep the capture display awake
+        run: caffeinate -d -i -u -t 3600 </dev/null >/tmp/fotiq-capture-awake.log 2>&1 &
+      - name: Compile native targets before simulator boot
+        id: compile_native
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          # Catch source errors without first paying the simulator migration cost.
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination 'generic/platform=iOS Simulator' ARCHS="$(uname -m)" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee out/compile-unit.log
       - name: Pick simulator, enable touch indicators, boot
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "
@@ -50,18 +92,26 @@ jobs:
           echo "UDID=$UDID" >> $GITHUB_ENV
           defaults write com.apple.iphonesimulator ShowSingleTouches 1
           defaults write com.apple.iphonesimulator ShowPinches 1
+          BOOT_START=$(python3 -c 'import time; print(time.monotonic())')
           xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
+          python3 -c 'import json,time,sys; json.dump({"simulatorBootSeconds":time.monotonic()-float(sys.argv[1]),"includedInAppTiming":False},open("out/simulator-boot.json","w"))' "$BOOT_START"
           xcrun simctl ui "$UDID" appearance dark
           open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
       - name: All unit tests
+        timeout-minutes: 20
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test -resultBundlePath unit.xcresult 2>&1 | tee unit.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -resultBundlePath unit.xcresult 2>&1 | tee unit.log
       - name: Build UI tests
         id: build_ui
+        # Preserve any unit failure; still collect independent native launch
+        # evidence when XCTest's unit-host bootstrap fails or times out.
+        if: ${{ !cancelled() && steps.compile_native.outcome == 'success' }}
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
+          # UI automation does not import the app's internal symbols. Rebuild
+          # the recorded application with production Release testability OFF.
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee build-ui.log
       - name: Verify simulator resource signature before launch
         run: |
           # iOS 26 SplashBoard rejected unsealed launch resources with -67056
@@ -72,6 +122,17 @@ jobs:
           /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
       - name: Record unedited first launch separately
         run: bash ci/record-launch.sh first
+      - name: Publish first-launch evidence for frame review
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-launch-review
+          path: |
+            out/first-launch-uncut.mp4
+            out/first-timing.log
+            out/first-destination.png
+            out/startup-measurements.jsonl
+          retention-days: 7
       - name: Record first launch, interrupted selection and quick relaunch
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
@@ -83,24 +144,119 @@ jobs:
           REC=$!
           trap 'kill -INT "$REC" 2>/dev/null || true; wait "$REC" || true; kill "$LOG" 2>/dev/null || true' EXIT
           sleep 2
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/LaunchJourneyUITests -only-testing:BARQUITests/P0OfflineOnboardingUITests -only-testing:BARQUITests/PremiumExperienceUITests/testCoveredDestinationIsNotExposedToAccessibility -only-testing:BARQUITests/PremiumExperienceUITests/testBackgroundResumeDoesNotRestartLaunchOrOnboarding -resultBundlePath journey.xcresult 2>&1 | tee out/journey.log
+      - name: Repeat the previously failing offline completion three times
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > out/offline-repetition-timing.log 2>&1 &
+          LOG=$!
+          trap 'kill "$LOG" 2>/dev/null || true' EXIT
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/P0OfflineOnboardingUITests -test-iterations 3 -resultBundlePath offline-repetition.xcresult 2>&1 | tee out/offline-repetition.log
+      - name: Export launch UI diagnostics without masking a failure
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        run: |
+          for RESULT in journey offline-repetition; do
+            if [[ -d "$RESULT.xcresult" ]]; then
+              xcrun xcresulttool get test-results summary --path "$RESULT.xcresult" > "out/$RESULT-summary.json"
+              xcrun xcresulttool export attachments --path "$RESULT.xcresult" --output-path "out/$RESULT-attachments"
+            fi
+          done
+      - name: Complete real onboarding for standalone reopen recordings
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        run: |
+          # A failed reset-onboarding test must not silently leave the recorder
+          # on the clubs screen. Complete the real UI journey on this device;
+          # never seed preferences or bypass onboarding for the review videos.
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/LaunchJourneyUITests -resultBundlePath recording-setup.xcresult 2>&1 | tee out/recording-setup.log
       - name: Record unedited close and quick reopen separately
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: bash ci/record-launch.sh quick
       - name: Record five consecutive real process restarts
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: bash ci/record-repeated-launch.sh
-      - name: Verify real score association in Arabic and English
+      - name: Publish reopen evidence for frame review
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: repeated-launch-review
+          path: |
+            out/quick-launch-uncut.mp4
+            out/repeated-launches-uncut.mp4
+            out/quick-timing.log
+            out/repeated-timing.log
+            out/repeated-cycles.log
+            out/startup-measurements.jsonl
+          retention-days: 7
+      - name: Verify real score association in Arabic and English
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' && github.head_ref != 'codex/fotiq-rider-reference' && github.ref_name != 'codex/fotiq-rider-reference' }}
         run: |
           set -o pipefail
-          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test-without-building -parallel-testing-enabled NO -only-testing:BARQUITests/ScoreAssociationUITests -resultBundlePath scores.xcresult 2>&1 | tee out/scores.log
+      - name: Record Reduce Motion using the system accessibility preference
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        run: |
+          # Preserve the normal reopen clip even if the accessibility capture
+          # fails. Always restore the system preference before profiling.
+          restore_normal_capture() {
+            xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool NO || true
+            [[ ! -f out/normal-quick-launch-uncut.mp4 ]] || mv out/normal-quick-launch-uncut.mp4 out/quick-launch-uncut.mp4
+            [[ ! -f out/normal-quick-timing.log ]] || mv out/normal-quick-timing.log out/quick-timing.log
+          }
+          trap restore_normal_capture EXIT
+          [[ ! -f out/quick-launch-uncut.mp4 ]] || mv out/quick-launch-uncut.mp4 out/normal-quick-launch-uncut.mp4
+          [[ ! -f out/quick-timing.log ]] || mv out/quick-timing.log out/normal-quick-timing.log
+          xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool YES
+          result=0
+          bash ci/record-launch.sh quick || result=$?
+          [[ ! -f out/quick-launch-uncut.mp4 ]] || mv out/quick-launch-uncut.mp4 out/reduced-motion-uncut.mp4
+          [[ ! -f out/quick-timing.log ]] || mv out/quick-timing.log out/reduced-timing.log
+          restore_normal_capture
+          trap - EXIT
+          exit "$result"
+      - name: Independently record the Simulator window when permission is available
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        timeout-minutes: 4
+        continue-on-error: true
+        run: bash ci/record-window-launch.sh
+      - name: Independently record a real reopen with native HEVC
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        timeout-minutes: 3
+        continue-on-error: true
+        run: bash ci/record-codec-launch.sh
+      - name: Correlate Instruments stacks with simultaneous original recording
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        timeout-minutes: 6
+        continue-on-error: true
+        run: bash ci/profile-rider.sh
+      - name: Instruments Time Profiler and Animation Hitches
+        if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
+        timeout-minutes: 4
+        continue-on-error: true
+        run: |
+          mkdir -p out/trace
+          APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
+          APP=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$APP")
+          for TEMPLATE in 'Time Profiler' 'Animation Hitches'; do
+            NAME=$(echo "$TEMPLATE" | tr -d ' ')
+            xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
+            xcrun xctrace record --template "$TEMPLATE" --device "$UDID" --time-limit 12s --output "out/trace/$NAME.trace" --launch -- "$APP" -lang ar > "out/trace/$NAME.log" 2>&1 || true
+            if [[ -d "out/trace/$NAME.trace" ]]; then
+              xcrun xctrace export --input "out/trace/$NAME.trace" --toc > "out/trace/$NAME-toc.xml" 2>&1 || true
+              if [[ "$NAME" == TimeProfiler ]]; then
+                for SCHEMA in time-profile potential-hangs; do
+                  xcrun xctrace export --input "out/trace/$NAME.trace" --xpath "/trace-toc/run[@number='1']/data/table[@schema='$SCHEMA']" > "out/trace/$SCHEMA.xml" 2>&1 || true
+                done
+              fi
+            fi
+          done
       - name: Enforce measured premium and Reduce Motion launch budgets
         if: ${{ !cancelled() && steps.build_ui.outcome == 'success' }}
         run: |
           result=0
           : > out/all-launch-timing.log
-          for log in out/first-timing.log out/quick-timing.log out/launch-timing.log out/repeated-timing.log; do
+          for log in out/first-timing.log out/quick-timing.log out/launch-timing.log out/repeated-timing.log out/reduced-timing.log out/offline-repetition-timing.log; do
             if [[ -f "$log" ]]; then cat "$log" >> out/all-launch-timing.log
             else echo "::error::Required timing evidence is missing: $log"; result=1; fi
           done
@@ -114,7 +270,7 @@ jobs:
         run: |
           xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
           # Watch before launch: waiting for simctl's returned PID missed the
-          # first 1.4 seconds in run42610995143, including the startup stall.
+          # first animation interval in run42610995143, including the startup stall.
           (
             for attempt in $(seq 1 200); do
               PID=$(pgrep -x BARQ | head -1 || true)
@@ -150,5 +306,9 @@ jobs:
             build-ui.log
             unit.xcresult
             journey.xcresult
+            offline-repetition.xcresult
+            recording-setup.xcresult
             scores.xcresult
           retention-days: 14
+
+

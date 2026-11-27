@@ -1,0 +1,148 @@
+name: Rider reference native capture
+on:
+  push:
+    branches: [codex/fotiq-rider-reference]
+    paths:
+      - .github/workflows/rider-portal-capture.yml
+      - BARQ/Views/PremiumLaunchSurface.swift
+      - BARQ/Views/OnboardingViews.swift
+      - BARQ/Resources/LaunchScreen.storyboard
+      - BARQ/Resources/onboarding-directory.json
+      - BARQ/Resources/PickerCrests.sqlite
+      - BARQ/Views/PickerCrestStore.swift
+      - BARQ/Core/ClubDirectory.swift
+      - BARQUITests/OnboardingUITests.swift
+      - ci/record-club-journey.sh
+permissions:
+  contents: read
+jobs:
+  capture:
+    if: github.event.repository.private == false
+    runs-on: macos-26
+    outputs:
+      originals: ${{ steps.originals.outputs.artifact-id }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Apple Silicon and start iPhone
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          mkdir -p out
+          git rev-parse HEAD > out/head.txt
+          uname -m > out/architecture.txt
+          xcodebuild -version > out/xcode.txt
+          xcrun simctl list devices available -j > out/devices.json
+          UDID=$(python3 -c "import json; print(next(x['udid'] for k,v in json.load(open('out/devices.json'))['devices'].items() if k.endswith('iOS-26-5') for x in v if x['name'] == 'iPhone 17 Pro'))")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          echo "$UDID" > out/recorded-udid.txt
+          xcrun simctl boot "$UDID"
+      - name: Prepare original resources and compile the recording build
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/yonaskolb/XcodeGen/releases/download/2.48.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo "620c9f0dc10849f94728ab5df52d225ebab8187439dd6fee1925e59e80dff892  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          ditto -x -k "$RUNNER_TEMP/xcodegen.zip" "$RUNNER_TEMP/rider-tools"
+          GENERATOR=$(find "$RUNNER_TEMP/rider-tools" -type f -path '*/bin/xcodegen' -print -quit)
+          test -x "$GENERATOR"
+          "$GENERATOR" generate
+          clang -O2 ci/process-birth.c -o out/process-birth
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing > out/build.log 2>&1 || { tail -80 out/build.log; exit 1; }
+          codesign --verify --deep --strict dd/Build/Products/Release-iphonesimulator/BARQ.app
+          xcrun simctl bootstatus "$UDID" -b
+      - name: Record fresh installation to club selection
+        id: first
+        timeout-minutes: 5
+        run: |
+          bash ci/record-launch.sh first
+          grep -q 'FINISH firstLaunch=true .*ready=true .*mode=premium' out/first-timing.log
+      - name: Complete onboarding and verify the native home on reopen
+        id: journey
+        if: success() || steps.first.outcome == 'failure'
+        timeout-minutes: 9
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release -parallel-testing-enabled NO test-without-building -only-testing:BARQUITests/LaunchJourneyUITests 2>&1 | tee out/journey.log
+      - name: Record real process reopen to home
+        if: '!cancelled() && steps.journey.outcome == ''success'''
+        timeout-minutes: 6
+        run: bash ci/record-launch.sh quick
+      - name: Capture the simulator window through ScreenCaptureKit
+        if: ${{ !cancelled() && steps.journey.outcome == 'success' }}
+        timeout-minutes: 4
+        run: bash ci/record-window-launch.sh
+      - name: Verify the system Reduce Motion launch
+        if: '!cancelled() && steps.journey.outcome == ''success'''
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          xcrun simctl terminate "$UDID" ae.barq.football || true
+          xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool YES
+          xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > out/reduced-timing.log 2>&1 &
+          LOG=$!
+          trap 'kill "$LOG" 2>/dev/null || true; xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool NO' EXIT
+          sleep 2
+          python3 ci/launch-measured.py out/reduced-timing.log reduced -lang ar
+          grep -q 'FINISH firstLaunch=false .*mode=reduced' out/reduced-timing.log
+      - name: Preserve original screen recordings
+        id: originals
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rider-reference-originals
+          retention-days: 30
+          path: |
+            out/*.mp4
+            out/*.png
+            out/*.log
+            out/*.txt
+            out/*.json*
+      - name: Record real club, league and cup selections through Home
+        if: ${{ !cancelled() && steps.journey.outcome == 'success' }}
+        timeout-minutes: 9
+        run: bash ci/record-club-journey.sh
+      - name: Preserve original onboarding walkthrough
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-selection-to-home
+          path: out/picker/
+          retention-days: 30
+      - name: Verify reference motion and committed readiness on iOS
+        if: '!cancelled() && steps.first.outcome == ''success'''
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme BARQ -destination "id=$UDID" -derivedDataPath dd -configuration Release ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -parallel-testing-enabled NO test -only-testing:BARQTests/PremiumExperienceTests -only-testing:BARQTests/LaunchCommitReadinessTests -only-testing:BARQTests/P0OnboardingTests -only-testing:BARQTests/LaunchImageCacheTests 2>&1 | tee out/rider-tests.log
+
+      - name: Verify a background return does not replay the launch
+        if: ${{ !cancelled() && steps.journey.outcome == 'success' }}
+        timeout-minutes: 5
+        run: |
+          set -o pipefail
+          xcodebuild -project BARQFootball.xcodeproj -scheme FOTIQUITests -destination "id=$UDID" -derivedDataPath dd -configuration Release -parallel-testing-enabled NO test -only-testing:BARQUITests/PremiumExperienceUITests/testBackgroundResumeDoesNotRestartLaunchOrOnboarding | tee out/resume-test.log
+
+  review-originals:
+    needs: capture
+    if: ${{ !cancelled() && github.event.repository.private == false && needs.capture.outputs.originals != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rider-reference-originals
+          path: out
+      - name: Check original erasure frames and callback timing
+        run: |
+          set -euo pipefail
+          command -v ffmpeg >/dev/null || { sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg; }
+          failed=0
+          python3 ci/verify-launch-video.py out/first-launch-uncut.mp4 || failed=1
+          python3 ci/verify-launch-video.py out/quick-launch-uncut.mp4 || failed=1
+          cat out/first-timing.log out/quick-timing.log out/reduced-timing.log > out/rider-timing.log
+          python3 ci/verify-launch-timing.py out/rider-timing.log || failed=1
+          exit "$failed"

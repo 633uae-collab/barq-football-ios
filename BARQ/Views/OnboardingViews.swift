@@ -5,6 +5,7 @@ import UIKit
 /// Splash diagnostics (subsystem ae.barq.splash): per-frame progress, time-to-first-frame, main-thread hangs.
 enum SplashDiag {
     static let log = Logger(subsystem: "ae.barq.splash", category: "splash")
+    static let points = OSLog(subsystem: "ae.barq.splash", category: .pointsOfInterest)
     static let processStart = Date()   // set when the app struct initialises (first touch of this enum)
     nonisolated(unsafe) private static var watchdog: Thread?
     /// Background thread pings main every 50 ms and logs any gap > 100 ms (= main thread blocked).
@@ -38,8 +39,27 @@ extension View {
 }
 
 @MainActor enum LaunchGate {
-    static var open = false
-    static func wait() async { while !open && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(50)) } }
+    private static var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    static var open = false {
+        didSet {
+            guard open else { return }
+            let pending = Array(waiters.values)
+            waiters.removeAll()
+            for waiter in pending { waiter.resume() }
+        }
+    }
+    static func wait() async {
+        guard !open, !Task.isCancelled else { return }
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                if open || Task.isCancelled { continuation.resume() }
+                else { waiters[id] = continuation }
+            }
+        } onCancel: {
+            Task { @MainActor in waiters.removeValue(forKey: id)?.resume() }
+        }
+    }
 }
 
 // MARK: - Persistence (pure, unit-tested)
@@ -111,9 +131,22 @@ enum Onboarding {
 final class SplashClock {
     nonisolated(unsafe) static var nextReady = false
     nonisolated(unsafe) static var sawFirstFrame = false
+    var onFirstFrame: (() -> Void)?
     private var loggedFirstVisualFrame = false
+    private var firstVisualTime: TimeInterval?
+    private(set) var timelineOffset: Double = 0
+    var activeDuration: Double { max(0, elapsed - timelineOffset) }
+    func displayedFor(at now: TimeInterval) -> Double { max(0, now - (firstVisualTime ?? now)) }
+    func begin(at now: TimeInterval, timelineOffset: Double) {
+        self.timelineOffset = timelineOffset
+        start = now; previous = now
+        SplashDiag.log.notice("START launch +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms timelineOffset=\(timelineOffset, privacy: .public) uptime=\(now, privacy: .public)")
+        os_signpost(.begin, log: SplashDiag.points, name: "Rider motion")
+    }
     private var start: TimeInterval?
     private var previous: TimeInterval?
+    private var startupPrevious: TimeInterval?
+    private(set) var startupLargestFrameGap: Double = 0
     private var frameGaps: [Double] = []
     var sampledFrames: Int { frameGaps.count }
     var meanFrameGap: Double { frameGaps.isEmpty ? 0 : frameGaps.reduce(0, +) / Double(frameGaps.count) }
@@ -125,9 +158,17 @@ final class SplashClock {
     private(set) var elapsed: Double = 0
     var animationCompleted = false
     func tick(_ now: TimeInterval = CACurrentMediaTime(), active: Bool = true) -> Double {
+        if let startupPrevious, now > startupPrevious {
+            startupLargestFrameGap = max(startupLargestFrameGap, now - startupPrevious)
+        }
+        startupPrevious = now
         if !loggedFirstVisualFrame {
             loggedFirstVisualFrame = true
+            firstVisualTime = now
             Self.sawFirstFrame = true
+            let callback = onFirstFrame
+            onFirstFrame = nil
+            callback?()
             SplashDiag.log.notice("FIRST splash frame +\(Int(Date().timeIntervalSince(SplashDiag.processStart) * 1000), privacy: .public)ms")
         }
         // Prewarm the destination before the fixed hold-and-fade timeline starts.
@@ -146,18 +187,21 @@ final class SplashClock {
         }
         if let previous, now > previous {
             let gap = now - previous
+            if gap > 1.0 / 30 {
+                SplashDiag.log.notice("FRAME_GAP seconds=\(gap, privacy: .public) fromUptime=\(previous, privacy: .public) toUptime=\(now, privacy: .public)")
+                os_signpost(.event, log: SplashDiag.points, name: "Rider callback gap", "gap=%.6f from=%.6f to=%.6f", gap, previous, now)
+            }
             largestFrameGap = max(largestFrameGap, gap)
             if frameGaps.count < 512 { frameGaps.append(gap) }
         }
         previous = now
-        elapsed = max(0, now - (start ?? now))
+        elapsed = timelineOffset + max(0, now - (start ?? now))
         return elapsed
     }
 }
 
 /// Fixed original mark and opacity-only fallback for Reduce Motion.
 enum LaunchPresentation {
-    static let visibleWidth: CGFloat = 0.15
     static let hold = 0.5, fade = 0.3
     static let duration = hold + fade
     static func opacity(at elapsed: Double) -> Double {
@@ -165,8 +209,9 @@ enum LaunchPresentation {
         return 1 - t * t * (3 - 2 * t)
     }
     static func logoRect(in size: CGSize) -> CGRect {
-        let side = size.width * visibleWidth / 0.442
-        return CGRect(x: (size.width-side)/2, y: (size.height-side)/2, width: side, height: side)
+        let width = size.width * 0.14
+        let height = width * 514 / 455
+        return CGRect(x: (size.width-width)/2, y: (size.height-height)/2, width: width, height: height)
     }
 }
 
@@ -176,19 +221,16 @@ struct SplashView: View {
     @State private var clock = SplashClock()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        PremiumLaunchSurface(clock: clock, reduceMotion: reduceMotion)
-            .ignoresSafeArea()
-            .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
-            .task {
-                guard UserDefaults.standard.string(forKey: "splashHold") == nil else { return }
-                while (clock.elapsed < (reduceMotion ? LaunchPresentation.duration : PremiumLaunchTrack.duration) || !clock.animationCompleted) && !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(8))
-                }
-                guard !Task.isCancelled else { return }
+        PremiumLaunchSurface(clock: clock, reduceMotion: reduceMotion) {
+                os_signpost(.end, log: SplashDiag.points, name: "Rider motion")
                 SplashDiag.log.notice("FINISH firstLaunch=\(firstLaunch, privacy: .public) elapsed=\(clock.elapsed, privacy: .public) ready=\(SplashClock.nextReady, privacy: .public) maxFrameGap=\(clock.largestFrameGap, privacy: .public) mode=\(reduceMotion ? "reduced" : "premium", privacy: .public)")
+                SplashDiag.log.notice("MOTION committedToCompletion=\(clock.activeDuration, privacy: .public) creditedStaticHold=\(clock.timelineOffset, privacy: .public) finishEpoch=\(Date().timeIntervalSince1970, privacy: .public)")
+                SplashDiag.log.notice("STARTUP appInitToFinish=\(Date().timeIntervalSince(SplashDiag.processStart), privacy: .public) maxCallbackGapIncludingPreparation=\(clock.startupLargestFrameGap, privacy: .public)")
                 SplashDiag.log.notice("FRAME_STATS samples=\(clock.sampledFrames, privacy: .public) mean=\(clock.meanFrameGap, privacy: .public) p95=\(clock.percentile95Gap, privacy: .public)")
                 onFinish()
             }
+            .ignoresSafeArea()
+            .accessibilityElement(children: .ignore).accessibilityIdentifier("splash")
     }
 }
 
@@ -247,7 +289,7 @@ struct OnboardingView: View {
         }
         .task {
             guard editing, !compsReady else { return }
-            let catalog = (try? await API.shared.get("/api/catalog", maxAge: 3600, attempts: 1) as CatalogResponse)?.leagues ?? []
+            let catalog = (try? await API.shared.get("/api/catalog", maxAge: 3600, attempts: 1) as CatalogResponse)?.leagues ?? ClubDirectory.snapshot.competitions
             let parts = Onboarding.partition(store.favLeagues, catalog: catalog)
             leagues = parts.leagues
             cups = parts.cups
@@ -324,18 +366,21 @@ struct OnboardingView: View {
 struct ClubPickStep: View {
     @Binding var selected: [TeamRef]
     @State private var model = ClubPickerModel()
-    @State private var directoryReady = true
+    @FocusState private var searchFocused: Bool
     @State private var q = ""
     @State private var popularRetry = 0
     @State private var searchRetry = 0
     let cols = [GridItem(.adaptive(minimum: 100), spacing: 12)]
 
+    private var term: String { q.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     var shown: [TeamRef] {
-        guard directoryReady else { return [] }
-        let base = q.trimmingCharacters(in: .whitespaces).count >= 2 ? model.results : model.popular
-        // keep chosen clubs visible at the top when not searching
-        if q.isEmpty { return selected + base.filter { b in !selected.contains { $0.id == b.id } } }
-        return base
+        if !term.isEmpty {
+            let local = ClubDirectory.matching(model.popular + selected, query: term)
+            return ClubDirectory.unique(local + (model.resultsTerm == term ? model.results : []))
+        }
+        // Changing the star must not move the tile under the user's finger.
+        return ClubDirectory.unique(model.popular + selected)
     }
 
     var body: some View {
@@ -343,21 +388,14 @@ struct ClubPickStep: View {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("ابحث عن نادٍ", text: $q).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .focused($searchFocused)
                     .accessibilityIdentifier("ob-search")
                 if !q.isEmpty { Button { q = "" } label: { Image(systemName: "xmark.circle.fill") }.foregroundStyle(.secondary) }
             }
             .padding(12).diagGlass(.regular, in: .capsule).padding(.horizontal)
             ScrollView {
-                if let message = q.trimmingCharacters(in: .whitespaces).count >= 2 ? model.searchError : model.error {
-                    VStack(spacing: 8) {
-                        Text(message).font(.footnote).multilineTextAlignment(.center)
-                        Button("إعادة المحاولة") {
-                            if q.trimmingCharacters(in: .whitespaces).count >= 2 { searchRetry += 1 } else { popularRetry += 1 }
-                        }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
-                    }.padding()
-                }
                 if shown.isEmpty {
-                    if model.searching || !directoryReady {
+                    if model.searching || (term.isEmpty && model.loading) {
                         ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading")
                     } else if model.searchError == nil {
                         Text("ما لقينا نتائج").foregroundStyle(.secondary).padding(.top, 40)
@@ -367,7 +405,8 @@ struct ClubPickStep: View {
                 GlassEffectContainer(spacing: 12) {
                     LazyVGrid(columns: cols, spacing: 12) {
                         ForEach(shown) { t in
-                            PickTile(id: "ob-club-\(t.id)", name: t.name, logo: t.logo, on: selected.contains { $0.id == t.id }) {
+                            PickTile(id: "ob-club-\(t.id)", name: t.name, logo: t.logo, on: selected.contains { $0.id == t.id }, showsCrestBackdrop: false) {
+                                searchFocused = false
                                 if let i = selected.firstIndex(where: { $0.id == t.id }) { selected.remove(at: i) } else { selected.append(t) }
                             }
                             .equatable()
@@ -375,21 +414,28 @@ struct ClubPickStep: View {
                     }
                 }
                 .padding()
+                if let message = term.isEmpty ? model.error : (model.resultsTerm == term ? model.searchError : nil) {
+                    VStack(spacing: 8) {
+                        Text(message).font(.footnote).multilineTextAlignment(.center)
+                        Button("إعادة المحاولة") {
+                            if term.isEmpty { popularRetry += 1 } else { searchRetry += 1 }
+                        }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
+                    }.padding()
+                }
             }
             .scrollDismissesKeyboard(.immediately)
-        }
-        .task {
-            await ImageStore.shared.preload(model.popular.compactMap(\.logo))
         }
         .task(id: popularRetry) {
             await LaunchGate.wait()
             guard !Task.isCancelled else { return }
-            directoryReady = true
             await model.loadPopular()
-            await ImageStore.shared.preload(model.popular.compactMap(\.logo))
         }
         .task(id: "\(q)|\(searchRetry)") {
-            do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
+            if term.count >= 3 {
+                do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
+            }
             await model.search(q)
         }
     }
@@ -407,6 +453,12 @@ struct CompetitionPickStep: View {
     @State private var retry = 0
     let cols = [GridItem(.adaptive(minimum: 100), spacing: 12)]
 
+    init(kind: String, selected: Binding<Set<Int>>) {
+        self.kind = kind
+        _selected = selected
+        _items = State(initialValue: CompetitionOrder.sorted(ClubDirectory.snapshot.competitions, kind: kind))
+    }
+
     var shown: [LeagueMeta] {
         let s = q.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty else { return items }
@@ -423,12 +475,7 @@ struct CompetitionPickStep: View {
             .padding(12).diagGlass(.regular, in: .capsule).padding(.horizontal)
             ScrollView {
                 if loading && items.isEmpty { ProgressView().padding(.top, 60).accessibilityIdentifier("ob-loading") }
-                if let error {
-                    VStack(spacing: 8) {
-                        Text(error).font(.footnote).multilineTextAlignment(.center)
-                        Button("إعادة المحاولة") { retry += 1 }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
-                    }.padding()
-                } else if !loading && shown.isEmpty {
+                if error == nil && !loading && shown.isEmpty {
                     Text("ما لقينا نتائج").foregroundStyle(.secondary).padding()
                 }
                 LazyVGrid(columns: cols, spacing: 12) {
@@ -440,6 +487,12 @@ struct CompetitionPickStep: View {
                     }
                 }
                 .padding()
+                if let error {
+                    VStack(spacing: 8) {
+                        Text(error).font(.footnote).multilineTextAlignment(.center)
+                        Button("إعادة المحاولة") { retry += 1 }.buttonStyle(.glass).accessibilityIdentifier("ob-retry")
+                    }.padding()
+                }
             }
             .scrollDismissesKeyboard(.immediately)
         }
@@ -451,10 +504,12 @@ struct CompetitionPickStep: View {
             do {
                 let c: CatalogResponse = try await API.shared.get("/api/catalog", maxAge: 3600, attempts: 1)
                 guard !Task.isCancelled else { return }
-                items = CompetitionOrder.sorted(c.leagues, kind: kind)
+                let refreshed = CompetitionOrder.sorted(c.leagues, kind: kind)
+                guard !refreshed.isEmpty else { throw APIError.badResponse }
+                items = refreshed
             } catch {
                 guard !Task.isCancelled else { return }
-                self.error = error.localizedDescription
+                self.error = items.isEmpty ? error.localizedDescription : L.s("تعذر البحث عبر الإنترنت. النتائج الظاهرة من القائمة المحفوظة")
             }
         }
     }
@@ -462,16 +517,25 @@ struct CompetitionPickStep: View {
 }
 
 struct PickTile: View, Equatable {
-    static func == (a: PickTile, b: PickTile) -> Bool { a.id == b.id && a.on == b.on && a.name == b.name && a.logo == b.logo }
+    static func == (a: PickTile, b: PickTile) -> Bool {
+        a.id == b.id && a.on == b.on && a.name == b.name && a.logo == b.logo && a.showsCrestBackdrop == b.showsCrestBackdrop
+    }
     let id: String
     let name: String
     let logo: String?
     let on: Bool
+    var showsCrestBackdrop = true
     var toggle: () -> Void
     var body: some View {
         Button { if !on { Haptics.favoriteAdded() }; toggle() } label: {
             VStack(spacing: 8) {
-                RemoteImage(url: logo, size: 52)
+                RemoteImage(url: logo, size: 44, fallbackName: showsCrestBackdrop ? name : nil)
+                    .frame(width: 52, height: 52)
+                    .background {
+                        if showsCrestBackdrop {
+                            Circle().fill(Color(red: 0.54, green: 0.58, blue: 0.63))
+                        }
+                    }
                 Text(name).font(.footnote.weight(.semibold)).lineLimit(2).multilineTextAlignment(.center).frame(height: 34)
                 Image(systemName: on ? "star.fill" : "star").font(.title3)
                     .foregroundStyle(on ? Color("BrandGreen") : .secondary)
@@ -480,6 +544,7 @@ struct PickTile: View, Equatable {
             .frame(maxWidth: .infinity).padding(.vertical, 12)
             .diagGlass(on ? .regular.tint(Color("BrandGreen").opacity(0.25)) : .regular, in: .rect(cornerRadius: 18))
             .overlay { RoundedRectangle(cornerRadius: 18).stroke(on ? Color("BrandGreen") : .clear, lineWidth: 1.5) }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
@@ -488,50 +553,44 @@ struct PickTile: View, Equatable {
     }
 }
 
-/// Wraps the app: splash on every launch, onboarding on first launch only, then the unchanged app.
+/// One native launch container per scene lifetime; returning from the background
+/// retains the destination and cannot recreate the entrance.
 struct LaunchFlow<Content: View>: View {
     @ViewBuilder var content: () -> Content
-    @State private var destinationMounted = false
-    @State private var splash = true
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
     @State private var onboarded = Onboarding.isDone()
     @State private var firstLaunch = !Onboarding.isDone()
     var body: some View {
-        ZStack {
-            Color("LaunchBackground").ignoresSafeArea()
-            // Build and lay out the destination before the first animated splash frame.
-            // iOS keeps the matching static launch screen visible while this initial work
-            // completes, and LaunchGate still prevents network work until the reveal ends.
-            Group {
-                if destinationMounted {
-                if onboarded { content() } else { OnboardingView { withAnimation(.easeInOut(duration: 0.5)) { onboarded = true } }.transition(.opacity) }
-                }
+        LaunchContainer(firstLaunch: firstLaunch,
+                        revision: "\(onboarded)|\(store.lang)|\(colorScheme)",
+                        prepare: prepareDestination) {
+            if onboarded { content() }
+            else {
+                OnboardingView {
+                    withAnimation(.easeInOut(duration: 0.5)) { onboarded = true }
+                }.transition(.opacity)
             }
-            .background {
-                if destinationMounted { LaunchDestinationReadiness() }
+        }
+        .ignoresSafeArea()
+    }
+    @MainActor private func prepareDestination(viewport: CGSize) async {
+        if onboarded {
+            LaunchHomePreparation.snapshot = await LaunchHomeCache.shared.restore(scope: LaunchHomePreparation.scope)
+            if let snapshot = LaunchHomePreparation.snapshot {
+                let favorites = HomeFeed.Favorites(matches: Set(store.savedMatches),
+                    teams: Set(store.favTeams.map(\.id)), leagues: Set(store.favLeagues))
+                let addresses = snapshot.visibleImageAddresses(favorites: favorites, now: Date())
+                LaunchHomePreparation.images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
             }
-            // Prewarm layout without exposing controls beneath the launch cover.
-            // VoiceOver and touch must enter the destination only after reveal.
-            .accessibilityHidden(splash)
-            .allowsHitTesting(!splash)
-            if splash {
-                SplashView(firstLaunch: firstLaunch) {
-                    splash = false
-                    // Yield a frame so the uncovered interface appears before starting data work.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(50))
-                        LaunchGate.open = true
-                    }
-                }.zIndex(1)
-                .task {
-                    // Commit the lightweight original F first, then prewarm the
-                    // destination while the matching mark remains visible.
-                    while !SplashClock.sawFirstFrame && !Task.isCancelled {
-                        try? await Task.sleep(for: .milliseconds(8))
-                    }
-                    guard !Task.isCancelled else { return }
-                    destinationMounted = true
-                }
-            }
+            SplashDiag.log.notice("HOME preparedLocalSnapshot=\(LaunchHomePreparation.snapshot != nil, privacy: .public)")
+        } else {
+            // Reusing locally cached club logos must not enqueue one SwiftUI
+            // state publication per image in the middle of erasure.
+            let draft = Onboarding.loadDraft()
+            let addresses = LaunchClubPreparation.imageAddresses(selected: draft.clubs,
+                popular: ClubDirectory.initial(.standard), viewport: viewport)
+            LaunchHomePreparation.images = await LaunchHomeCache.shared.prepareCachedImages(addresses)
         }
     }
 }

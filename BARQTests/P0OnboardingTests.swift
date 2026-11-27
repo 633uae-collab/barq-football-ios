@@ -36,8 +36,37 @@ final class P0OnboardingTests: XCTestCase {
         let name = "clubs-\(UUID())"
         let isolated = UserDefaults(suiteName: name)!
         defer { isolated.removePersistentDomain(forName: name) }
-        let clubs = [TeamRef(id: 40, name: "Liverpool", logo: nil)]
+        let clubs = [TeamRef(id: 990001, name: "Saved club outside the seven leagues", logo: nil)]
         isolated.set(try JSONEncoder().encode(clubs), forKey: ClubDirectory.cacheKey)
-        XCTAssertEqual(ClubDirectory.initial(isolated), clubs)
+        let restored = ClubDirectory.initial(isolated)
+        XCTAssertEqual(restored.filter { $0.id == clubs[0].id }, clubs)
+        XCTAssertTrue(restored.contains { $0.id == 529 })
+    }
+
+    @MainActor func testAllGroupsRefreshWithoutDroppingOfflineLeaguesAndArabicSearchMatches() async throws {
+        let name = "club-groups-\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let directory = ClubDirectory.snapshot
+        for id in ClubDirectory.sources {
+            XCTAssertGreaterThan(directory.clubs[String(id)]?.count ?? 0, 8)
+        }
+        XCTAssertTrue(directory.competitions.contains { $0.id == 2 && $0.type == "Cup" })
+        let model = ClubPickerModel(defaults: defaults)
+        let teams = (1...10).map { TeamRef(id: 990000 + $0, name: "Test club \($0)") }
+        let rows = teams.map { StandingRow(rank: 1, team: $0, points: 0) }
+        await model.loadPopular { league in
+            if league != 39 { throw APIError.offline }
+            return StandingsResponse(league: LeagueMeta(id: 39, name: "Test league"), groups: [Array(rows.prefix(9)), [rows[9], rows[0]]])
+        }
+        let saved = ClubDirectory.initial(defaults)
+        XCTAssertTrue(teams.allSatisfy { saved.contains($0) })
+        XCTAssertEqual(saved.filter { $0.id == teams[0].id }.count, 1)
+        XCTAssertTrue(saved.contains { $0.id == 2865 })
+        let empty = try JSONDecoder().decode(SearchResponse.self, from: Data(#"{"q":"برشلونة","leagues":[],"teams":[],"players":[],"matches":[]}"#.utf8))
+        await model.search("برشلونة", fetch: { _ in empty })
+        XCTAssertEqual(model.results.map(\.id), [529])
+        await model.search("Ba", fetch: { _ in XCTFail("Two characters should search locally"); return empty })
+        XCTAssertTrue(model.results.contains { $0.id == 529 })
     }
 }

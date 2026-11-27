@@ -6,7 +6,11 @@ import SwiftUI
 /// failure/cancellation, which left placeholder shields in fast-scrolling carousels).
 final class ImageStore {
     static let shared = ImageStore()
-    let mem = NSCache<NSString, UIImage>()
+    let mem: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 256
+        return cache
+    }()
     private let pendingLock = NSLock()
     private var pending: [URL: Task<UIImage?, Never>] = [:]
     let session: URLSession = {
@@ -45,11 +49,21 @@ final class ImageStore {
             if let task = pending[url] { return task }
             let task = Task.detached(priority: .userInitiated) { [self] () -> UIImage? in
                 defer { pendingLock.withLock { _ = pending.removeValue(forKey: url) } }
+                if let local = PickerCrestStore.shared.image(for: url) {
+                    mem.setObject(local, forKey: key)
+                    return local
+                }
                 for attempt in 0..<3 {
                     if let (data, response) = try? await session.data(from: url),
                        (response as? HTTPURLResponse)?.statusCode == 200,
                        let image = UIImage(data: data) {
                         let decoded = image.preparingForDisplay() ?? image
+                        let control = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Cache-Control") ?? ""
+                        if !control.lowercased().contains("no-store") {
+                            // Finish the bounded local write before publication,
+                            // so an immediate full reopen can prepare this image.
+                            await LaunchHomeCache.shared.saveImage(data, address: url.absoluteString)
+                        }
                         mem.setObject(decoded, forKey: key)
                         return decoded
                     }
@@ -71,25 +85,41 @@ struct RemoteImage: View {
     var size: CGFloat = 32
     var circle = false
     var waitForLaunch = true
-    @State private var img: UIImage?
+    var fallbackName: String? = nil
+    @Environment(\.launchPreparedImages) private var prepared
+    @State private var loaded: (address: String, image: UIImage)?
     var body: some View {
         Group {
-            if let img { Image(uiImage: img).resizable().scaledToFit().transition(.opacity) }
+            if let image = prepared[url ?? ""] ?? (loaded?.address == url ? loaded?.image : nil) { Image(uiImage: image).resizable().scaledToFit().transition(.opacity) }
+            else if let fallbackName {
+                let initials = fallbackName.split(whereSeparator: { $0.isWhitespace }).prefix(3).compactMap(\.first)
+                Text(verbatim: String(initials)).font(.footnote.bold()).foregroundStyle(.black.opacity(0.8))
+            }
             else { Image(systemName: fallback).resizable().scaledToFit().foregroundStyle(.secondary).padding(size * 0.18) }
         }
         .frame(width: size, height: size)
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(Rectangle()))
         .task(id: url) {
             guard !Task.isCancelled else { return }
-            guard let s = url, let u = URL(string: s) else { img = nil; return }
-            if let c = ImageStore.shared.mem.object(forKey: s as NSString) { img = c; return }
-            let r = await ImageStore.shared.image(u)
-            // Prefetch/decode may finish while the launch cover is animating.
-            // Hold publication until reveal so image arrival cannot invalidate
-            // the prepared glass grid in the middle of the camera track.
+            guard let s = url, let u = URL(string: s) else { loaded = nil; return }
+            // Prepared launch pixels participate in the first body evaluation;
+            // do not enqueue one @State transaction per cached logo afterwards.
+            if prepared[s] != nil { return }
+            if let c = ImageStore.shared.mem.object(forKey: s as NSString) {
+                // A prefetch can populate memory after the immutable preparation
+                // map was built. That late cache hit is still a state mutation.
+                if waitForLaunch { await LaunchGate.wait() }
+                guard !Task.isCancelled else { return }
+                loaded = (s, c)
+                return
+            }
+            // Immutable local/bundled pixels are already present. A cache miss
+            // must not compete with motion for network callbacks or decoding.
             if waitForLaunch { await LaunchGate.wait() }
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { img = r }
+            let r = await ImageStore.shared.image(u)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { loaded = r.map { (s, $0) } }
         }
     }
 }
@@ -137,7 +167,12 @@ struct LivePill: View {
         // An endless repeatForever animation keeps the app from ever reporting "idle" to XCUITest
         // (seen in run 41651134723: "App event loop idle notification not received" after opening Matches with live games),
         // so UI-test launches (FOTIQ_UI_TEST=1) show the same dot without the pulse. Users always get the pulse.
-        .onAppear { if ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] != "1" { pulse = true } }
+        .task {
+            guard ProcessInfo.processInfo.environment["FOTIQ_UI_TEST"] != "1" else { return }
+            await LaunchGate.wait()
+            guard !Task.isCancelled else { return }
+            pulse = true
+        }
     }
 }
 
@@ -288,3 +323,4 @@ struct FixtureScore: View {
         }.monospacedDigit()
     }
 }
+

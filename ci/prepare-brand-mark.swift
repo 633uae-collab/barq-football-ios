@@ -32,3 +32,21 @@ for i in stride(from: 0, to: pixels.count, by: 4) {
 }
 try Data(pixels).write(to: outputURL, options: .atomic)
 print("Prepared original logo RGBA resource (\(width)x\(height))")
+
+// Build a launch-only, tightly cropped image from those same original pixels.
+// No screenshot chrome, redraw, or third-party animation asset is bundled.
+let data = Data(pixels)
+guard let provider = CGDataProvider(data: data as CFData),
+      let image = CGImage(width: width, height: height, bitsPerComponent: 8,
+                          bitsPerPixel: 32, bytesPerRow: width * 4, space: space,
+                          bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                          provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent),
+      let crop = image.cropping(to: CGRect(x: 285, y: 255, width: 455, height: 514)) else {
+    fatalError("Cannot crop original launch artwork")
+}
+let launchURL = URL(fileURLWithPath: "BARQ/Resources/Assets.xcassets/RiderLaunchMark.imageset/RiderLaunchMark.png")
+guard let destination = CGImageDestinationCreateWithURL(launchURL as CFURL, "public.png" as CFString, 1, nil) else {
+    fatalError("Cannot create launch PNG")
+}
+CGImageDestinationAddImage(destination, crop, nil)
+precondition(CGImageDestinationFinalize(destination), "Cannot write launch PNG")

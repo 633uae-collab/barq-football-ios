@@ -3,6 +3,8 @@ set -euo pipefail
 MODE=${1:?first or quick}
 [[ "$MODE" == first || "$MODE" == quick ]]
 mkdir -p out
+open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+caffeinate -d -i -u -t 180 </dev/null >/tmp/fotiq-capture-awake.log 2>&1 &
 APP=$(find dd/Build/Products -name BARQ.app -path '*iphonesimulator*' | head -1)
 if [[ "$MODE" == first ]]; then
   # A fresh simulator install also clears the OS launch-screen snapshot cache.
@@ -10,7 +12,8 @@ if [[ "$MODE" == first ]]; then
 fi
 xcrun simctl install "$UDID" "$APP"
 xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
-xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' > "out/$MODE-timing.log" 2>&1 &
+: > "out/$MODE-timing.log"
+xcrun simctl spawn "$UDID" log stream --style compact --predicate 'subsystem == "ae.barq.splash"' >> "out/$MODE-timing.log" 2>&1 &
 LOG=$!
 xcrun simctl io "$UDID" recordVideo --codec=h264 --force "out/$MODE-launch-uncut.mp4" > "out/$MODE-recording.log" 2>&1 &
 REC=$!
@@ -28,7 +31,7 @@ sleep 2
 if [[ "$MODE" == quick ]]; then
   # XCTest can terminate its app on completion. Bring the completed user's home
   # onscreen before recording the subsequent close/reopen, without changing prefs.
-  xcrun simctl launch "$UDID" ae.barq.football -lang ar
+  python3 ci/launch-measured.py "out/$MODE-timing.log" "$MODE" -lang ar
   for i in $(seq 1 45); do
     if grep -q 'FINISH firstLaunch=false' "out/$MODE-timing.log"; then break; fi
     sleep 1
@@ -43,9 +46,9 @@ fi
 if [[ "$MODE" == quick ]]; then
   xcrun simctl terminate "$UDID" ae.barq.football 2>/dev/null || true
   sleep 1
-  xcrun simctl launch "$UDID" ae.barq.football -lang ar
+  python3 ci/launch-measured.py "out/$MODE-timing.log" "$MODE" -lang ar
 else
-  xcrun simctl launch "$UDID" ae.barq.football -lang ar -resetOnboarding YES
+  python3 ci/launch-measured.py "out/$MODE-timing.log" "$MODE" -lang ar -resetOnboarding YES
 fi
 for i in $(seq 1 45); do
   if grep -q 'FINISH firstLaunch=' "out/$MODE-timing.log"; then break; fi
@@ -62,4 +65,16 @@ grep -q 'FINISH firstLaunch=' "out/$MODE-timing.log"
 cleanup
 trap - EXIT
 # Reject recordings that missed startup instead of accepting log success alone.
-ffprobe -v error -show_entries format=duration -of csv=p=0 "out/$MODE-launch-uncut.mp4" | python3 -c 'import sys; d=float(sys.stdin.read()); assert d >= 5, f"Recording missed launch: {d}s"'
+if command -v ffprobe >/dev/null; then
+  duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "out/$MODE-launch-uncut.mp4")
+else
+  # Read the same original asset duration with the macOS framework.
+  duration=$(swift - "out/$MODE-launch-uncut.mp4" <<'SWIFT'
+import AVFoundation
+let asset = AVURLAsset(url: URL(fileURLWithPath: CommandLine.arguments[1]))
+let duration = try await asset.load(.duration)
+print(CMTimeGetSeconds(duration))
+SWIFT
+)
+fi
+python3 -c 'import sys; d=float(sys.argv[1]); assert d >= 5, f"Recording missed launch: {d}s"' "$duration"
