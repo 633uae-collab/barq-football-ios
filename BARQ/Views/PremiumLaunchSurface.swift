@@ -343,11 +343,9 @@ final class PremiumLaunchLayer: UIView {
         }
         applyState(at: duration)
         for (target, animation) in tracks {
-            // On the first clubs reveal, let CA start the entire group on attachment.
-            // An explicit pre-commit timestamp ages the erase while the first scene is submitted.
-            if clubsPresentationBoundary == nil {
-                animation.beginTime = target.convertTime(now, from: nil)
-            }
+            // Use the same animation clock for Clubs and Home. The cold Clubs
+            // host still crosses its readiness boundary before tracks are prepared.
+            animation.beginTime = target.convertTime(now, from: nil)
             target.add(animation, forKey: animation.keyPath)
         }
         CATransaction.commit()
